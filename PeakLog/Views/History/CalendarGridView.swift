@@ -1,0 +1,190 @@
+import SwiftUI
+
+struct CalendarGridView: View {
+    @ObservedObject var viewModel: HistoryViewModel
+    @State private var isExpanded = false
+
+    private let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+
+    var body: some View {
+        VStack(spacing: 10) {
+            monthNavigation
+            weekdayHeader
+
+            if isExpanded {
+                dayGrid
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                weekRow
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            expandToggle
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
+        .background(Color.appSurface)
+        .cornerRadius(AppRadius.xl)
+        .clipped()
+        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isExpanded)
+    }
+
+    // MARK: - Month Navigation
+    private var monthNavigation: some View {
+        HStack {
+            Button {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    if isExpanded {
+                        viewModel.goToPreviousMonth()
+                    } else {
+                        viewModel.goToPreviousWeek()
+                    }
+                }
+                Task { await viewModel.loadCalendar() }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.textSecondary)
+                    .frame(width: 32, height: 32)
+            }
+
+            Spacer()
+
+            Text(viewModel.displayedMonthTitle)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(.textPrimary)
+
+            Spacer()
+
+            Button {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    if isExpanded {
+                        viewModel.goToNextMonth()
+                    } else {
+                        viewModel.goToNextWeek()
+                    }
+                }
+                Task { await viewModel.loadCalendar() }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.textSecondary)
+                    .frame(width: 32, height: 32)
+            }
+        }
+    }
+
+    // MARK: - Weekday Header
+    private var weekdayHeader: some View {
+        HStack(spacing: 0) {
+            ForEach(weekdays, id: \.self) { day in
+                Text(day)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.textMuted)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // MARK: - Week Row (collapsed)
+    private var weekRow: some View {
+        HStack(spacing: 0) {
+            ForEach(viewModel.currentWeekDays()) { day in
+                DayCell(day: day) {
+                    viewModel.selectDate(day.date)
+                    Task { await viewModel.loadSessionsForSelectedDate() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Day Grid (expanded)
+    private var dayGrid: some View {
+        LazyVGrid(columns: columns, spacing: 4) {
+            ForEach(viewModel.calendarDays()) { day in
+                DayCell(day: day) {
+                    viewModel.selectDate(day.date)
+                    Task { await viewModel.loadSessionsForSelectedDate() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Expand Toggle
+    private var expandToggle: some View {
+        Button {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.textMuted)
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+        }
+    }
+}
+
+// MARK: - Day Cell
+
+private struct DayCell: View {
+    let day: CalendarDay
+    let onTap: () -> Void
+
+    var body: some View {
+        Button {
+            if day.isCurrentMonth { onTap() }
+        } label: {
+            ZStack {
+                if day.isSelected && day.isCurrentMonth {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.accentPurple)
+                        .frame(width: 36, height: 36)
+                } else if day.isToday && day.isCurrentMonth {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.accentPurple, lineWidth: 1.5)
+                        .frame(width: 36, height: 36)
+                }
+
+                VStack(spacing: 3) {
+                    Text(dayNumber(day.date))
+                        .font(.system(size: 14, weight: day.isToday || day.isSelected ? .bold : .regular))
+                        .foregroundColor(textColor)
+
+                    if day.hasWorkout && day.isCurrentMonth {
+                        Circle()
+                            .fill(day.isSelected ? Color.white : Color.accentPurple)
+                            .frame(width: 4, height: 4)
+                    } else {
+                        Color.clear.frame(width: 4, height: 4)
+                    }
+                }
+                .frame(height: 40)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var textColor: Color {
+        if !day.isCurrentMonth { return .textDarkMuted }
+        if day.isSelected { return .white }
+        return .textPrimary
+    }
+
+    private func dayNumber(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "d"
+        return fmt.string(from: date)
+    }
+}
+
+#Preview {
+    CalendarGridView(viewModel: HistoryViewModel())
+        .padding()
+        .background(Color.appBackground)
+        .preferredColorScheme(.dark)
+}
