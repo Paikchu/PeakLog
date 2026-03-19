@@ -37,8 +37,10 @@ final class AuthStateManager: ObservableObject {
     @Published var isLoading = true
     @Published var currentUserId: String?
     @Published var defaultConversationId: String?
+    @Published var conversationLoadError: String?
 
     private let supabase = SupabaseManager.shared.client
+    private var conversationLoadCoordinator = ConversationLoadCoordinator()
 
     init() {
         Task { await observeAuthChanges() }
@@ -51,18 +53,21 @@ final class AuthStateManager: ObservableObject {
                 guard let session, !session.isExpired else {
                     isAuthenticated = false
                     currentUserId = nil
-                    defaultConversationId = nil
+                    applyConversationStateReset()
                     isLoading = false
                     continue
                 }
                 isAuthenticated = true
                 currentUserId = session.user.id.uuidString
-                await fetchDefaultConversation(userId: session.user.id.uuidString)
                 isLoading = false
+                beginConversationLoad(for: session.user.id.uuidString)
+                Task {
+                    await loadDefaultConversation(userId: session.user.id.uuidString)
+                }
             case .signedOut:
                 isAuthenticated = false
                 currentUserId = nil
-                defaultConversationId = nil
+                applyConversationStateReset()
                 isLoading = false
             default:
                 isLoading = false
@@ -71,25 +76,114 @@ final class AuthStateManager: ObservableObject {
         }
     }
 
-    private func fetchDefaultConversation(userId: String) async {
+    private func loadDefaultConversation(userId: String) async {
         do {
-            let rows: [ConversationRow] = try await supabase
-                .from("conversations")
-                .select("id")
-                .eq("user_id", value: userId)
-                .is("deleted_at", value: nil)
-                .order("created_at", ascending: true)
-                .limit(1)
-                .execute()
-                .value
-            defaultConversationId = rows.first?.id
+            if let conversationId = try await fetchDefaultConversationId(
+                userId: userId
+            ) {
+                applyLoadedConversation(id: conversationId, errorMessage: nil, for: userId)
+                return
+            }
+
+            if let conversationId = try await createDefaultConversation(
+                userId: userId
+            ) {
+                applyLoadedConversation(id: conversationId, errorMessage: nil, for: userId)
+                return
+            }
+
+            applyLoadedConversation(
+                id: nil,
+                errorMessage: "No default conversation was available.",
+                for: userId
+            )
         } catch {
-            print("Failed to fetch default conversation: \(error)")
+            applyLoadedConversation(
+                id: nil,
+                errorMessage: error.localizedDescription,
+                for: userId
+            )
+            print("Failed to load default conversation: \(error)")
         }
+    }
+
+    func retryDefaultConversationLoad() async {
+        guard let userId = currentUserId else { return }
+        do {
+            _ = try await supabase.auth.session
+            beginConversationLoad(for: userId)
+            await loadDefaultConversation(userId: userId)
+        } catch {
+            applyLoadedConversation(
+                id: nil,
+                errorMessage: error.localizedDescription,
+                for: userId
+            )
+        }
+    }
+
+    private func fetchDefaultConversationId(
+        userId: String
+    ) async throws -> String? {
+        let rows: [ConversationRow] = try await supabase
+            .from("conversations")
+            .select("id")
+            .eq("user_id", value: userId)
+            .is("deleted_at", value: nil)
+            .order("created_at", ascending: true)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first?.id
+    }
+
+    private func createDefaultConversation(
+        userId: String
+    ) async throws -> String? {
+        struct NewConversationRow: Decodable {
+            let id: String
+        }
+
+        let rows: [NewConversationRow] = try await supabase
+            .from("conversations")
+            .insert([
+                "user_id": userId,
+                "title": "My Workout Log",
+                "conversation_type": "default"
+            ])
+            .select("id")
+            .execute()
+            .value
+
+        return rows.first?.id
     }
 
     func signOut() async throws {
         try await supabase.auth.signOut()
+    }
+
+    private func beginConversationLoad(for userId: String) {
+        conversationLoadCoordinator.beginLoading(for: userId)
+        syncConversationState()
+    }
+
+    private func applyLoadedConversation(id conversationId: String?, errorMessage: String?, for userId: String) {
+        conversationLoadCoordinator.applyLoadedConversation(
+            id: conversationId,
+            errorMessage: errorMessage,
+            for: userId
+        )
+        syncConversationState()
+    }
+
+    private func applyConversationStateReset() {
+        conversationLoadCoordinator.reset()
+        syncConversationState()
+    }
+
+    private func syncConversationState() {
+        defaultConversationId = conversationLoadCoordinator.defaultConversationId
+        conversationLoadError = conversationLoadCoordinator.errorMessage
     }
 }
 

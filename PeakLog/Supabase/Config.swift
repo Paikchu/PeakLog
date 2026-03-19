@@ -1,13 +1,10 @@
 import Foundation
 
 /// Supabase project credentials.
-/// After running `supabase start`, copy the values from `supabase status` here.
 enum SupabaseConfig {
-    /// Local dev:  http://127.0.0.1:54321
-    /// Production: https://<project-ref>.supabase.co
-    static let url = URL(string: "http://127.0.0.1:54321")!
+    /// Production Supabase project URL.
+    static let url = URL(string: "https://dejoqutbflrrscgsvbog.supabase.co")!
 
-    /// Local dev:  copy "Publishable" key from `supabase status`
-    /// Production: copy from Supabase dashboard → Project Settings → API
-    static let anonKey = "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
+    /// Production publishable key from the Supabase dashboard.
+    static let anonKey = "sb_publishable_tmqt9aob-xUcYb9K1NOSCg_qeQBiLWO"
 }

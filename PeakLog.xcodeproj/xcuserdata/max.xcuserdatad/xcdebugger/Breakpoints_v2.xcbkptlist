@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bucket
+   uuid = "4DC6CC6F-0862-453F-A294-5C7EA3CF5AC3"
+   type = "1"
+   version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "8E4F39A7-4C08-4F3E-B02C-BC2D828C3A02"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "83"
+            endingLineNumber = "83"
+            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "543F40F0-B4C5-4415-844B-9E5B6F186E69"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "81"
+            endingLineNumber = "81"
+            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "E4E7A5F0-4853-4ABB-81A9-2C33A5F9B8A6"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "89"
+            endingLineNumber = "89"
+            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "6F69D988-D800-44F7-AB6A-81AF4AC22690"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "90"
+            endingLineNumber = "90"
+            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "BD0F1C93-CB52-4EF0-AF3E-9D201B972BCE"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "91"
+            endingLineNumber = "91"
+            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "032F81A8-92FE-4396-A91D-4523DD4C23EA"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "92"
+            endingLineNumber = "92"
+            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "163"
+            endingLineNumber = "163"
+            landmarkName = "invokeChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 76b580ec1801496"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(3) suspend resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
+                  moduleName = "PeakLog.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "163"
+                  endingLineNumber = "163">
+               </Location>
+               <Location
+                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 3e078de40a495890"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(5) suspend resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
+                  moduleName = "PeakLog.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "163"
+                  endingLineNumber = "163">
+               </Location>
+               <Location
+                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 9675d0c6283258e2"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(6) await resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
+                  moduleName = "PeakLog.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "163"
+                  endingLineNumber = "163">
+               </Location>
+               <Location
+                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 35a3c2bb4c1f9c92"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(7) suspend resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
+                  moduleName = "PeakLog.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "163"
+                  endingLineNumber = "163">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "0BE56EE1-25A8-48B1-BC09-B4B5474D65CA"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "PeakLog/Services/SupabaseChatService.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "173"
+            endingLineNumber = "173"
+            landmarkName = "invokeChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
+</Bucket>

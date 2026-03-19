@@ -77,18 +77,12 @@ final class SupabaseChatService: ChatServiceProtocol {
 
     func sendMessage(_ text: String, sessionId conversationId: String) async throws -> SendMessageServiceResponse {
         let clientMessageId = UUID().uuidString
-
-        let response: EdgeSendMessageResponse = try await supabase.functions
-            .invoke(
-                "chat-send-message",
-                options: FunctionInvokeOptions(
-                    body: [
-                        "conversation_id": conversationId,
-                        "text": text,
-                        "client_message_id": clientMessageId
-                    ]
-                )
-            )
+        let response = try await invokeChatSendMessage(
+            conversationId: conversationId,
+            text: text,
+            clientMessageId: clientMessageId,
+            refreshAuth: false
+        )
 
         // Return the IDs immediately. The actual assistant content arrives
         // via Realtime when the background processing completes.
@@ -156,6 +150,54 @@ final class SupabaseChatService: ChatServiceProtocol {
 
     // MARK: - Private helpers
 
+    private func invokeChatSendMessage(
+        conversationId: String,
+        text: String,
+        clientMessageId: String,
+        refreshAuth: Bool
+    ) async throws -> EdgeSendMessageResponse {
+        let session = refreshAuth ? try await supabase.auth.refreshSession() : try await supabase.auth.session
+        supabase.functions.setAuth(token: session.accessToken)
+
+        do {
+            return try await supabase.functions.invoke(
+                "chat-send-message",
+                options: FunctionInvokeOptions(
+                    body: [
+                        "conversation_id": conversationId,
+                        "text": text,
+                        "client_message_id": clientMessageId
+                    ]
+                )
+            )
+        } catch let error as FunctionsError {
+            if case let .httpError(code, data) = error, code == 401 {
+                let body = String(data: data, encoding: .utf8) ?? "<non-UTF8 response body>"
+                print("chat-send-message unauthorized: \(body)")
+
+                if !refreshAuth {
+                    // Force a refresh once in case the local session exists but the access token
+                    // has gone stale or the functions client has not yet observed the latest auth
+                    // event.
+                    return try await invokeChatSendMessage(
+                        conversationId: conversationId,
+                        text: text,
+                        clientMessageId: clientMessageId,
+                        refreshAuth: true
+                    )
+                }
+
+                throw NSError(
+                    domain: "PeakLog.ChatService",
+                    code: 401,
+                    userInfo: [NSLocalizedDescriptionKey: Self.extractErrorMessage(from: data)]
+                )
+            }
+
+            throw error
+        }
+    }
+
     private static func decodeMessageRow(from record: [String: AnyJSON]?) -> MessageRow? {
         guard let record else { return nil }
         do {
@@ -166,6 +208,18 @@ final class SupabaseChatService: ChatServiceProtocol {
             print("Failed to decode MessageRow from Realtime payload: \(error)")
             return nil
         }
+    }
+
+    private static func extractErrorMessage(from data: Data) -> String {
+        if
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let error = json["error"] as? String,
+            !error.isEmpty
+        {
+            return error
+        }
+
+        return String(data: data, encoding: .utf8) ?? "Unauthorized"
     }
 }
 

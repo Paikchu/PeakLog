@@ -10,6 +10,7 @@ struct AuthView: View {
     @State private var isSignUp = false
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var infoMessage: String?
 
     private let supabase = SupabaseManager.shared.client
 
@@ -39,6 +40,7 @@ struct AuthView: View {
                     TextField("Email", text: $email)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
                         .autocorrectionDisabled()
                         .padding()
                         .background(Color.appCard)
@@ -55,6 +57,14 @@ struct AuthView: View {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+
+                    if let info = infoMessage {
+                        Text(info)
+                            .font(.caption)
+                            .foregroundColor(.green)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
@@ -81,6 +91,7 @@ struct AuthView: View {
                     Button {
                         withAnimation { isSignUp.toggle() }
                         errorMessage = nil
+                        infoMessage = nil
                     } label: {
                         Text(isSignUp ? "Already have an account? Sign In" : "New here? Create Account")
                             .font(.subheadline)
@@ -97,22 +108,32 @@ struct AuthView: View {
     // MARK: - Actions
 
     private func submit() async {
-        guard !email.isEmpty, !password.isEmpty else { return }
+        let normalizedEmail = normalizeEmail(email)
+        guard !normalizedEmail.isEmpty, !password.isEmpty else { return }
         isLoading = true
         errorMessage = nil
+        infoMessage = nil
+        email = normalizedEmail
 
         do {
             if isSignUp {
-                try await supabase.auth.signUp(email: email, password: password)
+                try await supabase.auth.signUp(email: normalizedEmail, password: password)
+                infoMessage = "Account created. If email confirmation is enabled, check your inbox to finish signing in."
             } else {
-                try await supabase.auth.signIn(email: email, password: password)
+                try await supabase.auth.signIn(email: normalizedEmail, password: password)
             }
             // authState observer in PeakLogApp will handle the transition
         } catch {
+            infoMessage = nil
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
+    }
+
+    private func normalizeEmail(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 }
 
