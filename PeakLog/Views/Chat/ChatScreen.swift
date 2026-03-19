@@ -46,11 +46,11 @@ struct ChatScreen: View {
             await runDebugAutoSendIfNeeded()
         }
         .onDisappear { Task { await viewModel.onDisappear() } }
-        .alert("Error", isPresented: Binding(
+        .alert("common.error_title", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) { viewModel.errorMessage = nil }
+            Button("common.ok", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
@@ -88,7 +88,7 @@ struct ChatScreen: View {
 
             Spacer()
 
-            Text("AI Gym Logger")
+            Text("content.chat_title")
                 .font(.headerTitle)
                 .foregroundColor(.textPrimary)
                 .tracking(-0.4)

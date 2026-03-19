@@ -4,8 +4,10 @@ import Supabase
 
 @main
 struct PeakLogApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var authState = AuthStateManager()
+    @StateObject private var localizationManager = LocalizationManager()
 
     var body: some Scene {
         WindowGroup {
@@ -16,15 +18,19 @@ struct PeakLogApp: App {
                         .background(Color.appBackground.ignoresSafeArea())
                 } else if authState.isAuthenticated {
                     ContentView()
-                        .environmentObject(themeManager)
-                        .environmentObject(authState)
                 } else {
                     AuthView()
-                        .environmentObject(themeManager)
-                        .environmentObject(authState)
                 }
             }
+            .environmentObject(themeManager)
+            .environmentObject(authState)
+            .environmentObject(localizationManager)
+            .environment(\.locale, localizationManager.locale)
             .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
+            .onChange(of: scenePhase, initial: true) { _, newPhase in
+                guard newPhase == .active else { return }
+                localizationManager.refreshFromSystem()
+            }
         }
     }
 }
@@ -94,7 +100,7 @@ final class AuthStateManager: ObservableObject {
 
             applyLoadedConversation(
                 id: nil,
-                errorMessage: "No default conversation was available.",
+                errorMessage: String(localized: "content.conversation_unavailable.default_missing"),
                 for: userId
             )
         } catch {
@@ -148,7 +154,7 @@ final class AuthStateManager: ObservableObject {
             .from("conversations")
             .insert([
                 "user_id": userId,
-                "title": "My Workout Log",
+                "title": String(localized: "conversation.default_title"),
                 "conversation_type": "default"
             ])
             .select("id")

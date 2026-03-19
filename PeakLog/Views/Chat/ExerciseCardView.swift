@@ -57,7 +57,7 @@ private struct SetRowView: View {
                     Text("\(set.reps)")
                         .font(.exerciseValue)
                         .foregroundColor(.accentValue)
-                    Text("reps")
+                    Text("chat.exercise.reps")
                         .font(.exerciseUnit)
                         .foregroundColor(.textMuted)
                 }
@@ -73,7 +73,7 @@ private struct SetRowView: View {
         // Edit weight sheet
         .sheet(isPresented: $editingWeight) {
             ValueEditSheet(
-                title: "Weight",
+                title: String(localized: "chat.exercise.weight"),
                 unit: set.weightUnit.display,
                 value: $weightText
             ) {
@@ -90,8 +90,8 @@ private struct SetRowView: View {
         // Edit reps sheet
         .sheet(isPresented: $editingReps) {
             ValueEditSheet(
-                title: "Reps",
-                unit: "reps",
+                title: String(localized: "chat.exercise.reps"),
+                unit: String(localized: "chat.exercise.reps"),
                 value: $repsText
             ) {
                 if let r = Int(repsText) {
@@ -140,14 +140,14 @@ private struct ValueEditSheet: View {
             }
 
             HStack(spacing: 16) {
-                Button("Cancel") { onCancel() }
+                Button(String(localized: "common.cancel")) { onCancel() }
                     .foregroundColor(.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(Color.appSurface)
                     .cornerRadius(AppRadius.lg)
 
-                Button("Done") { onDone() }
+                Button(String(localized: "common.done")) { onDone() }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -185,7 +185,7 @@ struct ExerciseCardView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(.white)
-                    Text("Delete")
+                    Text("common.delete")
                         .font(.deleteLabel)
                         .foregroundColor(.white)
                 }

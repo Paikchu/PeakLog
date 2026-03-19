@@ -31,7 +31,7 @@ struct ChatInputBar: View {
             HStack(spacing: 8) {
                 Group {
                     if voiceState == .idle {
-                        TextField("Tell me your workout...", text: $text)
+                        TextField(String(localized: "chat.input.placeholder"), text: $text)
                             .font(.chatBody)
                             .foregroundColor(.textPrimary)
                             .focused($isFocused)

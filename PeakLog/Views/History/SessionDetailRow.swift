@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SessionDetailRow: View {
     let session: WorkoutSession
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,7 +54,13 @@ struct SessionDetailRow: View {
             if let minutes = session.durationMinutes {
                 Text("•")
                     .foregroundColor(.textMuted)
-                Text("\(minutes) min")
+                Text(
+                    String(
+                        format: String(localized: "history.session.minutes_format"),
+                        locale: locale,
+                        minutes
+                    )
+                )
                     .font(.system(size: 13))
                     .foregroundColor(.textSecondary)
             }

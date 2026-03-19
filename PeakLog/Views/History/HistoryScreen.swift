@@ -39,7 +39,7 @@ struct HistoryScreen: View {
 
             Spacer()
 
-            Text("Workout History")
+            Text("history.title")
                 .font(.screenTitle)
                 .foregroundColor(.textPrimary)
 
@@ -60,7 +60,7 @@ struct HistoryScreen: View {
             ProgressView()
                 .padding(.top, 20)
         } else if viewModel.sessions.isEmpty {
-            Text("No workouts on this day")
+            Text("history.empty")
                 .font(.chatBody)
                 .foregroundColor(.textMuted)
                 .padding(.top, 20)

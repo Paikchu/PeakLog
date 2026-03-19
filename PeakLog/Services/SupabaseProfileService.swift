@@ -43,11 +43,13 @@ final class SupabaseProfileService: ProfileServiceProtocol {
             let darkModeEnabled: Bool
             let weightUnit: String
             let timezone: String?
+            let language: String?
             enum CodingKeys: String, CodingKey {
                 case notificationsEnabled = "notifications_enabled"
                 case darkModeEnabled = "dark_mode_enabled"
                 case weightUnit = "weight_unit"
                 case timezone
+                case language
             }
         }
 
@@ -92,7 +94,8 @@ final class SupabaseProfileService: ProfileServiceProtocol {
                 notificationsEnabled: prefs.notificationsEnabled,
                 darkModeEnabled: prefs.darkModeEnabled,
                 weightUnit: WeightUnit(rawValue: prefs.weightUnit) ?? .kg,
-                timezone: prefs.timezone ?? TimeZone.current.identifier
+                timezone: prefs.timezone ?? TimeZone.current.identifier,
+                language: AppLanguage.resolve(prefs.language) ?? .english
             )
         )
     }
@@ -108,6 +111,7 @@ final class SupabaseProfileService: ProfileServiceProtocol {
         if let v = prefs.darkModeEnabled      { updateFields["dark_mode_enabled"] = .bool(v) }
         if let v = prefs.weightUnit           { updateFields["weight_unit"] = .string(v.rawValue) }
         if let v = prefs.timezone             { updateFields["timezone"] = .string(v) }
+        if let v = prefs.language             { updateFields["language"] = .string(v.rawValue) }
 
         guard !updateFields.isEmpty else {
             return try await fetchProfile().preferences
@@ -118,11 +122,13 @@ final class SupabaseProfileService: ProfileServiceProtocol {
             let darkModeEnabled: Bool
             let weightUnit: String
             let timezone: String?
+            let language: String?
             enum CodingKeys: String, CodingKey {
                 case notificationsEnabled = "notifications_enabled"
                 case darkModeEnabled = "dark_mode_enabled"
                 case weightUnit = "weight_unit"
                 case timezone
+                case language
             }
         }
 
@@ -139,7 +145,8 @@ final class SupabaseProfileService: ProfileServiceProtocol {
             notificationsEnabled: row.notificationsEnabled,
             darkModeEnabled: row.darkModeEnabled,
             weightUnit: WeightUnit(rawValue: row.weightUnit) ?? .kg,
-            timezone: row.timezone ?? TimeZone.current.identifier
+            timezone: row.timezone ?? TimeZone.current.identifier,
+            language: AppLanguage.resolve(row.language) ?? .english
         )
     }
 

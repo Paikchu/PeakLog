@@ -12,13 +12,32 @@ enum APIError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Invalid URL"
-        case .unauthorized: return "Authentication required. Please sign in."
-        case .notFound: return "Resource not found."
-        case .serverError(let code): return "Server error (\(code))."
-        case .decodingFailed(let e): return "Data error: \(e.localizedDescription)"
-        case .networkError(let e): return "Network error: \(e.localizedDescription)"
-        case .unknown: return "An unknown error occurred."
+        case .invalidURL:
+            return String(localized: "error.api.invalid_url")
+        case .unauthorized:
+            return String(localized: "error.api.unauthorized")
+        case .notFound:
+            return String(localized: "error.api.not_found")
+        case .serverError(let code):
+            return String(
+                format: String(localized: "error.api.server_format"),
+                locale: Locale(identifier: AppLanguage.current().localeIdentifier),
+                code
+            )
+        case .decodingFailed(let error):
+            return String(
+                format: String(localized: "error.api.decoding_format"),
+                locale: Locale(identifier: AppLanguage.current().localeIdentifier),
+                error.localizedDescription
+            )
+        case .networkError(let error):
+            return String(
+                format: String(localized: "error.api.network_format"),
+                locale: Locale(identifier: AppLanguage.current().localeIdentifier),
+                error.localizedDescription
+            )
+        case .unknown:
+            return String(localized: "error.api.unknown")
         }
     }
 }

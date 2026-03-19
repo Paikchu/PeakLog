@@ -4,7 +4,7 @@ struct StatCardView: View {
     let icon: String
     let iconColor: Color
     let value: String
-    let label: String
+    let label: LocalizedStringKey
 
     @Environment(\.colorScheme) private var colorScheme
 

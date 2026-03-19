@@ -7,6 +7,7 @@ struct UpdatePreferencesRequest: Encodable {
     let darkModeEnabled: Bool?
     let weightUnit: WeightUnit?
     let timezone: String?
+    let language: AppLanguage?
 }
 
 // MARK: - Protocol
@@ -66,7 +67,8 @@ final class MockProfileService: ProfileServiceProtocol {
             notificationsEnabled: true,
             darkModeEnabled: true,
             weightUnit: .kg,
-            timezone: TimeZone.current.identifier
+            timezone: TimeZone.current.identifier,
+            language: .english
         )
     )
 
@@ -81,6 +83,7 @@ final class MockProfileService: ProfileServiceProtocol {
         if let v = prefs.darkModeEnabled { profile.preferences.darkModeEnabled = v }
         if let v = prefs.weightUnit { profile.preferences.weightUnit = v }
         if let v = prefs.timezone { profile.preferences.timezone = v }
+        if let v = prefs.language { profile.preferences.language = v }
         return profile.preferences
     }
 

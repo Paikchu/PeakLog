@@ -280,7 +280,7 @@ final class ChatViewModel: ObservableObject {
         absoluteDateFormatter: DateFormatter
     ) -> String {
         if calendar.isDateInToday(date) {
-            return "Today"
+            return String(localized: "common.today")
         }
 
         return absoluteDateFormatter.string(from: date)

@@ -26,13 +26,13 @@ enum SpeechRecognitionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .recognizerUnavailable:
-            return "Speech recognition is not available on this device."
+            return String(localized: "error.speech.unavailable")
         case .speechAuthorizationDenied:
-            return "Speech recognition permission was denied."
+            return String(localized: "error.speech.authorization_denied")
         case .microphonePermissionDenied:
-            return "Microphone permission was denied."
+            return String(localized: "error.speech.microphone_denied")
         case .transcriptionUnavailable:
-            return "I couldn't detect any speech. Please try again."
+            return String(localized: "error.speech.transcription_unavailable")
         }
     }
 }
@@ -218,11 +218,7 @@ final class SpeechRecognitionService: SpeechRecognitionServicing {
     }
 
     private static func preferredLocale() -> Locale {
-        let identifier = Locale.current.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        if identifier.isEmpty {
-            return Locale(identifier: "en-US")
-        }
-        return Locale(identifier: identifier)
+        Locale(identifier: AppLanguage.current().speechLocaleIdentifier)
     }
 
     private static func normalizedLevel(from buffer: AVAudioPCMBuffer) -> CGFloat {

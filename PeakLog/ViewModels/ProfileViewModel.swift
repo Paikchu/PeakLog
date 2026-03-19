@@ -36,7 +36,8 @@ final class ProfileViewModel: ObservableObject {
             notificationsEnabled: !current,
             darkModeEnabled: nil,
             weightUnit: nil,
-            timezone: nil
+            timezone: nil,
+            language: nil
         ))
     }
 
@@ -46,7 +47,8 @@ final class ProfileViewModel: ObservableObject {
             notificationsEnabled: nil,
             darkModeEnabled: !current,
             weightUnit: nil,
-            timezone: nil
+            timezone: nil,
+            language: nil
         ))
     }
 
@@ -55,7 +57,18 @@ final class ProfileViewModel: ObservableObject {
             notificationsEnabled: nil,
             darkModeEnabled: nil,
             weightUnit: unit,
-            timezone: nil
+            timezone: nil,
+            language: nil
+        ))
+    }
+
+    func setLanguage(_ language: AppLanguage) async {
+        await updatePreferences(UpdatePreferencesRequest(
+            notificationsEnabled: nil,
+            darkModeEnabled: nil,
+            weightUnit: nil,
+            timezone: nil,
+            language: language
         ))
     }
 

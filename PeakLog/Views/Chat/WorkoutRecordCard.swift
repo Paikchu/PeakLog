@@ -19,7 +19,7 @@ struct WorkoutRecordCard: View {
                         .foregroundColor(.white)
                 }
 
-                Text("Workout Record")
+                Text("chat.workout_record.title")
                     .font(.recordHeader)
                     .foregroundColor(.white)
                     .tracking(0.25)

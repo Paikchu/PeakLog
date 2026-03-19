@@ -29,7 +29,7 @@ struct AuthView: View {
                     Text("PeakLog")
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundColor(.textPrimary)
-                    Text("Your AI Gym Logger")
+                    Text("auth.subtitle")
                         .font(.subheadline)
                         .foregroundColor(.textSecondary)
                 }
@@ -37,7 +37,7 @@ struct AuthView: View {
 
                 // Form
                 VStack(spacing: 16) {
-                    TextField("Email", text: $email)
+                    TextField(String(localized: "auth.email"), text: $email)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.emailAddress)
                         .textContentType(.emailAddress)
@@ -47,7 +47,7 @@ struct AuthView: View {
                         .cornerRadius(12)
                         .foregroundColor(.textPrimary)
 
-                    SecureField("Password", text: $password)
+                    SecureField(String(localized: "auth.password"), text: $password)
                         .padding()
                         .background(Color.appCard)
                         .cornerRadius(12)
@@ -76,7 +76,7 @@ struct AuthView: View {
                                     .tint(.white)
                                     .scaleEffect(0.85)
                             } else {
-                                Text(isSignUp ? "Create Account" : "Sign In")
+                                Text(isSignUp ? "auth.create_account" : "auth.sign_in")
                                     .fontWeight(.semibold)
                             }
                         }
@@ -93,7 +93,7 @@ struct AuthView: View {
                         errorMessage = nil
                         infoMessage = nil
                     } label: {
-                        Text(isSignUp ? "Already have an account? Sign In" : "New here? Create Account")
+                        Text(isSignUp ? "auth.switch_to_sign_in" : "auth.switch_to_create_account")
                             .font(.subheadline)
                             .foregroundColor(.textSecondary)
                     }
@@ -119,7 +119,7 @@ struct AuthView: View {
         do {
             if isSignUp {
                 try await supabase.auth.signUp(email: normalizedEmail, password: password)
-                infoMessage = "Account created. If email confirmation is enabled, check your inbox to finish signing in."
+                infoMessage = String(localized: "auth.account_created")
             } else {
                 try await supabase.auth.signIn(email: normalizedEmail, password: password)
             }

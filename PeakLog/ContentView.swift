@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var authState: AuthStateManager
+    @EnvironmentObject private var localizationManager: LocalizationManager
 
     @State private var showHistory = false
     @State private var showProfile = false
@@ -59,6 +61,17 @@ struct ContentView: View {
             }
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
+        .task(id: authState.currentUserId) {
+            guard authState.currentUserId != nil else { return }
+            await localizationManager.syncRemotePreferenceIfNeeded(profileService: SupabaseProfileService())
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active, authState.currentUserId != nil else { return }
+            localizationManager.refreshFromSystem()
+            Task {
+                await localizationManager.syncRemotePreferenceIfNeeded(profileService: SupabaseProfileService())
+            }
+        }
     }
 }
 
@@ -80,7 +93,7 @@ private struct ConversationUnavailableView: View {
 
                 Spacer()
 
-                Text("AI Gym Logger")
+                Text("content.chat_title")
                     .font(.headerTitle)
                     .foregroundColor(.textPrimary)
                     .tracking(-0.4)
@@ -104,18 +117,18 @@ private struct ConversationUnavailableView: View {
                     .font(.system(size: 34, weight: .semibold))
                     .foregroundColor(.textMuted)
 
-                Text("Conversation not ready yet")
+                Text("content.conversation_unavailable.title")
                     .font(.title3.weight(.semibold))
                     .foregroundColor(.textPrimary)
 
-                Text(errorMessage ?? "You can still use the app while we recover your chat session.")
+                Text(errorMessage ?? String(localized: "content.conversation_unavailable.message"))
                     .font(.subheadline)
                     .foregroundColor(.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
 
                 Button(action: onRetry) {
-                    Text("Retry Conversation Load")
+                    Text("content.conversation_unavailable.retry")
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                         .padding()

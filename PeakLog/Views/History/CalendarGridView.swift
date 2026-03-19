@@ -3,9 +3,22 @@ import SwiftUI
 struct CalendarGridView: View {
     @ObservedObject var viewModel: HistoryViewModel
     @State private var isExpanded = false
+    @Environment(\.locale) private var locale
 
-    private let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+
+    private var weekdays: [String] {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        return formatter.shortStandaloneWeekdaySymbols
+    }
+
+    private var displayedMonthTitle: String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: viewModel.displayedMonth)
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -52,7 +65,7 @@ struct CalendarGridView: View {
 
             Spacer()
 
-            Text(viewModel.displayedMonthTitle)
+            Text(displayedMonthTitle)
                 .font(.system(size: 15, weight: .bold))
                 .foregroundColor(.textPrimary)
 
@@ -133,6 +146,7 @@ struct CalendarGridView: View {
 private struct DayCell: View {
     let day: CalendarDay
     let onTap: () -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Button {
@@ -177,6 +191,7 @@ private struct DayCell: View {
 
     private func dayNumber(_ date: Date) -> String {
         let fmt = DateFormatter()
+        fmt.locale = locale
         fmt.dateFormat = "d"
         return fmt.string(from: date)
     }
