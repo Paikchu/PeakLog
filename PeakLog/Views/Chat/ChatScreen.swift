@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatScreen: View {
     @StateObject private var viewModel: ChatViewModel
+    @State private var didRunDebugAutoSend = false
     var onShowHistory: (() -> Void)?
     var onShowProfile: (() -> Void)?
 
@@ -30,6 +31,9 @@ struct ChatScreen: View {
         }
         .background(Color.appBackground.ignoresSafeArea())
         .task { await viewModel.onAppear() }
+        .task {
+            await runDebugAutoSendIfNeeded()
+        }
         .onDisappear { Task { await viewModel.onDisappear() } }
         .alert("Error", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
@@ -39,6 +43,23 @@ struct ChatScreen: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+    }
+
+    @MainActor
+    private func runDebugAutoSendIfNeeded() async {
+        #if DEBUG
+        guard !didRunDebugAutoSend else { return }
+        guard let message = ProcessInfo.processInfo.environment["PEAKLOG_DEBUG_AUTOSEND_MESSAGE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else { return }
+
+        didRunDebugAutoSend = true
+        viewModel.inputText = message
+
+        // Give the initial history/realtime setup a moment to settle before sending.
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        await viewModel.sendMessage()
+        #endif
     }
 
     // MARK: - Header

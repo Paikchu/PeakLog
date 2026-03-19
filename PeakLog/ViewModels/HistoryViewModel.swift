@@ -44,7 +44,8 @@ final class HistoryViewModel: ObservableObject {
         isLoadingSessions = true
         errorMessage = nil
         do {
-            sessions = try await workoutService.sessionsForDay(selectedDate)
+            let loadedSessions = try await workoutService.sessionsForDay(selectedDate)
+            sessions = WorkoutHistoryAggregator.mergeSessionsForHistory(loadedSessions)
         } catch {
             errorMessage = error.localizedDescription
             sessions = []

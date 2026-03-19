@@ -104,10 +104,10 @@ final class SupabaseProfileService: ProfileServiceProtocol {
         let uid = user.id.uuidString
 
         var updateFields: [String: AnyJSON] = [:]
-        if let v = prefs.notificationsEnabled { updateFields["notifications_enabled"] = AnyJSON(v) }
-        if let v = prefs.darkModeEnabled      { updateFields["dark_mode_enabled"] = AnyJSON(v) }
-        if let v = prefs.weightUnit           { updateFields["weight_unit"] = AnyJSON(v.rawValue) }
-        if let v = prefs.timezone             { updateFields["timezone"] = AnyJSON(v) }
+        if let v = prefs.notificationsEnabled { updateFields["notifications_enabled"] = .bool(v) }
+        if let v = prefs.darkModeEnabled      { updateFields["dark_mode_enabled"] = .bool(v) }
+        if let v = prefs.weightUnit           { updateFields["weight_unit"] = .string(v.rawValue) }
+        if let v = prefs.timezone             { updateFields["timezone"] = .string(v) }
 
         guard !updateFields.isEmpty else {
             return try await fetchProfile().preferences

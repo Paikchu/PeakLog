@@ -42,7 +42,7 @@ private struct MessageRow: Decodable {
 
 // MARK: - Edge Function response
 
-private struct SendMessageResponse: Decodable {
+private struct EdgeSendMessageResponse: Decodable {
     let userMessageId: String
     let assistantMessageId: String
 
@@ -78,7 +78,7 @@ final class SupabaseChatService: ChatServiceProtocol {
     func sendMessage(_ text: String, sessionId conversationId: String) async throws -> SendMessageServiceResponse {
         let clientMessageId = UUID().uuidString
 
-        let response: SendMessageResponse = try await supabase.functions
+        let response: EdgeSendMessageResponse = try await supabase.functions
             .invoke(
                 "chat-send-message",
                 options: FunctionInvokeOptions(
@@ -118,29 +118,23 @@ final class SupabaseChatService: ChatServiceProtocol {
     ) async {
         await unsubscribe()
 
-        let channel = await supabase.realtime.channel("messages:\(conversationId)")
+        let channel = supabase.channel("messages:\(conversationId)")
 
-        await channel.on(
-            .postgresChanges,
-            filter: PostgresChangeFilter(
-                event: .insert,
-                schema: "public",
-                table: "messages",
-                filter: "conversation_id=eq.\(conversationId)"
-            )
+        channel.onPostgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "messages",
+            filter: "conversation_id=eq.\(conversationId)"
         ) { payload in
             guard let row = Self.decodeMessageRow(from: payload.record) else { return }
             onInsert(row.toChatMessage())
         }
 
-        await channel.on(
-            .postgresChanges,
-            filter: PostgresChangeFilter(
-                event: .update,
-                schema: "public",
-                table: "messages",
-                filter: "conversation_id=eq.\(conversationId)"
-            )
+        channel.onPostgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "messages",
+            filter: "conversation_id=eq.\(conversationId)"
         ) { payload in
             guard let row = Self.decodeMessageRow(from: payload.record) else { return }
             // Only surface completed assistant messages
@@ -155,7 +149,7 @@ final class SupabaseChatService: ChatServiceProtocol {
 
     func unsubscribe() async {
         if let channel = realtimeChannel {
-            await supabase.realtime.removeChannel(channel)
+            await supabase.removeChannel(channel)
             realtimeChannel = nil
         }
     }
@@ -165,23 +159,14 @@ final class SupabaseChatService: ChatServiceProtocol {
     private static func decodeMessageRow(from record: [String: AnyJSON]?) -> MessageRow? {
         guard let record else { return nil }
         do {
-            let data = try JSONSerialization.data(withJSONObject: record.mapValues(\.anyValue))
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(MessageRow.self, from: data)
+            return try record.decode(as: MessageRow.self, decoder: decoder)
         } catch {
             print("Failed to decode MessageRow from Realtime payload: \(error)")
             return nil
         }
     }
-}
-
-// MARK: - Updated protocol types
-
-struct SendMessageServiceResponse {
-    let userMessageId: String
-    let assistantMessageId: String
-    let conversationId: String
 }
 
 // MARK: - AnyJSON helper
@@ -190,7 +175,8 @@ private extension AnyJSON {
     var anyValue: Any {
         switch self {
         case .string(let s): return s
-        case .number(let n): return n
+        case .integer(let n): return n
+        case .double(let n): return n
         case .bool(let b): return b
         case .array(let a): return a.map(\.anyValue)
         case .object(let o): return o.mapValues(\.anyValue)

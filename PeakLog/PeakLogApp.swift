@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Supabase
 
 @main
@@ -44,28 +45,27 @@ final class AuthStateManager: ObservableObject {
     }
 
     private func observeAuthChanges() async {
-        // Check existing session first
-        if let session = try? await supabase.auth.session {
-            isAuthenticated = true
-            currentUserId = session.user.id.uuidString
-            await fetchDefaultConversation(userId: session.user.id.uuidString)
-        }
-        isLoading = false
-
-        // Observe future changes
         for await (event, session) in await supabase.auth.authStateChanges {
             switch event {
-            case .signedIn, .tokenRefreshed:
-                isAuthenticated = true
-                currentUserId = session?.user.id.uuidString
-                if let uid = session?.user.id.uuidString {
-                    await fetchDefaultConversation(userId: uid)
+            case .initialSession, .signedIn, .tokenRefreshed:
+                guard let session, !session.isExpired else {
+                    isAuthenticated = false
+                    currentUserId = nil
+                    defaultConversationId = nil
+                    isLoading = false
+                    continue
                 }
+                isAuthenticated = true
+                currentUserId = session.user.id.uuidString
+                await fetchDefaultConversation(userId: session.user.id.uuidString)
+                isLoading = false
             case .signedOut:
                 isAuthenticated = false
                 currentUserId = nil
                 defaultConversationId = nil
+                isLoading = false
             default:
+                isLoading = false
                 break
             }
         }

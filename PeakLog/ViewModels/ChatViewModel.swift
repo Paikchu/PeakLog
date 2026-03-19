@@ -71,6 +71,10 @@ final class ChatViewModel: ObservableObject {
                     // If it's a processing placeholder, set isSending = true (show typing)
                     if message.isTyping {
                         self.isSending = true
+                        Task { [weak self] in
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            await self?.loadMessages()
+                        }
                     }
                 }
             },
@@ -94,11 +98,14 @@ final class ChatViewModel: ObservableObject {
 
         inputText = ""
         errorMessage = nil
-        // isSending will be set to true by the Realtime INSERT of the processing placeholder
+        isSending = true
 
         do {
-            _ = try await chatService.sendMessage(text, sessionId: conversationId)
-            // Response arrives via Realtime; no further action here
+            let response = try await chatService.sendMessage(text, sessionId: conversationId)
+            // Refresh immediately so the just-saved user message and assistant placeholder
+            // are visible even if Realtime events arrive late or are missed.
+            try await refreshMessages()
+            await waitForAssistantMessageToComplete(messageId: response.assistantMessageId)
         } catch {
             errorMessage = error.localizedDescription
             inputText = text // restore on failure
@@ -188,6 +195,31 @@ final class ChatViewModel: ObservableObject {
         var all = messageGroups.flatMap(\.messages)
         all.append(contentsOf: newMessages)
         messageGroups = groupByDate(all)
+    }
+
+    private func refreshMessages() async throws {
+        let messages = try await chatService.fetchMessages(sessionId: conversationId)
+        messageGroups = groupByDate(messages)
+        isSending = messages.contains(where: \.isTyping)
+    }
+
+    private func waitForAssistantMessageToComplete(messageId: String) async {
+        for _ in 0..<6 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+            do {
+                try await refreshMessages()
+
+                let allMessages = messageGroups.flatMap(\.messages)
+                if let assistant = allMessages.first(where: { $0.id == messageId }),
+                   assistant.status != .processing {
+                    isSending = false
+                    return
+                }
+            } catch {
+                // Keep polling; the Realtime path may still deliver the update.
+            }
+        }
     }
 
     /// Replace a message by ID (used when Realtime UPDATE fires with completed content)

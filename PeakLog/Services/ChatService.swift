@@ -13,6 +13,12 @@ struct SendMessageResponse: Decodable {
     let assistantMessage: ChatMessage
 }
 
+struct SendMessageServiceResponse {
+    let userMessageId: String
+    let assistantMessageId: String
+    let conversationId: String
+}
+
 struct FetchMessagesResponse: Decodable {
     let messages: [ChatMessage]
 }
@@ -23,7 +29,7 @@ struct FetchMessagesResponse: Decodable {
 /// Implement `LiveChatService` to connect to the real backend.
 protocol ChatServiceProtocol {
     /// Send a text message and receive the AI response with parsed workout record.
-    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageResponse
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse
 
     /// Fetch the full message history for a chat session.
     func fetchMessages(sessionId: String) async throws -> [ChatMessage]
@@ -42,11 +48,16 @@ final class LiveChatService: ChatServiceProtocol {
         self.client = client
     }
 
-    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageResponse {
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
         // TODO: POST /chat/sessions/{sessionId}/messages
         let body = SendMessageRequest(sessionId: sessionId, text: text)
         let req = try client.request(method: "POST", path: "chat/sessions/\(sessionId)/messages", body: body)
-        return try await client.execute(req)
+        let response: SendMessageResponse = try await client.execute(req)
+        return SendMessageServiceResponse(
+            userMessageId: response.userMessage.id,
+            assistantMessageId: response.assistantMessage.id,
+            conversationId: sessionId
+        )
     }
 
     func fetchMessages(sessionId: String) async throws -> [ChatMessage] {
@@ -67,7 +78,7 @@ final class LiveChatService: ChatServiceProtocol {
 // MARK: - Mock Implementation (for previews and development)
 
 final class MockChatService: ChatServiceProtocol {
-    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageResponse {
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
         try await Task.sleep(nanoseconds: 800_000_000) // simulate latency
         let now = Date()
         let userId = UUID().uuidString
@@ -89,7 +100,11 @@ final class MockChatService: ChatServiceProtocol {
         aiMsg.workoutRecord = record
         aiMsg.parseStatus = .completed
 
-        return SendMessageResponse(userMessage: userMsg, assistantMessage: aiMsg)
+        return SendMessageServiceResponse(
+            userMessageId: userMsg.id,
+            assistantMessageId: aiMsg.id,
+            conversationId: sessionId
+        )
     }
 
     func fetchMessages(sessionId: String) async throws -> [ChatMessage] {
