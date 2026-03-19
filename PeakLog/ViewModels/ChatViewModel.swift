@@ -252,20 +252,16 @@ final class ChatViewModel: ObservableObject {
         var groups: [String: [ChatMessage]] = [:]
         var orderedKeys: [String] = []
         let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
+        let absoluteDateFormatter = DateFormatter()
+        absoluteDateFormatter.dateStyle = .medium
+        absoluteDateFormatter.timeStyle = .none
 
         for msg in messages.sorted(by: { $0.createdAt < $1.createdAt }) {
-            let msgDay = calendar.startOfDay(for: msg.createdAt)
-            let label: String
-            if msgDay == today {
-                label = "Today"
-            } else if let yesterday = calendar.date(byAdding: .day, value: -1, to: today), msgDay == yesterday {
-                label = "Yesterday"
-            } else {
-                let fmt = DateFormatter()
-                fmt.dateFormat = "MMM d"
-                label = fmt.string(from: msg.createdAt)
-            }
+            let label = dateSeparatorLabel(
+                for: msg.createdAt,
+                calendar: calendar,
+                absoluteDateFormatter: absoluteDateFormatter
+            )
             if groups[label] == nil {
                 orderedKeys.append(label)
                 groups[label] = []
@@ -276,6 +272,18 @@ final class ChatViewModel: ObservableObject {
         return orderedKeys.map { key in
             MessageGroup(label: key, messages: groups[key]!)
         }
+    }
+
+    private func dateSeparatorLabel(
+        for date: Date,
+        calendar: Calendar,
+        absoluteDateFormatter: DateFormatter
+    ) -> String {
+        if calendar.isDateInToday(date) {
+            return "Today"
+        }
+
+        return absoluteDateFormatter.string(from: date)
     }
 
     private func appendMessages(_ newMessages: [ChatMessage]) {
