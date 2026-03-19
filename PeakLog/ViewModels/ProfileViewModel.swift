@@ -104,4 +104,13 @@ final class ProfileViewModel: ObservableObject {
         }
         return String(format: "%.0fkg", kg)
     }
+
+    var sortedExercisePRs: [ExercisePR] {
+        (profile?.exercisePRs ?? []).sorted {
+            if $0.maxWeight == $1.maxWeight {
+                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            }
+            return $0.maxWeight > $1.maxWeight
+        }
+    }
 }

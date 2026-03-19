@@ -75,9 +75,38 @@ struct WorkoutRecordBlock: Codable, Equatable {
     }
 }
 
+struct PRSummaryItem: Codable, Equatable {
+    let normalizedName: String
+    let displayName: String
+    let previousWeight: Double?
+    let currentWeight: Double
+    let weightUnit: String
+    let isNewRecord: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case normalizedName = "normalized_name"
+        case displayName = "display_name"
+        case previousWeight = "previous_weight"
+        case currentWeight = "current_weight"
+        case weightUnit = "weight_unit"
+        case isNewRecord = "is_new_record"
+    }
+}
+
+struct PRSummaryBlock: Codable, Equatable {
+    let summaryText: String
+    let items: [PRSummaryItem]
+
+    enum CodingKeys: String, CodingKey {
+        case summaryText = "summary_text"
+        case items
+    }
+}
+
 enum ContentBlock: Equatable {
     case text(String)
     case workoutRecord(WorkoutRecordBlock)
+    case prSummary(PRSummaryBlock)
     case unknown
 }
 
@@ -96,6 +125,9 @@ extension ContentBlock: Codable {
         case "workout_record":
             let record = try WorkoutRecordBlock(from: decoder)
             self = .workoutRecord(record)
+        case "pr_summary":
+            let summary = try PRSummaryBlock(from: decoder)
+            self = .prSummary(summary)
         default:
             self = .unknown
         }
@@ -110,6 +142,9 @@ extension ContentBlock: Codable {
         case .workoutRecord(let record):
             try container.encode("workout_record", forKey: .type)
             try record.encode(to: encoder)
+        case .prSummary(let summary):
+            try container.encode("pr_summary", forKey: .type)
+            try summary.encode(to: encoder)
         case .unknown:
             try container.encode("unknown", forKey: .type)
         }

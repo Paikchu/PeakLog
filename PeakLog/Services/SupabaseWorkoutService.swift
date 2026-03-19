@@ -16,7 +16,10 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
 
         let rows: [ExerciseRow] = try await supabase
             .from("exercises")
-            .update(["name": name])
+            .update([
+                "name": AnyJSON(name),
+                "normalized_name": AnyJSON(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            ])
             .eq("id", value: exerciseId)
             .is("deleted_at", value: nil)
             .select("id, name")

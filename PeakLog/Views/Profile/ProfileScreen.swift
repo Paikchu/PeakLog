@@ -23,6 +23,7 @@ struct ProfileScreen: View {
                 VStack(spacing: 24) {
                     avatarSection
                     statsSection
+                    prSection
                     preferencesSection
                     supportSection
                     signOutButton
@@ -44,6 +45,41 @@ struct ProfileScreen: View {
             Button("common.ok", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var prSection: some View {
+        let prs = viewModel.sortedExercisePRs
+        if !prs.isEmpty {
+            SettingsSection(title: "PRs") {
+                ForEach(Array(prs.enumerated()), id: \.element.id) { index, pr in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(pr.displayName)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.textPrimary)
+                            Text(pr.achievedAt, style: .date)
+                                .font(.system(size: 12))
+                                .foregroundColor(.textMuted)
+                        }
+
+                        Spacer()
+
+                        Text("\(formatPRWeight(pr.maxWeight)) \(pr.weightUnit.display)")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color(hex: "#F59E0B"))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+
+                    if index < prs.count - 1 {
+                        Divider()
+                            .background(Color.appSeparator)
+                            .padding(.horizontal, 16)
+                    }
+                }
+            }
         }
     }
 
@@ -235,6 +271,13 @@ struct ProfileScreen: View {
     private func openAppSettings() {
         guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
         openURL(settingsURL)
+    }
+
+    private func formatPRWeight(_ weight: Double) -> String {
+        if weight.rounded() == weight {
+            return String(format: "%.0f", weight)
+        }
+        return String(format: "%.1f", weight)
     }
 }
 

@@ -69,7 +69,23 @@ final class MockProfileService: ProfileServiceProtocol {
             weightUnit: .kg,
             timezone: TimeZone.current.identifier,
             language: .english
-        )
+        ),
+        exercisePRs: [
+            ExercisePR(
+                normalizedName: "deadlift",
+                displayName: "Deadlift",
+                maxWeight: 140,
+                weightUnit: .kg,
+                achievedAt: Date()
+            ),
+            ExercisePR(
+                normalizedName: "bench press",
+                displayName: "Bench Press",
+                maxWeight: 95,
+                weightUnit: .kg,
+                achievedAt: Date().addingTimeInterval(-86400)
+            )
+        ]
     )
 
     func fetchProfile() async throws -> UserProfile {

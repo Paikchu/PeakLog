@@ -8,6 +8,15 @@ struct UserStats: Codable {
     var prCount: Int
 }
 
+struct ExercisePR: Codable, Equatable, Identifiable {
+    var id: String { normalizedName }
+    let normalizedName: String
+    let displayName: String
+    let maxWeight: Double
+    let weightUnit: WeightUnit
+    let achievedAt: Date
+}
+
 // MARK: - User Preferences
 struct UserPreferences: Codable {
     var notificationsEnabled: Bool
@@ -64,4 +73,5 @@ struct UserProfile: Identifiable, Codable {
     var membershipLevel: MembershipLevel
     var stats: UserStats
     var preferences: UserPreferences
+    var exercisePRs: [ExercisePR] = []
 }

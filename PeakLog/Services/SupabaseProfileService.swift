@@ -53,6 +53,22 @@ final class SupabaseProfileService: ProfileServiceProtocol {
             }
         }
 
+        struct ExercisePRRow: Decodable {
+            let normalizedName: String
+            let displayName: String
+            let maxWeight: Double
+            let weightUnit: String
+            let achievedAt: Date
+
+            enum CodingKeys: String, CodingKey {
+                case normalizedName = "normalized_name"
+                case displayName = "display_name"
+                case maxWeight = "max_weight"
+                case weightUnit = "weight_unit"
+                case achievedAt = "achieved_at"
+            }
+        }
+
         async let profileFetch: ProfileRow = supabase
             .from("profiles")
             .select()
@@ -77,7 +93,15 @@ final class SupabaseProfileService: ProfileServiceProtocol {
             .execute()
             .value
 
-        let (profile, stats, prefs) = try await (profileFetch, statsFetch, prefsFetch)
+        async let exercisePRsFetch: [ExercisePRRow] = supabase
+            .from("profile_exercise_prs")
+            .select()
+            .eq("user_id", value: uid)
+            .order("max_weight", ascending: false)
+            .execute()
+            .value
+
+        let (profile, stats, prefs, exercisePRs) = try await (profileFetch, statsFetch, prefsFetch, exercisePRsFetch)
 
         return UserProfile(
             id: profile.id,
@@ -96,7 +120,16 @@ final class SupabaseProfileService: ProfileServiceProtocol {
                 weightUnit: WeightUnit(rawValue: prefs.weightUnit) ?? .kg,
                 timezone: prefs.timezone ?? TimeZone.current.identifier,
                 language: AppLanguage.resolve(prefs.language) ?? .english
-            )
+            ),
+            exercisePRs: exercisePRs.map {
+                ExercisePR(
+                    normalizedName: $0.normalizedName,
+                    displayName: $0.displayName,
+                    maxWeight: $0.maxWeight,
+                    weightUnit: WeightUnit(rawValue: $0.weightUnit) ?? .kg,
+                    achievedAt: $0.achievedAt
+                )
+            }
         )
     }
 

@@ -81,6 +81,9 @@ struct MessageBubbleView: View {
                             }
                         )
 
+                    case .prSummary(let summary):
+                        PRSummaryCard(summary: summary)
+
                     case .unknown:
                         EmptyView()
                     }
