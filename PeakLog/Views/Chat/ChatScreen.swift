@@ -1,10 +1,17 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 struct ChatScreen: View {
     @StateObject private var viewModel: ChatViewModel
     @State private var didRunDebugAutoSend = false
+    @State private var keyboardHeight: CGFloat = 0
     var onShowHistory: (() -> Void)?
     var onShowProfile: (() -> Void)?
+
+    private let keyboardAwareChatScrollAction = KeyboardAwareChatScrollAction()
 
     init(
         conversationId: String,
@@ -95,6 +102,7 @@ struct ChatScreen: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+        .dismissKeyboardOnTap()
     }
 
     // MARK: - Message List
@@ -117,12 +125,71 @@ struct ChatScreen: View {
                 .padding(.top, 8)
                 .padding(.bottom, 16)
             }
+            .dismissKeyboardOnTap()
             .onChange(of: viewModel.messageGroups) { _, _ in
                 withAnimation {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
+            .onReceive(keyboardFrameDidChangePublisher) { notification in
+                let nextKeyboardHeight = keyboardHeight(from: notification)
+                let shouldScroll = keyboardAwareChatScrollAction.shouldScrollToLatestMessage(
+                    previousKeyboardHeight: keyboardHeight,
+                    currentKeyboardHeight: nextKeyboardHeight
+                )
+
+                keyboardHeight = nextKeyboardHeight
+
+                guard shouldScroll else { return }
+
+                withAnimation(keyboardAnimation(from: notification)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            .onReceive(keyboardWillHidePublisher) { _ in
+                keyboardHeight = 0
+            }
         }
+    }
+
+    private var keyboardFrameDidChangePublisher: NotificationCenter.Publisher {
+        #if canImport(UIKit)
+        NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
+        #else
+        NotificationCenter.default.publisher(for: Notification.Name("keyboardWillChangeFrameNotification"))
+        #endif
+    }
+
+    private var keyboardWillHidePublisher: NotificationCenter.Publisher {
+        #if canImport(UIKit)
+        NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+        #else
+        NotificationCenter.default.publisher(for: Notification.Name("keyboardWillHideNotification"))
+        #endif
+    }
+
+    private func keyboardHeight(from notification: Notification) -> CGFloat {
+        #if canImport(UIKit)
+        guard let endFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+            return 0
+        }
+
+        let screenHeight = UIScreen.main.bounds.height
+        return max(0, screenHeight - endFrame.minY)
+        #else
+        _ = notification
+        return 0
+        #endif
+    }
+
+    private func keyboardAnimation(from notification: Notification) -> Animation {
+        #if canImport(UIKit)
+        let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+        return .easeOut(duration: duration)
+        #else
+        _ = notification
+        return .easeOut(duration: 0.25)
+        #endif
     }
 
     // MARK: - Date Section

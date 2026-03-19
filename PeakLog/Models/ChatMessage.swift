@@ -138,6 +138,9 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     /// Parsing status for AI messages
     var parseStatus: ParseStatus?
 
+    /// Tracks optimistic local messages until the server copy is observed.
+    var isLocalOnly: Bool = false
+
     // V1.5 attachment placeholders
     var imageURL: URL?
     var audioURL: URL?
@@ -170,6 +173,7 @@ struct ChatMessage: Identifiable, Codable, Equatable {
         status: MessageStatus? = nil,
         workoutRecord: WorkoutRecord? = nil,
         parseStatus: ParseStatus? = nil,
+        isLocalOnly: Bool = false,
         imageURL: URL? = nil,
         audioURL: URL? = nil
     ) {
@@ -182,6 +186,7 @@ struct ChatMessage: Identifiable, Codable, Equatable {
         self.status = status
         self.workoutRecord = workoutRecord
         self.parseStatus = parseStatus
+        self.isLocalOnly = isLocalOnly
         self.imageURL = imageURL
         self.audioURL = audioURL
     }

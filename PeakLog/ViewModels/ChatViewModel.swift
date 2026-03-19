@@ -17,18 +17,28 @@ final class ChatViewModel: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let chatService: SupabaseChatService
+    private let chatService: ChatServiceProtocol
     private let workoutService: WorkoutServiceProtocol
 
     init(
         conversationId: String,
-        chatService: SupabaseChatService = SupabaseChatService(),
-        workoutService: WorkoutServiceProtocol = SupabaseWorkoutService()
+        chatService: ChatServiceProtocol,
+        workoutService: WorkoutServiceProtocol
     ) {
         self.conversationId = conversationId
         self.chatService = chatService
         self.workoutService = workoutService
     }
+
+    #if !TESTING
+    convenience init(conversationId: String) {
+        self.init(
+            conversationId: conversationId,
+            chatService: SupabaseChatService(),
+            workoutService: SupabaseWorkoutService()
+        )
+    }
+    #endif
 
     // MARK: - Lifecycle
 
@@ -63,10 +73,7 @@ final class ChatViewModel: ObservableObject {
             onInsert: { [weak self] message in
                 guard let self else { return }
                 Task { @MainActor in
-                    // Only add if we don't already have this message
-                    let allMessages = self.messageGroups.flatMap(\.messages)
-                    guard !allMessages.contains(where: { $0.id == message.id }) else { return }
-                    self.appendMessages([message])
+                    self.upsertIncomingMessage(message)
 
                     // If it's a processing placeholder, set isSending = true (show typing)
                     if message.isTyping {
@@ -81,7 +88,7 @@ final class ChatViewModel: ObservableObject {
             onUpdate: { [weak self] updatedMessage in
                 guard let self else { return }
                 Task { @MainActor in
-                    self.replaceMessage(updatedMessage)
+                    self.upsertIncomingMessage(updatedMessage)
                     if updatedMessage.role == .assistant {
                         self.isSending = false
                     }
@@ -96,17 +103,27 @@ final class ChatViewModel: ObservableObject {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
 
+        let optimisticMessageIDs = insertOptimisticMessages(for: text)
         inputText = ""
         errorMessage = nil
         isSending = true
 
         do {
             let response = try await chatService.sendMessage(text, sessionId: conversationId)
+            reconcileOptimisticMessageID(
+                localID: optimisticMessageIDs.userMessageID,
+                serverID: response.userMessageId
+            )
+            reconcileOptimisticMessageID(
+                localID: optimisticMessageIDs.assistantMessageID,
+                serverID: response.assistantMessageId
+            )
             // Refresh immediately so the just-saved user message and assistant placeholder
             // are visible even if Realtime events arrive late or are missed.
             try await refreshMessages()
             await waitForAssistantMessageToComplete(messageId: response.assistantMessageId)
         } catch {
+            removeMessages(withIDs: [optimisticMessageIDs.userMessageID, optimisticMessageIDs.assistantMessageID])
             errorMessage = error.localizedDescription
             inputText = text // restore on failure
             isSending = false
@@ -199,8 +216,9 @@ final class ChatViewModel: ObservableObject {
 
     private func refreshMessages() async throws {
         let messages = try await chatService.fetchMessages(sessionId: conversationId)
-        messageGroups = groupByDate(messages)
-        isSending = messages.contains(where: \.isTyping)
+        let mergedMessages = mergeServerMessagesWithOptimisticLocals(messages)
+        messageGroups = groupByDate(mergedMessages)
+        isSending = mergedMessages.contains(where: \.isTyping)
     }
 
     private func waitForAssistantMessageToComplete(messageId: String) async {
@@ -234,6 +252,130 @@ final class ChatViewModel: ObservableObject {
         }
         // Not found yet (race condition) — append it
         appendMessages([updated])
+    }
+
+    private func upsertIncomingMessage(_ incoming: ChatMessage) {
+        if replaceOptimisticMatch(with: incoming) {
+            return
+        }
+
+        let allMessages = messageGroups.flatMap(\.messages)
+        guard !allMessages.contains(where: { $0.id == incoming.id }) else {
+            replaceMessage(incoming)
+            return
+        }
+
+        appendMessages([incoming])
+    }
+
+    private func insertOptimisticMessages(for text: String) -> (userMessageID: String, assistantMessageID: String) {
+        let requestID = UUID().uuidString
+        let now = Date()
+        let userMessageID = "local-user-\(requestID)"
+        let assistantMessageID = "local-assistant-\(requestID)"
+
+        let optimisticUserMessage = ChatMessage(
+            id: userMessageID,
+            sessionId: conversationId,
+            role: .user,
+            text: text,
+            createdAt: now,
+            status: .created,
+            isLocalOnly: true
+        )
+
+        let optimisticAssistantMessage = ChatMessage(
+            id: assistantMessageID,
+            sessionId: conversationId,
+            role: .assistant,
+            text: "",
+            createdAt: now.addingTimeInterval(0.001),
+            status: .processing,
+            isLocalOnly: true
+        )
+
+        appendMessages([optimisticUserMessage, optimisticAssistantMessage])
+        return (userMessageID, assistantMessageID)
+    }
+
+    private func reconcileOptimisticMessageID(localID: String, serverID: String) {
+        for gi in messageGroups.indices {
+            for mi in messageGroups[gi].messages.indices where messageGroups[gi].messages[mi].id == localID {
+                let existing = messageGroups[gi].messages[mi]
+                messageGroups[gi].messages[mi] = ChatMessage(
+                    id: serverID,
+                    sessionId: existing.sessionId,
+                    role: existing.role,
+                    text: existing.text,
+                    createdAt: existing.createdAt,
+                    contentBlocks: existing.contentBlocks,
+                    status: existing.status,
+                    workoutRecord: existing.workoutRecord,
+                    parseStatus: existing.parseStatus,
+                    isLocalOnly: existing.isLocalOnly,
+                    imageURL: existing.imageURL,
+                    audioURL: existing.audioURL
+                )
+                return
+            }
+        }
+    }
+
+    private func removeMessages(withIDs ids: [String]) {
+        let idSet = Set(ids)
+        let remainingMessages = messageGroups
+            .flatMap(\.messages)
+            .filter { !idSet.contains($0.id) }
+
+        messageGroups = groupByDate(remainingMessages)
+    }
+
+    private func mergeServerMessagesWithOptimisticLocals(_ serverMessages: [ChatMessage]) -> [ChatMessage] {
+        var mergedMessages = serverMessages
+        let optimisticMessages = messageGroups.flatMap(\.messages).filter { $0.isLocalOnly }
+
+        for optimisticMessage in optimisticMessages {
+            let serverMatchIndex = mergedMessages.firstIndex { serverMessage in
+                messagesRepresentSameEvent(serverMessage, optimisticMessage)
+            }
+
+            if let index = serverMatchIndex {
+                mergedMessages[index] = serverMessages[index]
+            } else {
+                mergedMessages.append(optimisticMessage)
+            }
+        }
+
+        return mergedMessages.sorted(by: { $0.createdAt < $1.createdAt })
+    }
+
+    private func replaceOptimisticMatch(with incoming: ChatMessage) -> Bool {
+        for gi in messageGroups.indices {
+            for mi in messageGroups[gi].messages.indices {
+                let existing = messageGroups[gi].messages[mi]
+                guard existing.isLocalOnly, messagesRepresentSameEvent(incoming, existing) else { continue }
+                messageGroups[gi].messages[mi] = incoming
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func messagesRepresentSameEvent(_ lhs: ChatMessage, _ rhs: ChatMessage) -> Bool {
+        if lhs.id == rhs.id {
+            return true
+        }
+
+        guard lhs.role == rhs.role else { return false }
+        guard abs(lhs.createdAt.timeIntervalSince(rhs.createdAt)) <= 10 else { return false }
+
+        switch lhs.role {
+        case .user:
+            return lhs.text == rhs.text && !lhs.text.isEmpty
+        case .assistant:
+            return lhs.status == .processing || rhs.status == .processing
+        }
     }
 
     private func updateExerciseInPlace(messageId: String, exerciseId: String, update: (inout Exercise) -> Void) {

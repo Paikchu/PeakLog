@@ -9,6 +9,10 @@ struct ChatInputBar: View {
 
     @FocusState private var isFocused: Bool
 
+    private var submitAction: ChatInputSubmissionAction {
+        ChatInputSubmissionAction(sendHandler: onSend)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             // Attachment button (V1.5 placeholder)
@@ -23,16 +27,13 @@ struct ChatInputBar: View {
 
             // Pill-shaped input field
             HStack(spacing: 8) {
-                TextField("Tell me your workout...", text: $text, axis: .vertical)
+                TextField("Tell me your workout...", text: $text)
                     .font(.chatBody)
                     .foregroundColor(.textPrimary)
-                    .lineLimit(1...5)
                     .focused($isFocused)
                     .submitLabel(.send)
                     .onSubmit {
-                        if !isSending && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            onSend()
-                        }
+                        submitAction.submit(text: text, isSending: isSending)
                     }
 
                 // Voice button
@@ -46,7 +47,7 @@ struct ChatInputBar: View {
 
                 // Send button
                 Button {
-                    onSend()
+                    submitAction.submit(text: text, isSending: isSending)
                 } label: {
                     ZStack {
                         Circle()
@@ -73,7 +74,7 @@ struct ChatInputBar: View {
         }
         .padding(.horizontal, 14)
         .padding(.top, 10)
-        .padding(.bottom, 0)
+        .padding(.bottom, chatInputBarBottomPadding)
         .background(Color.appBackground)
     }
 

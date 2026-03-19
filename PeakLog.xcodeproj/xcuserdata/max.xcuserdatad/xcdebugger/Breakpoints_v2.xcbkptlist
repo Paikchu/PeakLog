@@ -114,64 +114,6 @@
             endingLineNumber = "163"
             landmarkName = "invokeChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 76b580ec1801496"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
-                  moduleName = "PeakLog.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "163"
-                  endingLineNumber = "163">
-               </Location>
-               <Location
-                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 3e078de40a495890"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(5) suspend resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
-                  moduleName = "PeakLog.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "163"
-                  endingLineNumber = "163">
-               </Location>
-               <Location
-                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 9675d0c6283258e2"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(6) await resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
-                  moduleName = "PeakLog.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "163"
-                  endingLineNumber = "163">
-               </Location>
-               <Location
-                  uuid = "42CBC236-853E-4DCB-A763-BA532BF7CEA2 - 35a3c2bb4c1f9c92"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(7) suspend resume partial function for PeakLog.SupabaseChatService.invokeChatSendMessage(conversationId: Swift.String, text: Swift.String, clientMessageId: Swift.String, refreshAuth: Swift.Bool) async throws -&gt; PeakLog.EdgeSendMessageResponse"
-                  moduleName = "PeakLog.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/max/Developer/IOS/PeakLog/PeakLog/Services/SupabaseChatService.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "163"
-                  endingLineNumber = "163">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy

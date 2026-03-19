@@ -103,6 +103,7 @@ struct AuthView: View {
                 Spacer()
             }
         }
+        .dismissKeyboardOnTap()
     }
 
     // MARK: - Actions

@@ -34,6 +34,16 @@ protocol ChatServiceProtocol {
     /// Fetch the full message history for a chat session.
     func fetchMessages(sessionId: String) async throws -> [ChatMessage]
 
+    /// Subscribe to message inserts and updates for a conversation.
+    func subscribeToMessages(
+        conversationId: String,
+        onInsert: @escaping (ChatMessage) -> Void,
+        onUpdate: @escaping (ChatMessage) -> Void
+    ) async
+
+    /// Tear down any existing realtime subscription.
+    func unsubscribe() async
+
     /// Confirm a pending workout record (low-confidence parse).
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord
 }
@@ -66,6 +76,16 @@ final class LiveChatService: ChatServiceProtocol {
         let res: FetchMessagesResponse = try await client.execute(req)
         return res.messages
     }
+
+    func subscribeToMessages(
+        conversationId: String,
+        onInsert: @escaping (ChatMessage) -> Void,
+        onUpdate: @escaping (ChatMessage) -> Void
+    ) async {
+        _ = (conversationId, onInsert, onUpdate)
+    }
+
+    func unsubscribe() async {}
 
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
         // TODO: PATCH /chat/messages/{messageId}/confirm
@@ -110,6 +130,16 @@ final class MockChatService: ChatServiceProtocol {
     func fetchMessages(sessionId: String) async throws -> [ChatMessage] {
         return MockData.sampleMessages(sessionId: sessionId)
     }
+
+    func subscribeToMessages(
+        conversationId: String,
+        onInsert: @escaping (ChatMessage) -> Void,
+        onUpdate: @escaping (ChatMessage) -> Void
+    ) async {
+        _ = (conversationId, onInsert, onUpdate)
+    }
+
+    func unsubscribe() async {}
 
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
         return workoutRecord

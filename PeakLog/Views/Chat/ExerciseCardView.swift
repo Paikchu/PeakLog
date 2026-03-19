@@ -158,6 +158,7 @@ private struct ValueEditSheet: View {
             .padding(.bottom, 24)
         }
         .background(Color.appCard)
+        .dismissKeyboardOnTap()
         .onAppear { focused = true }
     }
 }
