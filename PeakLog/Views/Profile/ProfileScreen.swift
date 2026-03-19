@@ -1,9 +1,18 @@
 import SwiftUI
 
 struct ProfileScreen: View {
-    @StateObject private var viewModel = ProfileViewModel()
+    @StateObject private var viewModel: ProfileViewModel
     @EnvironmentObject var themeManager: ThemeManager
     var onBack: (() -> Void)?
+    var onSignOut: (() -> Void)?
+
+    init(onBack: (() -> Void)? = nil, onSignOut: (() -> Void)? = nil) {
+        _viewModel = StateObject(
+            wrappedValue: ProfileViewModel(profileService: SupabaseProfileService())
+        )
+        self.onBack = onBack
+        self.onSignOut = onSignOut
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -180,7 +189,10 @@ struct ProfileScreen: View {
     // MARK: - Sign Out
     private var signOutButton: some View {
         Button {
-            Task { await viewModel.signOut() }
+            Task {
+                await viewModel.signOut()
+                onSignOut?()
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.portrait.and.arrow.right")
@@ -205,6 +217,7 @@ struct ProfileScreen: View {
 #Preview("Dark") {
     ProfileScreen()
         .environmentObject(ThemeManager())
+        .environmentObject(AuthStateManager())
 }
 
 #Preview("Light") {

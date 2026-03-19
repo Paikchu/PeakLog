@@ -1,9 +1,21 @@
 import SwiftUI
 
 struct ChatScreen: View {
-    @StateObject private var viewModel = ChatViewModel()
+    @StateObject private var viewModel: ChatViewModel
     var onShowHistory: (() -> Void)?
     var onShowProfile: (() -> Void)?
+
+    init(
+        conversationId: String,
+        onShowHistory: (() -> Void)? = nil,
+        onShowProfile: (() -> Void)? = nil
+    ) {
+        _viewModel = StateObject(
+            wrappedValue: ChatViewModel(conversationId: conversationId)
+        )
+        self.onShowHistory = onShowHistory
+        self.onShowProfile = onShowProfile
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +29,8 @@ struct ChatScreen: View {
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
-        .task { await viewModel.loadMessages() }
+        .task { await viewModel.onAppear() }
+        .onDisappear { Task { await viewModel.onDisappear() } }
         .alert("Error", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
@@ -29,6 +42,7 @@ struct ChatScreen: View {
     }
 
     // MARK: - Header
+
     private var header: some View {
         HStack {
             Button {
@@ -59,11 +73,11 @@ struct ChatScreen: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 0)
         .padding(.bottom, 8)
     }
 
     // MARK: - Message List
+
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -76,7 +90,6 @@ struct ChatScreen: View {
                             dateSection(group: group)
                         }
                     }
-                    // Scroll anchor
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 16)
@@ -92,60 +105,96 @@ struct ChatScreen: View {
     }
 
     // MARK: - Date Section
+
     @ViewBuilder
     private func dateSection(group: MessageGroup) -> some View {
         VStack(spacing: 8) {
-            // Date separator
             HStack {
-                Rectangle()
-                    .fill(Color.appSeparator)
-                    .frame(height: 1)
+                Rectangle().fill(Color.appSeparator).frame(height: 1)
                 Text(group.label)
                     .font(.dateLabel)
                     .foregroundColor(.textMuted)
                     .padding(.horizontal, 8)
                     .fixedSize()
-                Rectangle()
-                    .fill(Color.appSeparator)
-                    .frame(height: 1)
+                Rectangle().fill(Color.appSeparator).frame(height: 1)
             }
             .padding(.vertical, 4)
 
-            // Messages in this group
             ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, _ in
                 let groupIndex = viewModel.messageGroups.firstIndex { $0.id == group.id }!
-                MessageBubbleView(
-                    message: $viewModel.messageGroups[groupIndex].messages[index],
-                    onDeleteExercise: { _, exerciseId in
-                        let msg = group.messages[index]
-                        Task {
-                            await viewModel.deleteExercise(
-                                messageId: msg.id,
-                                workoutRecordId: msg.workoutRecord?.id ?? "",
-                                exerciseId: exerciseId
-                            )
+                let message = viewModel.messageGroups[groupIndex].messages[index]
+
+                if message.isTyping {
+                    // Typing bubble — AI is processing
+                    TypingBubbleView()
+                } else {
+                    MessageBubbleView(
+                        message: $viewModel.messageGroups[groupIndex].messages[index],
+                        onDeleteExercise: { _, exerciseId in
+                            let msg = group.messages[index]
+                            Task {
+                                await viewModel.deleteExercise(
+                                    messageId: msg.id,
+                                    workoutRecordId: msg.workoutRecord?.id ?? "",
+                                    exerciseId: exerciseId
+                                )
+                            }
+                        },
+                        onSetChanged: { _, exerciseId, updatedSet in
+                            let msg = group.messages[index]
+                            Task {
+                                await viewModel.updateSet(
+                                    messageId: msg.id,
+                                    exerciseId: exerciseId,
+                                    setId: updatedSet.id,
+                                    weight: updatedSet.weight,
+                                    weightUnit: updatedSet.weightUnit,
+                                    reps: updatedSet.reps
+                                )
+                            }
                         }
-                    },
-                    onSetChanged: { _, exerciseId, updatedSet in
-                        let msg = group.messages[index]
-                        Task {
-                            await viewModel.updateSet(
-                                messageId: msg.id,
-                                exerciseId: exerciseId,
-                                setId: updatedSet.id,
-                                weight: updatedSet.weight,
-                                weightUnit: updatedSet.weightUnit,
-                                reps: updatedSet.reps
-                            )
-                        }
-                    }
-                )
+                    )
+                }
             }
         }
     }
 }
 
+// MARK: - Typing Bubble View
+// Shown while the AI is processing (message.status == .processing)
+
+struct TypingBubbleView: View {
+    @State private var animating = false
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            HStack(spacing: 5) {
+                ForEach(0..<3) { i in
+                    Circle()
+                        .fill(Color.textMuted)
+                        .frame(width: 7, height: 7)
+                        .offset(y: animating ? -4 : 0)
+                        .animation(
+                            .easeInOut(duration: 0.4)
+                                .repeatForever()
+                                .delay(Double(i) * 0.15),
+                            value: animating
+                        )
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.appCard)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            Spacer()
+        }
+        .onAppear { animating = true }
+    }
+}
+
 #Preview {
-    ChatScreen()
+    // Preview with mock conversation ID — uses MockChatService fallback
+    // In production this comes from authState.defaultConversationId
+    ChatScreen(conversationId: "preview-conversation-id")
         .preferredColorScheme(.dark)
 }

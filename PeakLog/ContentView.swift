@@ -1,25 +1,30 @@
-//
-//  ContentView.swift
-//  PeakLog
-//
-
 import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var authState: AuthStateManager
+
     @State private var showHistory = false
     @State private var showProfile = false
 
     var body: some View {
         ZStack {
-            ChatScreen(
-                onShowHistory: {
-                    withAnimation(.easeInOut(duration: 0.3)) { showHistory = true }
-                },
-                onShowProfile: {
-                    withAnimation(.easeInOut(duration: 0.3)) { showProfile = true }
-                }
-            )
+            if let conversationId = authState.defaultConversationId {
+                ChatScreen(
+                    conversationId: conversationId,
+                    onShowHistory: {
+                        withAnimation(.easeInOut(duration: 0.3)) { showHistory = true }
+                    },
+                    onShowProfile: {
+                        withAnimation(.easeInOut(duration: 0.3)) { showProfile = true }
+                    }
+                )
+            } else {
+                // Waiting for the default conversation to load
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.appBackground.ignoresSafeArea())
+            }
 
             if showHistory {
                 HistoryScreen(onBack: {
@@ -30,9 +35,16 @@ struct ContentView: View {
             }
 
             if showProfile {
-                ProfileScreen(onBack: {
-                    withAnimation(.easeInOut(duration: 0.3)) { showProfile = false }
-                })
+                ProfileScreen(
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.3)) { showProfile = false }
+                    },
+                    onSignOut: {
+                        Task {
+                            try? await authState.signOut()
+                        }
+                    }
+                )
                 .transition(.move(edge: .trailing))
                 .zIndex(2)
             }
@@ -44,4 +56,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(ThemeManager())
+        .environmentObject(AuthStateManager())
 }

@@ -4,31 +4,50 @@ import Combine
 @MainActor
 final class ChatViewModel: ObservableObject {
     // MARK: - Published State
+
     @Published var messageGroups: [MessageGroup] = []
     @Published var inputText: String = ""
     @Published var isSending: Bool = false
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
 
-    // MARK: - Session (one per day / per user)
-    private(set) var sessionId: String = "session-default"
+    // MARK: - Session (conversation ID)
+
+    private(set) var conversationId: String
 
     // MARK: - Dependencies
-    private let chatService: ChatServiceProtocol
+
+    private let chatService: SupabaseChatService
     private let workoutService: WorkoutServiceProtocol
 
-    init(chatService: ChatServiceProtocol = MockChatService(),
-         workoutService: WorkoutServiceProtocol = MockWorkoutService()) {
+    init(
+        conversationId: String,
+        chatService: SupabaseChatService = SupabaseChatService(),
+        workoutService: WorkoutServiceProtocol = SupabaseWorkoutService()
+    ) {
+        self.conversationId = conversationId
         self.chatService = chatService
         self.workoutService = workoutService
     }
 
+    // MARK: - Lifecycle
+
+    func onAppear() async {
+        await loadMessages()
+        await subscribeToRealtime()
+    }
+
+    func onDisappear() async {
+        await chatService.unsubscribe()
+    }
+
     // MARK: - Load History
+
     func loadMessages() async {
         isLoading = true
         errorMessage = nil
         do {
-            let messages = try await chatService.fetchMessages(sessionId: sessionId)
+            let messages = try await chatService.fetchMessages(sessionId: conversationId)
             messageGroups = groupByDate(messages)
         } catch {
             errorMessage = error.localizedDescription
@@ -36,34 +55,69 @@ final class ChatViewModel: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Realtime Subscription
+
+    private func subscribeToRealtime() async {
+        await chatService.subscribeToMessages(
+            conversationId: conversationId,
+            onInsert: { [weak self] message in
+                guard let self else { return }
+                Task { @MainActor in
+                    // Only add if we don't already have this message
+                    let allMessages = self.messageGroups.flatMap(\.messages)
+                    guard !allMessages.contains(where: { $0.id == message.id }) else { return }
+                    self.appendMessages([message])
+
+                    // If it's a processing placeholder, set isSending = true (show typing)
+                    if message.isTyping {
+                        self.isSending = true
+                    }
+                }
+            },
+            onUpdate: { [weak self] updatedMessage in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.replaceMessage(updatedMessage)
+                    if updatedMessage.role == .assistant {
+                        self.isSending = false
+                    }
+                }
+            }
+        )
+    }
+
     // MARK: - Send Message
+
     func sendMessage() async {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSending else { return }
 
         inputText = ""
-        isSending = true
         errorMessage = nil
+        // isSending will be set to true by the Realtime INSERT of the processing placeholder
 
         do {
-            let response = try await chatService.sendMessage(text, sessionId: sessionId)
-            appendMessages([response.userMessage, response.assistantMessage])
+            _ = try await chatService.sendMessage(text, sessionId: conversationId)
+            // Response arrives via Realtime; no further action here
         } catch {
             errorMessage = error.localizedDescription
             inputText = text // restore on failure
+            isSending = false
         }
-
-        isSending = false
     }
 
-    // MARK: - Exercise Editing
+    // MARK: - Exercise Editing (unchanged API, now hits Supabase directly)
 
     func updateExerciseName(messageId: String, workoutRecordId: String, exerciseId: String, newName: String) async {
         updateExerciseInPlace(messageId: messageId, exerciseId: exerciseId) { exercise in
             exercise.name = newName
         }
         do {
-            _ = try await workoutService.updateExerciseName(sessionId: sessionId, exerciseId: exerciseId, name: newName)
+            _ = try await workoutService.updateExerciseName(
+                sessionId: conversationId,
+                exerciseId: exerciseId,
+                name: newName
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -76,7 +130,14 @@ final class ChatViewModel: ObservableObject {
             set.reps = reps
         }
         do {
-            _ = try await workoutService.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId, weight: weight, weightUnit: weightUnit, reps: reps)
+            _ = try await workoutService.updateSet(
+                sessionId: conversationId,
+                exerciseId: exerciseId,
+                setId: setId,
+                weight: weight,
+                weightUnit: weightUnit,
+                reps: reps
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -85,13 +146,13 @@ final class ChatViewModel: ObservableObject {
     func deleteExercise(messageId: String, workoutRecordId: String, exerciseId: String) async {
         removeExerciseInPlace(messageId: messageId, exerciseId: exerciseId)
         do {
-            try await workoutService.deleteExercise(sessionId: sessionId, exerciseId: exerciseId)
+            try await workoutService.deleteExercise(sessionId: conversationId, exerciseId: exerciseId)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Private: Message list helpers
 
     private func groupByDate(_ messages: [ChatMessage]) -> [MessageGroup] {
         var groups: [String: [ChatMessage]] = [:]
@@ -127,6 +188,20 @@ final class ChatViewModel: ObservableObject {
         var all = messageGroups.flatMap(\.messages)
         all.append(contentsOf: newMessages)
         messageGroups = groupByDate(all)
+    }
+
+    /// Replace a message by ID (used when Realtime UPDATE fires with completed content)
+    private func replaceMessage(_ updated: ChatMessage) {
+        for gi in messageGroups.indices {
+            for mi in messageGroups[gi].messages.indices {
+                if messageGroups[gi].messages[mi].id == updated.id {
+                    messageGroups[gi].messages[mi] = updated
+                    return
+                }
+            }
+        }
+        // Not found yet (race condition) — append it
+        appendMessages([updated])
     }
 
     private func updateExerciseInPlace(messageId: String, exerciseId: String, update: (inout Exercise) -> Void) {

@@ -16,7 +16,7 @@ final class HistoryViewModel: ObservableObject {
 
     private let workoutService: WorkoutServiceProtocol
 
-    init(workoutService: WorkoutServiceProtocol = MockWorkoutService()) {
+    init(workoutService: WorkoutServiceProtocol = SupabaseWorkoutService()) {
         self.workoutService = workoutService
     }
 
