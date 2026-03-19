@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreGraphics
 
 @main
 struct ChatViewModelOptimisticSendTestRunner {
@@ -33,7 +34,8 @@ struct ChatViewModelOptimisticSendTestRunner {
         let viewModel = ChatViewModel(
             conversationId: "conversation-1",
             chatService: chatService,
-            workoutService: TestWorkoutService()
+            workoutService: TestWorkoutService(),
+            speechRecognitionService: TestSpeechRecognitionService()
         )
         viewModel.inputText = "Logged 5x5 squat"
 
@@ -74,7 +76,8 @@ struct ChatViewModelOptimisticSendTestRunner {
         let viewModel = ChatViewModel(
             conversationId: "conversation-2",
             chatService: chatService,
-            workoutService: TestWorkoutService()
+            workoutService: TestWorkoutService(),
+            speechRecognitionService: TestSpeechRecognitionService()
         )
         viewModel.inputText = "Bench 3x8"
 
@@ -181,5 +184,15 @@ private struct TestWorkoutService: WorkoutServiceProtocol {
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] {
         _ = date
         return []
+    }
+}
+
+private struct TestSpeechRecognitionService: SpeechRecognitionServicing {
+    func startRecognition(onLevelUpdate: @escaping (CGFloat) -> Void) async throws {
+        _ = onLevelUpdate
+    }
+
+    func stopRecognition() async throws -> String {
+        ""
     }
 }

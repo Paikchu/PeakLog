@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreGraphics
 
 @MainActor
 final class ChatViewModel: ObservableObject {
@@ -10,6 +11,8 @@ final class ChatViewModel: ObservableObject {
     @Published var isSending: Bool = false
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
+    @Published private(set) var voiceInputState: VoiceInputState = .idle
+    @Published private(set) var waveformSamples: [CGFloat] = []
 
     // MARK: - Session (conversation ID)
 
@@ -19,15 +22,20 @@ final class ChatViewModel: ObservableObject {
 
     private let chatService: ChatServiceProtocol
     private let workoutService: WorkoutServiceProtocol
+    private let speechRecognitionService: SpeechRecognitionServicing
+
+    private let waveformSampleLimit = 32
 
     init(
         conversationId: String,
         chatService: ChatServiceProtocol,
-        workoutService: WorkoutServiceProtocol
+        workoutService: WorkoutServiceProtocol,
+        speechRecognitionService: SpeechRecognitionServicing
     ) {
         self.conversationId = conversationId
         self.chatService = chatService
         self.workoutService = workoutService
+        self.speechRecognitionService = speechRecognitionService
     }
 
     #if !TESTING
@@ -35,10 +43,15 @@ final class ChatViewModel: ObservableObject {
         self.init(
             conversationId: conversationId,
             chatService: SupabaseChatService(),
-            workoutService: SupabaseWorkoutService()
+            workoutService: SupabaseWorkoutService(),
+            speechRecognitionService: SpeechRecognitionService()
         )
     }
     #endif
+
+    var isVoiceInteractionEnabled: Bool {
+        voiceInputState != .transcribing
+    }
 
     // MARK: - Lifecycle
 
@@ -101,7 +114,7 @@ final class ChatViewModel: ObservableObject {
 
     func sendMessage() async {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending else { return }
+        guard !text.isEmpty, !isSending, voiceInputState == .idle else { return }
 
         let optimisticMessageIDs = insertOptimisticMessages(for: text)
         inputText = ""
@@ -127,6 +140,63 @@ final class ChatViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             inputText = text // restore on failure
             isSending = false
+        }
+    }
+
+    // MARK: - Voice Input
+
+    func toggleVoiceInput() async {
+        guard !isSending else { return }
+
+        switch voiceInputState {
+        case .idle:
+            await startVoiceRecording()
+        case .recording:
+            await stopVoiceRecordingAndTranscribe()
+        case .transcribing:
+            break
+        }
+    }
+
+    private func startVoiceRecording() async {
+        waveformSamples = []
+        errorMessage = nil
+
+        do {
+            try await speechRecognitionService.startRecognition { [weak self] level in
+                self?.appendWaveformSample(level)
+            }
+            voiceInputState = .recording
+        } catch {
+            handleVoiceFailure(error)
+        }
+    }
+
+    private func stopVoiceRecordingAndTranscribe() async {
+        voiceInputState = .transcribing
+
+        do {
+            let transcript = try await speechRecognitionService.stopRecognition()
+            handleVoiceTranscriptionResult(transcript)
+        } catch {
+            handleVoiceFailure(error)
+        }
+    }
+
+    private func handleVoiceTranscriptionResult(_ text: String) {
+        inputText = text
+        voiceInputState = .idle
+    }
+
+    private func handleVoiceFailure(_ error: Error) {
+        voiceInputState = .idle
+        errorMessage = error.localizedDescription
+    }
+
+    private func appendWaveformSample(_ sample: CGFloat) {
+        waveformSamples.append(sample)
+        if waveformSamples.count > waveformSampleLimit {
+            waveformSamples.removeFirst(waveformSamples.count - waveformSampleLimit)
         }
     }
 

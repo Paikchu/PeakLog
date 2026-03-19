@@ -3,9 +3,11 @@ import SwiftUI
 struct ChatInputBar: View {
     @Binding var text: String
     var isSending: Bool
+    var voiceState: VoiceInputState
+    var waveformSamples: [CGFloat]
     var onSend: () -> Void
     var onAttach: (() -> Void)? = nil
-    var onVoice: (() -> Void)? = nil
+    var onVoiceToggle: (() -> Void)? = nil
 
     @FocusState private var isFocused: Bool
 
@@ -27,27 +29,38 @@ struct ChatInputBar: View {
 
             // Pill-shaped input field
             HStack(spacing: 8) {
-                TextField("Tell me your workout...", text: $text)
-                    .font(.chatBody)
-                    .foregroundColor(.textPrimary)
-                    .focused($isFocused)
-                    .submitLabel(.send)
-                    .onSubmit {
-                        submitAction.submit(text: text, isSending: isSending)
+                Group {
+                    if voiceState == .idle {
+                        TextField("Tell me your workout...", text: $text)
+                            .font(.chatBody)
+                            .foregroundColor(.textPrimary)
+                            .focused($isFocused)
+                            .submitLabel(.send)
+                            .onSubmit {
+                                _ = submitAction.submit(text: text, isSending: canSubmit)
+                            }
+                    } else {
+                        VoiceWaveformView(
+                            samples: waveformSamples,
+                            isTranscribing: voiceState == .transcribing
+                        )
                     }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 // Voice button
                 Button {
-                    onVoice?()
+                    onVoiceToggle?()
                 } label: {
-                    Image(systemName: "mic")
+                    Image(systemName: voiceButtonSymbolName)
                         .font(.system(size: 17))
-                        .foregroundColor(.textMuted)
+                        .foregroundColor(voiceButtonColor)
                 }
+                .disabled(voiceState == .transcribing)
 
                 // Send button
                 Button {
-                    submitAction.submit(text: text, isSending: isSending)
+                    _ = submitAction.submit(text: text, isSending: canSubmit)
                 } label: {
                     ZStack {
                         Circle()
@@ -79,14 +92,46 @@ struct ChatInputBar: View {
     }
 
     private var canSend: Bool {
-        !isSending && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !isSending && voiceState == .idle && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canSubmit: Bool {
+        isSending || voiceState != .idle
+    }
+
+    private var voiceButtonSymbolName: String {
+        switch voiceState {
+        case .idle:
+            return "mic"
+        case .recording:
+            return "stop.fill"
+        case .transcribing:
+            return "waveform"
+        }
+    }
+
+    private var voiceButtonColor: Color {
+        switch voiceState {
+        case .idle:
+            return .textMuted
+        case .recording:
+            return .accentRed
+        case .transcribing:
+            return .textMuted
+        }
     }
 }
 
 #Preview {
     VStack {
         Spacer()
-        ChatInputBar(text: .constant(""), isSending: false, onSend: {})
+        ChatInputBar(
+            text: .constant(""),
+            isSending: false,
+            voiceState: .idle,
+            waveformSamples: [],
+            onSend: {}
+        )
     }
     .background(Color.appBackground)
     .preferredColorScheme(.dark)

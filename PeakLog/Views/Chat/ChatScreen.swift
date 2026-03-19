@@ -31,9 +31,13 @@ struct ChatScreen: View {
             messageList
             ChatInputBar(
                 text: $viewModel.inputText,
-                isSending: viewModel.isSending
+                isSending: viewModel.isSending,
+                voiceState: viewModel.voiceInputState,
+                waveformSamples: viewModel.waveformSamples
             ) {
                 Task { await viewModel.sendMessage() }
+            } onVoiceToggle: {
+                Task { await viewModel.toggleVoiceInput() }
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
