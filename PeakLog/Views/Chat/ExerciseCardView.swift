@@ -14,62 +14,65 @@ private struct SetRowView: View {
     var onCommit: (Double, WeightUnit, Int) -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Set index
-            Text("#\(setIndex)")
+        HStack(spacing: 14) {
+            Text("\(setIndex)")
                 .font(.setIndex)
-                .foregroundColor(.textDarkMuted)
-                .frame(width: 24, alignment: .leading)
+                .foregroundColor(.textSecondary)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(Color.workoutIndexFill))
 
-            // Weight button
             Button {
                 weightText = set.weight.formatted()
                 editingWeight = true
             } label: {
-                HStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(set.weight.formatted())
                         .font(.exerciseValue)
                         .foregroundColor(.accentValue)
                     Text(set.weightUnit.display)
                         .font(.exerciseUnit)
-                        .foregroundColor(.textMuted)
+                        .foregroundColor(.textSecondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.04))
-                .cornerRadius(AppRadius.sm)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.xl)
+                        .fill(Color.workoutPanel)
+                )
             }
             .buttonStyle(.plain)
 
-            // Multiplier
             Text("×")
                 .font(.setIndex)
-                .foregroundColor(.textDarkMuted)
-                .padding(.horizontal, 8)
+                .foregroundColor(Color.accentBorder.opacity(0.55))
 
-            // Reps button
             Button {
                 repsText = "\(set.reps)"
                 editingReps = true
             } label: {
-                HStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(set.reps)")
                         .font(.exerciseValue)
                         .foregroundColor(.accentValue)
                     Text("chat.exercise.reps")
                         .font(.exerciseUnit)
-                        .foregroundColor(.textMuted)
+                        .foregroundColor(.textSecondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.04))
-                .cornerRadius(AppRadius.sm)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.xl)
+                        .fill(Color.workoutPanel)
+                )
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.xxl)
+                .fill(Color.workoutShell)
+        )
         // Edit weight sheet
         .sheet(isPresented: $editingWeight) {
             ValueEditSheet(
@@ -176,7 +179,6 @@ struct ExerciseCardView: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            // Delete panel (revealed on swipe)
             Button {
                 withAnimation(.spring()) { offset = 0 }
                 onDeleteExercise()
@@ -192,16 +194,30 @@ struct ExerciseCardView: View {
                 .frame(width: deleteWidth)
                 .frame(maxHeight: .infinity)
                 .background(Color.accentRed)
-                .cornerRadius(AppRadius.lg, corners: [.topRight, .bottomRight])
+                .cornerRadius(AppRadius.xxl, corners: [.topRight, .bottomRight])
             }
 
-            // Card content
-            VStack(alignment: .leading, spacing: 6) {
-                Text(exercise.name)
-                    .font(.exerciseName)
-                    .foregroundColor(.textPrimary)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: AppRadius.full)
+                        .fill(Color.accentPurple)
+                        .frame(width: 5, height: 22)
 
-                VStack(spacing: 0) {
+                    Text(exercise.name)
+                        .font(.exerciseName)
+                        .foregroundColor(.textPrimary)
+
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.xxl)
+                        .fill(Color.workoutPanel.opacity(0.5))
+                )
+
+                VStack(spacing: 6) {
                     ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, _ in
                         SetRowView(
                             setIndex: index + 1,
@@ -213,27 +229,17 @@ struct ExerciseCardView: View {
                             updated.reps = reps
                             onSetChanged(updated)
                         }
-                        if index < exercise.sets.count - 1 {
-                            Divider().background(Color.appSeparator.opacity(0.6))
-                        }
                     }
                 }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 6)
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.appCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.lg)
-                    .strokeBorder(Color.accentBorder, lineWidth: 2.5)
-                    .mask(
-                        HStack(spacing: 0) {
-                            Rectangle().frame(width: 2.5)
-                            Spacer()
-                        }
-                    )
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.xxl)
+                    .fill(Color.appSurface)
             )
-            .cornerRadius(AppRadius.lg)
+            .cornerRadius(AppRadius.xxl)
             .offset(x: offset)
             .gesture(
                 DragGesture(minimumDistance: 10)

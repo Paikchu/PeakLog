@@ -15,6 +15,18 @@ extension Color {
     static let appSeparator = Color(uiColor: UIColor(dynamicProvider: { tc in
         tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2A2A3A") : UIColor(appHex: "#f3f4f6")
     }))
+    static let workoutShell = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2A2A3A") : UIColor(appHex: "#FCFCFE")
+    }))
+    static let workoutPanel = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2F2F44") : UIColor(appHex: "#F0EDFF")
+    }))
+    static let workoutPanelStrong = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#373753") : UIColor(appHex: "#E6E0FF")
+    }))
+    static let workoutIndexFill = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#3A3958") : UIColor(appHex: "#E8E3FF")
+    }))
 
     // Bubbles
     static let userBubble = Color(hex: "#7C7FBF")
