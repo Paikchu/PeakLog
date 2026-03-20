@@ -23,7 +23,12 @@ struct MultilineChatTextView: UIViewRepresentable {
         textView.tintColor = UIColor(Color.accentPurple)
         textView.isScrollEnabled = false
         textView.showsVerticalScrollIndicator = false
-        textView.textContainerInset = .zero
+        textView.textContainerInset = UIEdgeInsets(
+            top: chatInputBarTextVerticalInset,
+            left: 0,
+            bottom: chatInputBarTextVerticalInset,
+            right: 0
+        )
         textView.textContainer.lineFragmentPadding = 0
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.returnKeyType = .default

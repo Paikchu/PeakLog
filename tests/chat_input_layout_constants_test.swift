@@ -6,6 +6,7 @@ struct ChatInputLayoutConstantsTestRunner {
         chatInputBarBottomPaddingProvidesExtraSpacing()
         chatInputBarSupportsSingleLineMinimumHeight()
         chatInputBarExpandsUpToFiveVisibleLines()
+        chatInputBarUsesSymmetricVerticalTextInsets()
         print("chat_input_layout_constants_test passed")
     }
 
@@ -29,6 +30,13 @@ struct ChatInputLayoutConstantsTestRunner {
         precondition(
             chatInputBarMaximumVisibleLineCount > chatInputBarMinimumVisibleLineCount,
             "Expected chat input maximum visible lines to exceed its minimum visible lines"
+        )
+    }
+
+    private static func chatInputBarUsesSymmetricVerticalTextInsets() {
+        precondition(
+            chatInputBarTextVerticalInset > 0,
+            "Expected chat input text vertical inset to remain positive for centered text layout"
         )
     }
 }

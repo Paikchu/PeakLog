@@ -33,7 +33,7 @@ struct ChatInputBar: View {
             .padding(.leading, 4)
 
             // Multiline input field
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Group {
                     if voiceState == .idle {
                         ZStack(alignment: .topLeading) {
@@ -41,7 +41,7 @@ struct ChatInputBar: View {
                                 Text(String(localized: "chat.input.placeholder"))
                                     .font(.chatBody)
                                     .foregroundColor(.textMuted)
-                                    .padding(.top, 1)
+                                    .padding(.top, chatInputBarTextVerticalInset)
                             }
 
                             multilineInput
@@ -151,6 +151,7 @@ struct ChatInputBar: View {
         #if canImport(UIKit)
         UIFont.systemFont(ofSize: 14.5, weight: .regular).lineHeight
             * CGFloat(chatInputBarMinimumVisibleLineCount)
+            + chatInputBarTextVerticalInset * 2
         #else
         20
         #endif
