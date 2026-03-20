@@ -113,7 +113,7 @@ struct ChatScreen: View {
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 16) {
+                LazyVStack(spacing: 18) {
                     if viewModel.isLoading {
                         ProgressView()
                             .padding(.top, 40)
@@ -199,7 +199,7 @@ struct ChatScreen: View {
 
     @ViewBuilder
     private func dateSection(group: MessageGroup) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             HStack {
                 Rectangle().fill(Color.appSeparator).frame(height: 1)
                 Text(group.label)
