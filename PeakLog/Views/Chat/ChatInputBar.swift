@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 struct ChatInputBar: View {
     @Binding var text: String
     var isSending: Bool
@@ -9,7 +13,8 @@ struct ChatInputBar: View {
     var onAttach: (() -> Void)? = nil
     var onVoiceToggle: (() -> Void)? = nil
 
-    @FocusState private var isFocused: Bool
+    @State private var isFocused: Bool = false
+    @State private var textViewHeight: CGFloat = 0
 
     private var submitAction: ChatInputSubmissionAction {
         ChatInputSubmissionAction(sendHandler: onSend)
@@ -27,18 +32,21 @@ struct ChatInputBar: View {
             }
             .padding(.leading, 4)
 
-            // Pill-shaped input field
-            HStack(spacing: 8) {
+            // Multiline input field
+            HStack(alignment: .bottom, spacing: 8) {
                 Group {
                     if voiceState == .idle {
-                        TextField(String(localized: "chat.input.placeholder"), text: $text)
-                            .font(.chatBody)
-                            .foregroundColor(.textPrimary)
-                            .focused($isFocused)
-                            .submitLabel(.send)
-                            .onSubmit {
-                                _ = submitAction.submit(text: text, isSending: canSubmit)
+                        ZStack(alignment: .topLeading) {
+                            if text.isEmpty {
+                                Text(String(localized: "chat.input.placeholder"))
+                                    .font(.chatBody)
+                                    .foregroundColor(.textMuted)
+                                    .padding(.top, 1)
                             }
+
+                            multilineInput
+                                .frame(height: max(textViewHeight, minimumTextViewHeight))
+                        }
                     } else {
                         VoiceWaveformView(
                             samples: waveformSamples,
@@ -77,11 +85,13 @@ struct ChatInputBar: View {
                 .disabled(!canSend)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, chatInputBarTextVerticalPadding)
             .background(Color.appSurface)
-            .clipShape(Capsule())
+            .clipShape(
+                RoundedRectangle(cornerRadius: chatInputBarTextCornerRadius, style: .continuous)
+            )
             .overlay(
-                Capsule()
+                RoundedRectangle(cornerRadius: chatInputBarTextCornerRadius, style: .continuous)
                     .strokeBorder(Color.appSeparator, lineWidth: 0.8)
             )
         }
@@ -119,6 +129,31 @@ struct ChatInputBar: View {
         case .transcribing:
             return .textMuted
         }
+    }
+
+    @ViewBuilder
+    private var multilineInput: some View {
+        #if canImport(UIKit)
+        MultilineChatTextView(
+            text: $text,
+            calculatedHeight: $textViewHeight,
+            isFocused: $isFocused,
+            placeholder: String(localized: "chat.input.placeholder")
+        )
+        #else
+        Text(String(localized: "chat.input.placeholder"))
+            .font(.chatBody)
+            .foregroundColor(.textPrimary)
+        #endif
+    }
+
+    private var minimumTextViewHeight: CGFloat {
+        #if canImport(UIKit)
+        UIFont.systemFont(ofSize: 14.5, weight: .regular).lineHeight
+            * CGFloat(chatInputBarMinimumVisibleLineCount)
+        #else
+        20
+        #endif
     }
 }
 
