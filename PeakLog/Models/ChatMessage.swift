@@ -182,7 +182,10 @@ struct ChatMessage: Identifiable, Codable, Equatable {
 
     /// Convenience: true when this is a processing placeholder (typing bubble)
     var isTyping: Bool {
-        role == .assistant && status == .processing && contentBlocks == nil
+        role == .assistant &&
+        status == .processing &&
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        contentBlocks == nil
     }
 
     // MARK: Codable mapping from Supabase column names

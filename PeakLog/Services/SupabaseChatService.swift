@@ -104,7 +104,7 @@ final class SupabaseChatService: ChatServiceProtocol {
 
     /// Subscribe to all INSERT and UPDATE events on messages for a given conversation.
     /// `onInsert` fires with the new typing-bubble placeholder.
-    /// `onUpdate` fires with the completed message (content_blocks populated).
+    /// `onUpdate` fires with processing/completed/failed assistant updates.
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
@@ -131,8 +131,7 @@ final class SupabaseChatService: ChatServiceProtocol {
             filter: "conversation_id=eq.\(conversationId)"
         ) { payload in
             guard let row = Self.decodeMessageRow(from: payload.record) else { return }
-            // Only surface completed assistant messages
-            if row.role == "assistant" && (row.status == "completed" || row.status == "failed") {
+            if row.role == "assistant" && (row.status == "processing" || row.status == "completed" || row.status == "failed") {
                 onUpdate(row.toChatMessage())
             }
         }

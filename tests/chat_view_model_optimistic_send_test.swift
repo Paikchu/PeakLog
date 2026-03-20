@@ -6,6 +6,7 @@ import CoreGraphics
 struct ChatViewModelOptimisticSendTestRunner {
     static func main() async {
         await sentMessageAppearsImmediatelyBeforeNetworkReturns()
+        await processingAssistantUpdateReplacesOptimisticPlaceholder()
         await failedSendRestoresInputAndRemovesOptimisticMessages()
         print("chat_view_model_optimistic_send_test passed")
     }
@@ -88,6 +89,69 @@ struct ChatViewModelOptimisticSendTestRunner {
         precondition(viewModel.inputText == "Bench 3x8", "Expected input text to restore after a failed send")
         precondition(viewModel.isSending == false, "Expected sending state to reset after failure")
     }
+
+    @MainActor
+    private static func processingAssistantUpdateReplacesOptimisticPlaceholder() async {
+        let chatService = ControlledChatService()
+
+        let viewModel = ChatViewModel(
+            conversationId: "conversation-3",
+            chatService: chatService,
+            workoutService: TestWorkoutService(),
+            speechRecognitionService: TestSpeechRecognitionService()
+        )
+
+        await viewModel.onAppear()
+        viewModel.inputText = "Logged deadlift"
+
+        let sendTask = Task {
+            await viewModel.sendMessage()
+        }
+
+        await chatService.waitForSendToStart()
+        await Task.yield()
+
+        await chatService.resumeSend(
+            with: .init(
+                userMessageId: "server-user-3",
+                assistantMessageId: "server-assistant-3",
+                conversationId: "conversation-3"
+            )
+        )
+
+        await chatService.emitUpdate(
+            ChatMessage(
+                id: "server-assistant-3",
+                sessionId: "conversation-3",
+                role: .assistant,
+                text: "Streaming partial reply",
+                createdAt: Date(timeIntervalSince1970: 200),
+                status: .processing
+            )
+        )
+        await Task.yield()
+
+        let messages = viewModel.messageGroups.flatMap(\.messages)
+        let assistant = messages.first { $0.id == "server-assistant-3" }
+        precondition(assistant?.text == "Streaming partial reply", "Expected processing update text to replace optimistic placeholder")
+        precondition(assistant?.isTyping == false, "Expected processing assistant with text to stop rendering as typing-only")
+        precondition(viewModel.isSending == true, "Expected sending state to remain true while assistant is processing")
+
+        await chatService.emitUpdate(
+            ChatMessage(
+                id: "server-assistant-3",
+                sessionId: "conversation-3",
+                role: .assistant,
+                text: "Streaming partial reply",
+                createdAt: Date(timeIntervalSince1970: 201),
+                contentBlocks: [.text("Streaming partial reply")],
+                status: .completed
+            )
+        )
+
+        await sendTask.value
+        precondition(viewModel.isSending == false, "Expected sending state to stop after assistant completion")
+    }
 }
 
 private enum TestError: Error {
@@ -101,6 +165,8 @@ private actor ControlledChatService: ChatServiceProtocol {
     private var sendStarted = false
     private var sendContinuation: CheckedContinuation<SendMessageServiceResponse, Error>?
     private var sendStartedContinuation: CheckedContinuation<Void, Never>?
+    private var onInsert: ((ChatMessage) -> Void)?
+    private var onUpdate: ((ChatMessage) -> Void)?
 
     func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
         _ = (text, sessionId)
@@ -128,7 +194,9 @@ private actor ControlledChatService: ChatServiceProtocol {
         onInsert: @escaping (ChatMessage) -> Void,
         onUpdate: @escaping (ChatMessage) -> Void
     ) async {
-        _ = (conversationId, onInsert, onUpdate)
+        _ = conversationId
+        self.onInsert = onInsert
+        self.onUpdate = onUpdate
     }
 
     func unsubscribe() async {}
@@ -159,6 +227,14 @@ private actor ControlledChatService: ChatServiceProtocol {
 
     func setSendError(_ error: Error?) {
         sendError = error
+    }
+
+    func emitInsert(_ message: ChatMessage) {
+        onInsert?(message)
+    }
+
+    func emitUpdate(_ message: ChatMessage) {
+        onUpdate?(message)
     }
 }
 

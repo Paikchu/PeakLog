@@ -4,6 +4,7 @@ import Foundation
 struct ChatMessagePRSummaryTestRunner {
     static func main() throws {
         try decodesPRSummaryBlock()
+        processingAssistantWithTextIsNotTypingOnly()
         sortedProfilePRsPreferHeavierWeights()
         print("chat_message_pr_summary_test passed")
     }
@@ -51,6 +52,29 @@ struct ChatMessagePRSummaryTestRunner {
 
         precondition(summary.items.count == 1, "Expected one PR item")
         precondition(summary.items[0].currentWeight == 85, "Expected current weight to decode")
+    }
+
+    private static func processingAssistantWithTextIsNotTypingOnly() {
+        let processingTextMessage = ChatMessage(
+            id: "message-2",
+            sessionId: "conversation-1",
+            role: .assistant,
+            text: "Streaming partial reply",
+            createdAt: Date(),
+            status: .processing
+        )
+
+        let typingOnlyMessage = ChatMessage(
+            id: "message-3",
+            sessionId: "conversation-1",
+            role: .assistant,
+            text: "",
+            createdAt: Date(),
+            status: .processing
+        )
+
+        precondition(processingTextMessage.isTyping == false, "Expected processing assistant with visible text to render as content")
+        precondition(typingOnlyMessage.isTyping, "Expected empty processing assistant to stay in typing state")
     }
 
     @MainActor

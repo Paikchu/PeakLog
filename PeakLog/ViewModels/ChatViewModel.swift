@@ -87,24 +87,14 @@ final class ChatViewModel: ObservableObject {
                 guard let self else { return }
                 Task { @MainActor in
                     self.upsertIncomingMessage(message)
-
-                    // If it's a processing placeholder, set isSending = true (show typing)
-                    if message.isTyping {
-                        self.isSending = true
-                        Task { [weak self] in
-                            try? await Task.sleep(nanoseconds: 2_000_000_000)
-                            await self?.loadMessages()
-                        }
-                    }
+                    self.updateSendingState()
                 }
             },
             onUpdate: { [weak self] updatedMessage in
                 guard let self else { return }
                 Task { @MainActor in
                     self.upsertIncomingMessage(updatedMessage)
-                    if updatedMessage.role == .assistant {
-                        self.isSending = false
-                    }
+                    self.updateSendingState()
                 }
             }
         )
@@ -296,7 +286,7 @@ final class ChatViewModel: ObservableObject {
         let messages = try await chatService.fetchMessages(sessionId: conversationId)
         let mergedMessages = mergeServerMessagesWithOptimisticLocals(messages)
         messageGroups = groupByDate(mergedMessages)
-        isSending = mergedMessages.contains(where: \.isTyping)
+        updateSendingState()
     }
 
     private func waitForAssistantMessageToComplete(messageId: String) async {
@@ -309,7 +299,7 @@ final class ChatViewModel: ObservableObject {
                 let allMessages = messageGroups.flatMap(\.messages)
                 if let assistant = allMessages.first(where: { $0.id == messageId }),
                    assistant.status != .processing {
-                    isSending = false
+                    updateSendingState()
                     return
                 }
             } catch {
@@ -406,6 +396,14 @@ final class ChatViewModel: ObservableObject {
             .filter { !idSet.contains($0.id) }
 
         messageGroups = groupByDate(remainingMessages)
+        updateSendingState()
+    }
+
+    private func updateSendingState() {
+        let allMessages = messageGroups.flatMap(\.messages)
+        isSending = allMessages.contains {
+            $0.role == .assistant && $0.status == .processing
+        }
     }
 
     private func mergeServerMessagesWithOptimisticLocals(_ serverMessages: [ChatMessage]) -> [ChatMessage] {
