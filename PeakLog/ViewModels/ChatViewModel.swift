@@ -12,7 +12,6 @@ final class ChatViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published private(set) var voiceInputState: VoiceInputState = .idle
-    @Published private(set) var waveformSamples: [CGFloat] = []
 
     // MARK: - Session (conversation ID)
 
@@ -24,7 +23,7 @@ final class ChatViewModel: ObservableObject {
     private let workoutService: WorkoutServiceProtocol
     private let speechRecognitionService: SpeechRecognitionServicing
 
-    private let waveformSampleLimit = 32
+    private var inputTextBeforeVoiceRecording = ""
 
     init(
         conversationId: String,
@@ -149,13 +148,18 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func startVoiceRecording() async {
-        waveformSamples = []
         errorMessage = nil
+        inputTextBeforeVoiceRecording = inputText
 
         do {
-            try await speechRecognitionService.startRecognition { [weak self] level in
-                self?.appendWaveformSample(level)
-            }
+            try await speechRecognitionService.startRecognition(
+                onLevelUpdate: { _ in },
+                onTranscriptUpdate: { [weak self] transcript in
+                    Task { @MainActor in
+                        self?.inputText = transcript
+                    }
+                }
+            )
             voiceInputState = .recording
         } catch {
             handleVoiceFailure(error)
@@ -175,19 +179,15 @@ final class ChatViewModel: ObservableObject {
 
     private func handleVoiceTranscriptionResult(_ text: String) {
         inputText = text
+        inputTextBeforeVoiceRecording = ""
         voiceInputState = .idle
     }
 
     private func handleVoiceFailure(_ error: Error) {
+        inputText = inputTextBeforeVoiceRecording
+        inputTextBeforeVoiceRecording = ""
         voiceInputState = .idle
         errorMessage = error.localizedDescription
-    }
-
-    private func appendWaveformSample(_ sample: CGFloat) {
-        waveformSamples.append(sample)
-        if waveformSamples.count > waveformSampleLimit {
-            waveformSamples.removeFirst(waveformSamples.count - waveformSampleLimit)
-        }
     }
 
     // MARK: - Exercise Editing (unchanged API, now hits Supabase directly)

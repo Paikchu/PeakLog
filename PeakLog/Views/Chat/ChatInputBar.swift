@@ -8,7 +8,6 @@ struct ChatInputBar: View {
     @Binding var text: String
     var isSending: Bool
     var voiceState: VoiceInputState
-    var waveformSamples: [CGFloat]
     var onSend: () -> Void
     var onAttach: (() -> Void)? = nil
     var onVoiceToggle: (() -> Void)? = nil
@@ -35,23 +34,16 @@ struct ChatInputBar: View {
             // Multiline input field
             HStack(alignment: .center, spacing: 8) {
                 Group {
-                    if voiceState == .idle {
-                        ZStack(alignment: .topLeading) {
-                            if text.isEmpty {
-                                Text(String(localized: "chat.input.placeholder"))
-                                    .font(.chatBody)
-                                    .foregroundColor(.textMuted)
-                                    .padding(.top, chatInputBarTextVerticalInset)
-                            }
-
-                            multilineInput
-                                .frame(height: max(textViewHeight, minimumTextViewHeight))
+                    ZStack(alignment: .topLeading) {
+                        if text.isEmpty {
+                            Text(String(localized: "chat.input.placeholder"))
+                                .font(.chatBody)
+                                .foregroundColor(.textMuted)
+                                .padding(.top, chatInputBarTextVerticalInset)
                         }
-                    } else {
-                        VoiceWaveformView(
-                            samples: waveformSamples,
-                            isTranscribing: voiceState == .transcribing
-                        )
+
+                        multilineInput
+                            .frame(height: max(textViewHeight, minimumTextViewHeight))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -114,9 +106,9 @@ struct ChatInputBar: View {
         case .idle:
             return "mic"
         case .recording:
-            return "stop.fill"
+            return "mic.fill"
         case .transcribing:
-            return "waveform"
+            return "mic.fill"
         }
     }
 
@@ -125,9 +117,9 @@ struct ChatInputBar: View {
         case .idle:
             return .textMuted
         case .recording:
-            return .accentRed
+            return .green
         case .transcribing:
-            return .textMuted
+            return .green
         }
     }
 
@@ -165,7 +157,6 @@ struct ChatInputBar: View {
             text: .constant(""),
             isSending: false,
             voiceState: .idle,
-            waveformSamples: [],
             onSend: {}
         )
     }

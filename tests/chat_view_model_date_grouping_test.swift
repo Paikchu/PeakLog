@@ -180,8 +180,12 @@ struct TestWorkoutService: WorkoutServiceProtocol {
 }
 
 struct TestSpeechRecognitionService: SpeechRecognitionServicing {
-    func startRecognition(onLevelUpdate: @escaping (CGFloat) -> Void) async throws {
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws {
         _ = onLevelUpdate
+        _ = onTranscriptUpdate
     }
 
     func stopRecognition() async throws -> String {
@@ -196,7 +200,10 @@ enum VoiceInputState: Equatable {
 }
 
 protocol SpeechRecognitionServicing {
-    func startRecognition(onLevelUpdate: @escaping (CGFloat) -> Void) async throws
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws
     func stopRecognition() async throws -> String
 }
 

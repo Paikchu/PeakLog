@@ -6,6 +6,7 @@ import CoreGraphics
 struct ChatViewModelVoiceInputTestRunner {
     static func main() async {
         await toggleVoiceInputStartsRecordingWhenIdle()
+        await liveTranscriptionUpdatesTheInputWhileRecording()
         await toggleVoiceInputStopsRecordingAndRestoresIdleAfterTranscription()
         await failedTranscriptionRestoresIdleAndPreservesExistingInput()
         await voiceInputDoesNotStartWhileSending()
@@ -25,8 +26,25 @@ struct ChatViewModelVoiceInputTestRunner {
         await viewModel.toggleVoiceInput()
 
         precondition(viewModel.voiceInputState == .recording, "Expected voice input to enter recording state")
-        precondition(viewModel.waveformSamples.isEmpty, "Expected waveform samples to start empty")
         precondition(viewModel.isVoiceInteractionEnabled, "Expected voice interaction to remain enabled while recording")
+    }
+
+    @MainActor
+    private static func liveTranscriptionUpdatesTheInputWhileRecording() async {
+        let speechService = ControlledSpeechRecognitionService()
+        let viewModel = ChatViewModel(
+            conversationId: "conversation-voice-live",
+            chatService: IdleChatService(),
+            workoutService: TestWorkoutService(),
+            speechRecognitionService: speechService
+        )
+
+        await viewModel.toggleVoiceInput()
+        await speechService.emitTranscript("记录")
+        precondition(viewModel.inputText == "记录", "Expected partial speech recognition to populate the input while recording")
+
+        await speechService.emitTranscript("记录今天的训练")
+        precondition(viewModel.inputText == "记录今天的训练", "Expected later partial speech recognition to replace the draft in real time")
     }
 
     @MainActor
@@ -46,9 +64,10 @@ struct ChatViewModelVoiceInputTestRunner {
             await viewModel.toggleVoiceInput()
         }
 
+        await speechService.emitTranscript("Log bench press 3 by 8")
         await speechService.waitForStop()
         precondition(viewModel.voiceInputState == .transcribing, "Expected second toggle to switch into transcribing state")
-        precondition(!viewModel.waveformSamples.isEmpty, "Expected waveform data to be retained while transcribing")
+        precondition(viewModel.inputText == "Log bench press 3 by 8", "Expected partial speech recognition to already be visible before final transcription finishes")
 
         await speechService.finish(with: "Log bench press 3 by 8")
         await stopTask.value
@@ -70,6 +89,7 @@ struct ChatViewModelVoiceInputTestRunner {
         viewModel.inputText = "Existing draft"
 
         await viewModel.toggleVoiceInput()
+        await speechService.emitTranscript("replace this draft")
         let stopTask = Task {
             await viewModel.toggleVoiceInput()
         }
@@ -140,12 +160,17 @@ private actor ControlledSpeechRecognitionService: SpeechRecognitionServicing {
     private(set) var stopCount = 0
 
     private var onLevel: ((CGFloat) -> Void)?
+    private var onTranscript: ((String) -> Void)?
     private var stopContinuation: CheckedContinuation<Void, Never>?
     private var resultContinuation: CheckedContinuation<String, Error>?
 
-    func startRecognition(onLevelUpdate: @escaping (CGFloat) -> Void) async throws {
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws {
         startCount += 1
         onLevel = onLevelUpdate
+        onTranscript = onTranscriptUpdate
     }
 
     func stopRecognition() async throws -> String {
@@ -160,6 +185,10 @@ private actor ControlledSpeechRecognitionService: SpeechRecognitionServicing {
 
     func emitLevel(_ level: CGFloat) {
         onLevel?(level)
+    }
+
+    func emitTranscript(_ text: String) {
+        onTranscript?(text)
     }
 
     func waitForStop() async {

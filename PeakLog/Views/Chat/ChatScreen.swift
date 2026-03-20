@@ -32,8 +32,7 @@ struct ChatScreen: View {
             ChatInputBar(
                 text: $viewModel.inputText,
                 isSending: viewModel.isSending,
-                voiceState: viewModel.voiceInputState,
-                waveformSamples: viewModel.waveformSamples
+                voiceState: viewModel.voiceInputState
             ) {
                 Task { await viewModel.sendMessage() }
             } onVoiceToggle: {

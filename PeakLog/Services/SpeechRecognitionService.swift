@@ -13,7 +13,10 @@ enum VoiceInputState: Equatable {
 }
 
 protocol SpeechRecognitionServicing {
-    func startRecognition(onLevelUpdate: @escaping (CGFloat) -> Void) async throws
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws
     func stopRecognition() async throws -> String
 }
 
@@ -51,8 +54,12 @@ final class SpeechRecognitionService: SpeechRecognitionServicing {
     private var latestTranscript = ""
     private var stopRequested = false
     private var stopContinuation: CheckedContinuation<String, Error>?
+    private var onTranscriptUpdate: ((String) -> Void)?
 
-    func startRecognition(onLevelUpdate: @escaping (CGFloat) -> Void) async throws {
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws {
         try await requestSpeechAuthorization()
         try await requestMicrophonePermission()
 
@@ -62,6 +69,7 @@ final class SpeechRecognitionService: SpeechRecognitionServicing {
         }
 
         resetState()
+        self.onTranscriptUpdate = onTranscriptUpdate
 
         speechRecognizer = recognizer
 
@@ -119,6 +127,7 @@ final class SpeechRecognitionService: SpeechRecognitionServicing {
         if let transcript = result?.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines),
            !transcript.isEmpty {
             latestTranscript = transcript
+            onTranscriptUpdate?(transcript)
         }
 
         if let error {
@@ -162,6 +171,7 @@ final class SpeechRecognitionService: SpeechRecognitionServicing {
         recognitionTask = nil
         recognitionRequest = nil
         speechRecognizer = nil
+        onTranscriptUpdate = nil
         deactivateAudioSession()
         resetState()
     }
