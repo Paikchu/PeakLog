@@ -97,8 +97,7 @@ final class LiveWorkoutService: WorkoutServiceProtocol {
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] {
         // TODO: GET /workout/sessions?date={ISO8601 date}
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate]
+        let formatter = WorkoutDateFormatter()
         let req = try client.request(path: "workout/sessions", queryItems: [
             URLQueryItem(name: "date", value: formatter.string(from: date))
         ])

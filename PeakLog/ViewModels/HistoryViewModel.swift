@@ -25,14 +25,13 @@ final class HistoryViewModel: ObservableObject {
         let cal = Calendar.current
         let year = cal.component(.year, from: displayedMonth)
         let month = cal.component(.month, from: displayedMonth)
+        let workoutDateFormatter = WorkoutDateFormatter()
 
         isLoadingCalendar = true
         errorMessage = nil
         do {
             let dates = try await workoutService.activeDaysInMonth(year: year, month: month)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate]
-            activeDates = Set(dates.map { formatter.string(from: $0) })
+            activeDates = Set(dates.map { workoutDateFormatter.string(from: $0) })
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -118,9 +117,8 @@ final class HistoryViewModel: ObservableObject {
 
     // MARK: - Helpers
     func hasWorkout(on date: Date) -> Bool {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate]
-        return activeDates.contains(formatter.string(from: date))
+        let workoutDateFormatter = WorkoutDateFormatter()
+        return activeDates.contains(workoutDateFormatter.string(from: date))
     }
 
     var displayedMonthTitle: String {

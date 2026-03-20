@@ -165,14 +165,12 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
     // MARK: - History queries
 
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] {
-        let calendar = Calendar(identifier: .gregorian)
+        let workoutDateFormatter = WorkoutDateFormatter()
+        let calendar = workoutDateFormatter.calendar
         var components = DateComponents(year: year, month: month, day: 1)
         guard let start = calendar.date(from: components) else { return [] }
         components.month = month + 1
         guard let end = calendar.date(from: components) else { return [] }
-
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withFullDate]
 
         struct DateRow: Decodable {
             let workoutDate: String
@@ -182,20 +180,19 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
         let rows: [DateRow] = try await supabase
             .from("workout_sessions")
             .select("workout_date")
-            .gte("workout_date", value: fmt.string(from: start))
-            .lt("workout_date", value: fmt.string(from: end))
+            .gte("workout_date", value: workoutDateFormatter.string(from: start))
+            .lt("workout_date", value: workoutDateFormatter.string(from: end))
             .is("deleted_at", value: nil)
             .execute()
             .value
 
         let uniqueDates = Set(rows.map(\.workoutDate))
-        return uniqueDates.compactMap { fmt.date(from: $0) }
+        return uniqueDates.compactMap { workoutDateFormatter.date(from: $0) }
     }
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withFullDate]
-        let dateStr = fmt.string(from: date)
+        let workoutDateFormatter = WorkoutDateFormatter()
+        let dateStr = workoutDateFormatter.string(from: date)
 
         struct SessionRow: Decodable {
             let id: String
@@ -254,7 +251,6 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             .execute()
             .value
 
-        let dateDecoder = ISO8601DateFormatter()
         return rows.map { row in
             let exercises = (row.exercises ?? []).map { ex in
                 Exercise(
@@ -275,7 +271,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             return WorkoutSession(
                 id: row.id,
                 userId: row.userId,
-                date: dateDecoder.date(from: row.workoutDate) ?? date,
+                date: workoutDateFormatter.date(from: row.workoutDate) ?? workoutDateFormatter.startOfDay(for: date),
                 durationMinutes: row.durationSeconds.map { $0 / 60 },
                 label: row.title,
                 exercises: exercises,
