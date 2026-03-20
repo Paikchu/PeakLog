@@ -188,6 +188,17 @@ struct ChatMessage: Identifiable, Codable, Equatable {
         contentBlocks == nil
     }
 
+    var renderableContentBlocks: [ContentBlock] {
+        (contentBlocks ?? []).filter { block in
+            switch block {
+            case .prSummary(let summary):
+                return !summary.items.isEmpty
+            default:
+                return true
+            }
+        }
+    }
+
     // MARK: Codable mapping from Supabase column names
 
     enum CodingKeys: String, CodingKey {

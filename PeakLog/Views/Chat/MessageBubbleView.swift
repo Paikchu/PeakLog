@@ -32,8 +32,10 @@ struct MessageBubbleView: View {
 
     // MARK: - Assistant Content
     private var assistantContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let blocks = message.contentBlocks, !blocks.isEmpty {
+        let blocks = message.renderableContentBlocks
+
+        return VStack(alignment: .leading, spacing: 8) {
+            if !blocks.isEmpty {
                 // GenUI: render typed content blocks
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     switch block {

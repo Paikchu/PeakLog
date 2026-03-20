@@ -4,9 +4,37 @@ import Foundation
 struct ChatMessagePRSummaryTestRunner {
     static func main() throws {
         try decodesPRSummaryBlock()
+        try dropsEmptyPRSummaryBlockFromRenderableContent()
         processingAssistantWithTextIsNotTypingOnly()
         sortedProfilePRsPreferHeavierWeights()
         print("chat_message_pr_summary_test passed")
+    }
+
+    private static func dropsEmptyPRSummaryBlockFromRenderableContent() throws {
+        let json = """
+        {
+          "id": "message-empty-pr",
+          "conversation_id": "conversation-1",
+          "role": "assistant",
+          "content": "Logged it.",
+          "created_at": "2026-03-20T00:00:00Z",
+          "status": "completed",
+          "parse_status": "completed",
+          "content_blocks": [
+            {
+              "type": "pr_summary",
+              "summary_text": "This workout didn't beat any existing PRs.",
+              "items": []
+            }
+          ]
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let message = try decoder.decode(ChatMessage.self, from: Data(json.utf8))
+
+        precondition(message.renderableContentBlocks.isEmpty, "Expected empty PR summary block to be ignored in rendering")
     }
 
     private static func decodesPRSummaryBlock() throws {
