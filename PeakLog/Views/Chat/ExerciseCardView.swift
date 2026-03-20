@@ -21,10 +21,10 @@ private struct SetRowView: View {
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.workoutIndexFill))
 
-            Button {
+            valueChip(action: {
                 weightText = set.weight.formatted()
                 editingWeight = true
-            } label: {
+            }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(set.weight.formatted())
                         .font(.exerciseValue)
@@ -40,16 +40,15 @@ private struct SetRowView: View {
                         .fill(Color.workoutPanel)
                 )
             }
-            .buttonStyle(.plain)
 
             Text("×")
                 .font(.setIndex)
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
-            Button {
+            valueChip(action: {
                 repsText = "\(set.reps)"
                 editingReps = true
-            } label: {
+            }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(set.reps)")
                         .font(.exerciseValue)
@@ -65,7 +64,6 @@ private struct SetRowView: View {
                         .fill(Color.workoutPanel)
                 )
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -241,28 +239,50 @@ struct ExerciseCardView: View {
             )
             .cornerRadius(AppRadius.xxl)
             .offset(x: offset)
-            .gesture(
-                DragGesture(minimumDistance: 10)
-                    .onChanged { value in
-                        let delta = value.translation.width
-                        if delta < 0 {
-                            offset = max(-deleteWidth, delta)
-                        } else {
-                            offset = min(0, (offset < 0 ? -deleteWidth : 0) + delta)
-                        }
-                    }
-                    .onEnded { value in
-                        withAnimation(.spring(response: 0.3)) {
-                            if value.translation.width < -deleteWidth / 2 {
-                                offset = -deleteWidth
-                            } else {
-                                offset = 0
-                            }
-                        }
-                    }
-            )
+            .contentShape(Rectangle())
+            .highPriorityGesture(swipeGesture)
         }
         .clipped()
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    return
+                }
+
+                let delta = value.translation.width
+                if delta < 0 {
+                    offset = max(-deleteWidth, delta)
+                } else {
+                    offset = min(0, (offset < 0 ? -deleteWidth : 0) + delta)
+                }
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    return
+                }
+
+                withAnimation(.spring(response: 0.3)) {
+                    if value.translation.width < -deleteWidth / 2 {
+                        offset = -deleteWidth
+                    } else {
+                        offset = 0
+                    }
+                }
+            }
+    }
+}
+
+private extension SetRowView {
+    func valueChip<Content: View>(
+        action: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
     }
 }
 
