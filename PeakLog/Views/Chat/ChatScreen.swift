@@ -12,6 +12,7 @@ struct ChatScreen: View {
     var onShowProfile: (() -> Void)?
 
     private let keyboardAwareChatScrollAction = KeyboardAwareChatScrollAction()
+    private let chatScrollKeyboardDismissBehavior = ChatScrollKeyboardDismissBehavior()
 
     init(
         conversationId: String,
@@ -129,6 +130,7 @@ struct ChatScreen: View {
                 .padding(.bottom, 16)
             }
             .dismissKeyboardOnTap()
+            .chatScrollDismissesKeyboard(chatScrollKeyboardDismissBehavior)
             .onChange(of: viewModel.messageGroups) { _, _ in
                 withAnimation {
                     proxy.scrollTo("bottom", anchor: .bottom)
