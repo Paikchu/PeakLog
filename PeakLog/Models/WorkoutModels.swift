@@ -12,9 +12,13 @@ enum WeightUnit: String, Codable, CaseIterable {
 struct ExerciseSet: Identifiable, Codable, Equatable {
     let id: String
     var setIndex: Int        // 1-based display index
-    var weight: Double
+    var weight: Double?
     var weightUnit: WeightUnit
     var reps: Int
+
+    var isBodyweight: Bool {
+        weight == nil
+    }
 }
 
 // MARK: - Exercise

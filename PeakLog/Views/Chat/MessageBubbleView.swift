@@ -58,7 +58,7 @@ struct MessageBubbleView: View {
                                     ExerciseSet(
                                         id: s.setId,
                                         setIndex: s.setIndex,
-                                        weight: s.weight ?? 0,
+                                        weight: s.weight,
                                         weightUnit: WeightUnit(rawValue: s.weightUnit) ?? .kg,
                                         reps: s.reps ?? 0
                                     )
@@ -85,6 +85,23 @@ struct MessageBubbleView: View {
 
                     case .prSummary(let summary):
                         PRSummaryCard(summary: summary)
+
+                    case .clarificationPrompt(let prompt):
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(prompt.question)
+                                .font(.chatBody)
+                                .foregroundColor(.textSecondary)
+                                .multilineTextAlignment(.leading)
+
+                            Text(prompt.draftSummary)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.textMuted)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(Color.workoutPanel.opacity(0.55))
+                                .cornerRadius(12)
+                        }
+                        .padding(.horizontal, 2)
 
                     case .unknown:
                         EmptyView()

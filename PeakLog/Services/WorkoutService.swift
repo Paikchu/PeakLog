@@ -7,13 +7,13 @@ struct UpdateExerciseNameRequest: Encodable {
 }
 
 struct UpdateSetRequest: Encodable {
-    let weight: Double
+    let weight: Double?
     let weightUnit: WeightUnit
     let reps: Int
 }
 
 struct AddSetRequest: Encodable {
-    let weight: Double
+    let weight: Double?
     let weightUnit: WeightUnit
     let reps: Int
 }
@@ -34,8 +34,8 @@ struct DaySessionsResponse: Decodable {
 protocol WorkoutServiceProtocol {
     // MARK: Exercise editing
     func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise
-    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
-    func addSet(sessionId: String, exerciseId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
+    func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
     func deleteExercise(sessionId: String, exerciseId: String) async throws
 
@@ -59,13 +59,13 @@ final class LiveWorkoutService: WorkoutServiceProtocol {
         return try await client.execute(req)
     }
 
-    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         // TODO: PATCH /workout/sessions/{sessionId}/exercises/{exerciseId}/sets/{setId}
         let req = try client.request(method: "PATCH", path: "workout/sessions/\(sessionId)/exercises/\(exerciseId)/sets/\(setId)", body: UpdateSetRequest(weight: weight, weightUnit: weightUnit, reps: reps))
         return try await client.execute(req)
     }
 
-    func addSet(sessionId: String, exerciseId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
+    func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         // TODO: POST /workout/sessions/{sessionId}/exercises/{exerciseId}/sets
         let req = try client.request(method: "POST", path: "workout/sessions/\(sessionId)/exercises/\(exerciseId)/sets", body: AddSetRequest(weight: weight, weightUnit: weightUnit, reps: reps))
         return try await client.execute(req)
@@ -114,12 +114,12 @@ final class MockWorkoutService: WorkoutServiceProtocol {
         return Exercise(id: exerciseId, name: name, sets: MockData.benchPress.sets)
     }
 
-    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         try await Task.sleep(nanoseconds: 200_000_000)
         return ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
     }
 
-    func addSet(sessionId: String, exerciseId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
+    func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         try await Task.sleep(nanoseconds: 200_000_000)
         return ExerciseSet(id: UUID().uuidString, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
     }

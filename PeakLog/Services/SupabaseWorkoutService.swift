@@ -34,7 +34,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
         sessionId: String,
         exerciseId: String,
         setId: String,
-        weight: Double,
+        weight: Double?,
         weightUnit: WeightUnit,
         reps: Int
     ) async throws -> ExerciseSet {
@@ -56,7 +56,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
         let rows: [SetRow] = try await supabase
             .from("exercise_sets")
             .update([
-                "weight": AnyJSON(weight),
+                "weight": weight.map(AnyJSON.double) ?? .null,
                 "weight_unit": AnyJSON(weightUnit.rawValue),
                 "reps": AnyJSON(reps)
             ])
@@ -70,7 +70,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
         return ExerciseSet(
             id: row.id,
             setIndex: row.setIndex,
-            weight: row.weight ?? 0,
+            weight: row.weight,
             weightUnit: WeightUnit(rawValue: row.weightUnit) ?? .kg,
             reps: row.reps ?? 0
         )
@@ -79,7 +79,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
     func addSet(
         sessionId: String,
         exerciseId: String,
-        weight: Double,
+        weight: Double?,
         weightUnit: WeightUnit,
         reps: Int
     ) async throws -> ExerciseSet {
@@ -125,7 +125,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
                 "exercise_id": AnyJSON(exerciseId),
                 "user_id": AnyJSON(user.id.uuidString),
                 "set_index": AnyJSON(nextIndex),
-                "weight": AnyJSON(weight),
+                "weight": weight.map(AnyJSON.double) ?? .null,
                 "weight_unit": AnyJSON(weightUnit.rawValue),
                 "reps": AnyJSON(reps)
             ])
@@ -137,7 +137,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
         return ExerciseSet(
             id: row.id,
             setIndex: row.setIndex,
-            weight: row.weight ?? 0,
+            weight: row.weight,
             weightUnit: WeightUnit(rawValue: row.weightUnit) ?? .kg,
             reps: row.reps ?? 0
         )
@@ -260,7 +260,7 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
                         ExerciseSet(
                             id: s.id,
                             setIndex: s.setIndex,
-                            weight: s.weight ?? 0,
+                            weight: s.weight,
                             weightUnit: WeightUnit(rawValue: s.weightUnit) ?? .kg,
                             reps: s.reps ?? 0
                         )

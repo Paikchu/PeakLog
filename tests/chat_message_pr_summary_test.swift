@@ -4,6 +4,7 @@ import Foundation
 struct ChatMessagePRSummaryTestRunner {
     static func main() throws {
         try decodesPRSummaryBlock()
+        try decodesClarificationPromptBlock()
         try dropsEmptyPRSummaryBlockFromRenderableContent()
         processingAssistantWithTextIsNotTypingOnly()
         sortedProfilePRsPreferHeavierWeights()
@@ -80,6 +81,45 @@ struct ChatMessagePRSummaryTestRunner {
 
         precondition(summary.items.count == 1, "Expected one PR item")
         precondition(summary.items[0].currentWeight == 85, "Expected current weight to decode")
+    }
+
+    private static func decodesClarificationPromptBlock() throws {
+        let json = """
+        {
+          "id": "message-clarify",
+          "conversation_id": "conversation-1",
+          "role": "assistant",
+          "content": "杠铃推胸要记录重量吗？",
+          "created_at": "2026-03-20T00:00:00Z",
+          "status": "completed",
+          "parse_status": "pending_confirmation",
+          "content_blocks": [
+            {
+              "type": "clarification_prompt",
+              "action_type": "clarify_weight",
+              "question": "杠铃推胸要记录重量吗？如果有的话告诉我每组多少 kg；如果不想记重量，回复“不记重量”。",
+              "draft_summary": "待补充重量: 杠铃推胸 3组 × 10次",
+              "pending_action_id": "pending-1"
+            }
+          ]
+        }
+        """
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let message = try decoder.decode(ChatMessage.self, from: Data(json.utf8))
+
+        guard let block = message.contentBlocks?.first else {
+            fatalError("Expected clarification content block")
+        }
+
+        guard case let .clarificationPrompt(prompt) = block else {
+            fatalError("Expected clarification prompt block")
+        }
+
+        precondition(prompt.actionType == "clarify_weight", "Expected clarify_weight action type")
+        precondition(prompt.pendingActionId == "pending-1", "Expected pending action id to decode")
+        precondition(prompt.draftSummary.contains("杠铃推胸"), "Expected draft summary to decode")
     }
 
     private static func processingAssistantWithTextIsNotTypingOnly() {

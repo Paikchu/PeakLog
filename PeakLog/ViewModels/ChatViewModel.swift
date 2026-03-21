@@ -207,7 +207,7 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func updateSet(messageId: String, exerciseId: String, setId: String, weight: Double, weightUnit: WeightUnit, reps: Int) async {
+    func updateSet(messageId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async {
         updateSetInPlace(messageId: messageId, exerciseId: exerciseId, setId: setId) { set in
             set.weight = weight
             set.weightUnit = weightUnit

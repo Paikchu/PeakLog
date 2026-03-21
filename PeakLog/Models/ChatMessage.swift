@@ -103,10 +103,25 @@ struct PRSummaryBlock: Codable, Equatable {
     }
 }
 
+struct ClarificationPromptBlock: Codable, Equatable {
+    let actionType: String
+    let question: String
+    let draftSummary: String
+    let pendingActionId: String
+
+    enum CodingKeys: String, CodingKey {
+        case actionType = "action_type"
+        case question
+        case draftSummary = "draft_summary"
+        case pendingActionId = "pending_action_id"
+    }
+}
+
 enum ContentBlock: Equatable {
     case text(String)
     case workoutRecord(WorkoutRecordBlock)
     case prSummary(PRSummaryBlock)
+    case clarificationPrompt(ClarificationPromptBlock)
     case unknown
 }
 
@@ -128,6 +143,9 @@ extension ContentBlock: Codable {
         case "pr_summary":
             let summary = try PRSummaryBlock(from: decoder)
             self = .prSummary(summary)
+        case "clarification_prompt":
+            let prompt = try ClarificationPromptBlock(from: decoder)
+            self = .clarificationPrompt(prompt)
         default:
             self = .unknown
         }
@@ -145,6 +163,9 @@ extension ContentBlock: Codable {
         case .prSummary(let summary):
             try container.encode("pr_summary", forKey: .type)
             try summary.encode(to: encoder)
+        case .clarificationPrompt(let prompt):
+            try container.encode("clarification_prompt", forKey: .type)
+            try prompt.encode(to: encoder)
         case .unknown:
             try container.encode("unknown", forKey: .type)
         }

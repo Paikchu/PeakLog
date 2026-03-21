@@ -11,7 +11,7 @@ private struct SetRowView: View {
     @State private var weightText: String = ""
     @State private var repsText: String = ""
 
-    var onCommit: (Double, WeightUnit, Int) -> Void
+    var onCommit: (Double?, WeightUnit, Int) -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -22,16 +22,22 @@ private struct SetRowView: View {
                 .background(Circle().fill(Color.workoutIndexFill))
 
             valueChip(action: {
-                weightText = set.weight.formatted()
+                weightText = set.weight.map(formatWeightValue) ?? ""
                 editingWeight = true
             }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(set.weight.formatted())
-                        .font(.exerciseValue)
-                        .foregroundColor(.accentValue)
-                    Text(set.weightUnit.display)
-                        .font(.exerciseUnit)
-                        .foregroundColor(.textSecondary)
+                    if let weight = set.weight {
+                        Text(formatWeightValue(weight))
+                            .font(.exerciseValue)
+                            .foregroundColor(.accentValue)
+                        Text(set.weightUnit.display)
+                            .font(.exerciseUnit)
+                            .foregroundColor(.textSecondary)
+                    } else {
+                        Text("chat.exercise.bodyweight")
+                            .font(.exerciseValue)
+                            .foregroundColor(.accentValue)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
@@ -75,10 +81,15 @@ private struct SetRowView: View {
         .sheet(isPresented: $editingWeight) {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.weight"),
-                unit: set.weightUnit.display,
+                unit: set.weight == nil ? nil : set.weightUnit.display,
+                placeholder: String(localized: "chat.exercise.bodyweight"),
                 value: $weightText
             ) {
-                if let w = Double(weightText) {
+                let trimmed = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    set.weight = nil
+                    onCommit(nil, set.weightUnit, set.reps)
+                } else if let w = Double(trimmed) {
                     set.weight = w
                     onCommit(w, set.weightUnit, set.reps)
                 }
@@ -93,6 +104,7 @@ private struct SetRowView: View {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.reps"),
                 unit: String(localized: "chat.exercise.reps"),
+                placeholder: "0",
                 value: $repsText
             ) {
                 if let r = Int(repsText) {
@@ -108,11 +120,16 @@ private struct SetRowView: View {
     }
 }
 
+private func formatWeightValue(_ weight: Double) -> String {
+    weight.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(weight)) : String(format: "%.1f", weight)
+}
+
 // MARK: - Inline Edit Sheet
 
 private struct ValueEditSheet: View {
     let title: String
-    let unit: String
+    let unit: String?
+    let placeholder: String
     @Binding var value: String
     var onDone: () -> Void
     var onCancel: () -> Void
@@ -127,7 +144,7 @@ private struct ValueEditSheet: View {
                 .padding(.top, 24)
 
             HStack(alignment: .lastTextBaseline, spacing: 6) {
-                TextField("0", text: $value)
+                TextField(placeholder, text: $value)
                     .keyboardType(.decimalPad)
                     .font(.system(size: 40, weight: .bold))
                     .foregroundColor(.accentValue)
@@ -135,9 +152,11 @@ private struct ValueEditSheet: View {
                     .focused($focused)
                     .frame(width: 120)
 
-                Text(unit)
-                    .font(.settingTitle)
-                    .foregroundColor(.textMuted)
+                if let unit {
+                    Text(unit)
+                        .font(.settingTitle)
+                        .foregroundColor(.textMuted)
+                }
             }
 
             HStack(spacing: 16) {

@@ -88,7 +88,7 @@ private struct ExerciseDetailRow: View {
                         .foregroundColor(.textDarkMuted)
                         .frame(width: 24, alignment: .leading)
 
-                    Text("\(formatWeight(set.weight))\(set.weightUnit.display) × \(set.reps)")
+                    Text(weightDescription(for: set))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.textSecondary)
 
@@ -98,6 +98,14 @@ private struct ExerciseDetailRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+    }
+
+    private func weightDescription(for set: ExerciseSet) -> String {
+        if let weight = set.weight {
+            return "\(formatWeight(weight))\(set.weightUnit.display) × \(set.reps)"
+        }
+
+        return "\(String(localized: "chat.exercise.bodyweight")) × \(set.reps)"
     }
 
     private func formatWeight(_ w: Double) -> String {
