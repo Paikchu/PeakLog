@@ -86,6 +86,13 @@ actor StaticChatService: ChatServiceProtocol {
         return messages
     }
 
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        _ = sessionId
+        return messages.filter { message in
+            message.createdAt >= start && message.createdAt < end
+        }
+    }
+
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
@@ -181,16 +188,39 @@ struct SendMessageServiceResponse {
     let conversationId: String
 }
 
+struct ChatStreamIDs: Equatable {
+    let userMessageId: String
+    let assistantMessageId: String
+}
+
+enum ChatServiceStreamEvent: Equatable {
+    case responseStarted(ChatStreamIDs)
+    case textDelta(String)
+    case workoutPreview(WorkoutRecordBlock)
+    case error(String)
+    case done
+}
+
+typealias ChatServiceStreamHandler = @Sendable (ChatServiceStreamEvent) -> Void
+
 protocol ChatServiceProtocol {
     func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse
     func fetchMessages(sessionId: String) async throws -> [ChatMessage]
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage]
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
         onUpdate: @escaping (ChatMessage) -> Void
     ) async
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?)
     func unsubscribe() async
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord
+}
+
+extension ChatServiceProtocol {
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        _ = handler
+    }
 }
 
 protocol WorkoutServiceProtocol {

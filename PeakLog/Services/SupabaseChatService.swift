@@ -56,7 +56,12 @@ private struct EdgeSendMessageResponse: Decodable {
 
 final class SupabaseChatService: ChatServiceProtocol {
     private let supabase = SupabaseManager.shared.client
-    private var realtimeChannel: RealtimeChannelV2?
+    private let streamSession: URLSession
+    private var streamEventHandler: ChatServiceStreamHandler?
+
+    init(streamSession: URLSession = .shared) {
+        self.streamSession = streamSession
+    }
 
     // MARK: - Fetch message history
 
@@ -73,23 +78,33 @@ final class SupabaseChatService: ChatServiceProtocol {
         return rows.map { $0.toChatMessage() }
     }
 
+    func fetchMessages(sessionId conversationId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let rows: [MessageRow] = try await supabase
+            .from("messages")
+            .select()
+            .eq("conversation_id", value: conversationId)
+            .is("deleted_at", value: nil)
+            .gte("created_at", value: formatter.string(from: start))
+            .lt("created_at", value: formatter.string(from: end))
+            .order("created_at", ascending: true)
+            .execute()
+            .value
+
+        return rows.map { $0.toChatMessage() }
+    }
+
     // MARK: - Send message (fire-and-return; Realtime delivers the response)
 
     func sendMessage(_ text: String, sessionId conversationId: String) async throws -> SendMessageServiceResponse {
         let clientMessageId = UUID().uuidString
-        let response = try await invokeChatSendMessage(
+        return try await streamChatSendMessage(
             conversationId: conversationId,
             text: text,
             clientMessageId: clientMessageId,
             refreshAuth: false
-        )
-
-        // Return the IDs immediately. The actual assistant content arrives
-        // via Realtime when the background processing completes.
-        return SendMessageServiceResponse(
-            userMessageId: response.userMessageId,
-            assistantMessageId: response.assistantMessageId,
-            conversationId: conversationId
         )
     }
 
@@ -100,115 +115,122 @@ final class SupabaseChatService: ChatServiceProtocol {
         return workoutRecord
     }
 
-    // MARK: - Realtime subscription
+    // MARK: - Legacy subscription hooks
 
-    /// Subscribe to all INSERT and UPDATE events on messages for a given conversation.
-    /// `onInsert` fires with the new typing-bubble placeholder.
-    /// `onUpdate` fires with processing/completed/failed assistant updates.
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
         onUpdate: @escaping (ChatMessage) -> Void
     ) async {
-        await unsubscribe()
-
-        let channel = supabase.channel("messages:\(conversationId)")
-
-        channel.onPostgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "messages",
-            filter: "conversation_id=eq.\(conversationId)"
-        ) { payload in
-            guard let row = Self.decodeMessageRow(from: payload.record) else { return }
-            onInsert(row.toChatMessage())
-        }
-
-        channel.onPostgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "messages",
-            filter: "conversation_id=eq.\(conversationId)"
-        ) { payload in
-            guard let row = Self.decodeMessageRow(from: payload.record) else { return }
-            if row.role == "assistant" && (row.status == "processing" || row.status == "completed" || row.status == "failed") {
-                onUpdate(row.toChatMessage())
-            }
-        }
-
-        await channel.subscribe()
-        realtimeChannel = channel
+        _ = (conversationId, onInsert, onUpdate)
     }
 
     func unsubscribe() async {
-        if let channel = realtimeChannel {
-            await supabase.removeChannel(channel)
-            realtimeChannel = nil
-        }
+        // Chat is now driven entirely by SSE plus a final history refresh.
+    }
+
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        streamEventHandler = handler
     }
 
     // MARK: - Private helpers
 
-    private func invokeChatSendMessage(
+    private func streamChatSendMessage(
         conversationId: String,
         text: String,
         clientMessageId: String,
         refreshAuth: Bool
-    ) async throws -> EdgeSendMessageResponse {
-        let session = refreshAuth ? try await supabase.auth.refreshSession() : try await supabase.auth.session
-        supabase.functions.setAuth(token: session.accessToken)
+    ) async throws -> SendMessageServiceResponse {
+        let session = refreshAuth
+            ? try await supabase.auth.refreshSession()
+            : try await supabase.auth.session
 
-        do {
-            return try await supabase.functions.invoke(
-                "chat-send-message",
-                options: FunctionInvokeOptions(
-                    body: [
-                        "conversation_id": conversationId,
-                        "text": text,
-                        "client_message_id": clientMessageId
-                    ]
-                )
-            )
-        } catch let error as FunctionsError {
-            if case let .httpError(code, data) = error, code == 401 {
-                let body = String(data: data, encoding: .utf8) ?? "<non-UTF8 response body>"
-                print("chat-send-message unauthorized: \(body)")
+        let request = try Self.makeChatSendMessageRequest(
+            conversationId: conversationId,
+            text: text,
+            clientMessageId: clientMessageId,
+            accessToken: session.accessToken
+        )
 
-                if !refreshAuth {
-                    // Force a refresh once in case the local session exists but the access token
-                    // has gone stale or the functions client has not yet observed the latest auth
-                    // event.
-                    return try await invokeChatSendMessage(
-                        conversationId: conversationId,
-                        text: text,
-                        clientMessageId: clientMessageId,
-                        refreshAuth: true
-                    )
-                }
+        let (bytes, response) = try await streamSession.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.unknown
+        }
 
-                throw NSError(
-                    domain: "PeakLog.ChatService",
-                    code: 401,
-                    userInfo: [NSLocalizedDescriptionKey: Self.extractErrorMessage(from: data)]
+        guard 200..<300 ~= httpResponse.statusCode else {
+            let body = try await Self.collectData(from: bytes)
+            if httpResponse.statusCode == 401, !refreshAuth {
+                return try await streamChatSendMessage(
+                    conversationId: conversationId,
+                    text: text,
+                    clientMessageId: clientMessageId,
+                    refreshAuth: true
                 )
             }
 
-            throw error
+            throw NSError(
+                domain: "PeakLog.ChatService",
+                code: httpResponse.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: Self.extractErrorMessage(from: body)]
+            )
         }
+
+        let ids = ChatStreamIDs(
+            userMessageId: httpResponse.value(forHTTPHeaderField: "X-User-Message-Id") ?? clientMessageId,
+            assistantMessageId: httpResponse.value(forHTTPHeaderField: "X-Assistant-Message-Id") ?? "assistant-\(clientMessageId)",
+        )
+        streamEventHandler?(.responseStarted(ids))
+
+        var parser = ChatSSEParser()
+        for try await line in bytes.lines {
+            let chunk = line.isEmpty ? "\n" : "\(line)\n"
+            let events = try parser.ingest(Data(chunk.utf8))
+            for event in events {
+                streamEventHandler?(event)
+            }
+        }
+
+        return SendMessageServiceResponse(
+            userMessageId: ids.userMessageId,
+            assistantMessageId: ids.assistantMessageId,
+            conversationId: conversationId
+        )
     }
 
-    private static func decodeMessageRow(from record: [String: AnyJSON]?) -> MessageRow? {
-        guard let record else { return nil }
-        do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try record.decode(as: MessageRow.self, decoder: decoder)
-        } catch {
-            print("Failed to decode MessageRow from Realtime payload: \(error)")
-            return nil
-        }
+    private static func makeChatSendMessageRequest(
+        conversationId: String,
+        text: String,
+        clientMessageId: String,
+        accessToken: String
+    ) throws -> URLRequest {
+        let url = SupabaseConfig.url
+            .appending(path: "functions")
+            .appending(path: "v1")
+            .appending(path: "chat-send-message")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "conversation_id": conversationId,
+            "text": text,
+            "client_message_id": clientMessageId,
+        ])
+        return request
     }
 
+    private static func collectData(from bytes: URLSession.AsyncBytes) async throws -> Data {
+        var data = Data()
+        for try await byte in bytes {
+            data.append(byte)
+        }
+        return data
+    }
     private static func extractErrorMessage(from data: Data) -> String {
         if
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

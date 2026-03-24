@@ -6,7 +6,7 @@ import CoreGraphics
 struct ChatViewModelOptimisticSendTestRunner {
     static func main() async {
         await sentMessageAppearsImmediatelyBeforeNetworkReturns()
-        await processingAssistantUpdateReplacesOptimisticPlaceholder()
+        await streamingTextDeltaUpdatesOptimisticAssistantBeforeCompletion()
         await failedSendRestoresInputAndRemovesOptimisticMessages()
         print("chat_view_model_optimistic_send_test passed")
     }
@@ -91,66 +91,65 @@ struct ChatViewModelOptimisticSendTestRunner {
     }
 
     @MainActor
-    private static func processingAssistantUpdateReplacesOptimisticPlaceholder() async {
+    private static func streamingTextDeltaUpdatesOptimisticAssistantBeforeCompletion() async {
         let chatService = ControlledChatService()
+        await chatService.setMessagesToFetch([
+            ChatMessage(
+                id: "server-user-4",
+                sessionId: "conversation-4",
+                role: .user,
+                text: "肩推 3x8 30kg",
+                createdAt: Date(timeIntervalSince1970: 300)
+            ),
+            ChatMessage(
+                id: "server-assistant-4",
+                sessionId: "conversation-4",
+                role: .assistant,
+                text: "已记录肩推 3 组。",
+                createdAt: Date(timeIntervalSince1970: 301),
+                contentBlocks: [.text("已记录肩推 3 组。")],
+                status: .completed
+            )
+        ])
 
         let viewModel = ChatViewModel(
-            conversationId: "conversation-3",
+            conversationId: "conversation-4",
             chatService: chatService,
             workoutService: TestWorkoutService(),
             speechRecognitionService: TestSpeechRecognitionService()
         )
 
         await viewModel.onAppear()
-        viewModel.inputText = "Logged deadlift"
+        viewModel.inputText = "肩推 3x8 30kg"
 
         let sendTask = Task {
             await viewModel.sendMessage()
         }
 
         await chatService.waitForSendToStart()
+        await chatService.emitStreamEvent(.responseStarted(.init(
+            userMessageId: "server-user-4",
+            assistantMessageId: "server-assistant-4"
+        )))
+        await chatService.emitStreamEvent(.textDelta("已记录"))
+        await chatService.emitStreamEvent(.textDelta("肩推 3 组。"))
         await Task.yield()
+
+        let interimMessages = viewModel.messageGroups.flatMap(\.messages)
+        let assistant = interimMessages.first { $0.id == "server-assistant-4" }
+        precondition(assistant?.text == "已记录肩推 3 组。", "Expected SSE text delta to update assistant text before the request finishes")
+        precondition(assistant?.status == .processing, "Expected assistant to remain processing during stream")
+        precondition(assistant?.contentBlocks == [.text("已记录肩推 3 组。")], "Expected streaming text to be reflected as a text content block")
 
         await chatService.resumeSend(
             with: .init(
-                userMessageId: "server-user-3",
-                assistantMessageId: "server-assistant-3",
-                conversationId: "conversation-3"
-            )
-        )
-
-        await chatService.emitUpdate(
-            ChatMessage(
-                id: "server-assistant-3",
-                sessionId: "conversation-3",
-                role: .assistant,
-                text: "Streaming partial reply",
-                createdAt: Date(timeIntervalSince1970: 200),
-                status: .processing
-            )
-        )
-        await Task.yield()
-
-        let messages = viewModel.messageGroups.flatMap(\.messages)
-        let assistant = messages.first { $0.id == "server-assistant-3" }
-        precondition(assistant?.text == "Streaming partial reply", "Expected processing update text to replace optimistic placeholder")
-        precondition(assistant?.isTyping == false, "Expected processing assistant with text to stop rendering as typing-only")
-        precondition(viewModel.isSending == true, "Expected sending state to remain true while assistant is processing")
-
-        await chatService.emitUpdate(
-            ChatMessage(
-                id: "server-assistant-3",
-                sessionId: "conversation-3",
-                role: .assistant,
-                text: "Streaming partial reply",
-                createdAt: Date(timeIntervalSince1970: 201),
-                contentBlocks: [.text("Streaming partial reply")],
-                status: .completed
+                userMessageId: "server-user-4",
+                assistantMessageId: "server-assistant-4",
+                conversationId: "conversation-4"
             )
         )
 
         await sendTask.value
-        precondition(viewModel.isSending == false, "Expected sending state to stop after assistant completion")
     }
 }
 
@@ -167,6 +166,7 @@ private actor ControlledChatService: ChatServiceProtocol {
     private var sendStartedContinuation: CheckedContinuation<Void, Never>?
     private var onInsert: ((ChatMessage) -> Void)?
     private var onUpdate: ((ChatMessage) -> Void)?
+    private var streamHandler: ChatServiceStreamHandler?
 
     func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
         _ = (text, sessionId)
@@ -189,6 +189,13 @@ private actor ControlledChatService: ChatServiceProtocol {
         return messagesToFetch
     }
 
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        _ = sessionId
+        return messagesToFetch.filter { message in
+            message.createdAt >= start && message.createdAt < end
+        }
+    }
+
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
@@ -200,6 +207,10 @@ private actor ControlledChatService: ChatServiceProtocol {
     }
 
     func unsubscribe() async {}
+
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        streamHandler = handler
+    }
 
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
         _ = messageId
@@ -235,6 +246,10 @@ private actor ControlledChatService: ChatServiceProtocol {
 
     func emitUpdate(_ message: ChatMessage) {
         onUpdate?(message)
+    }
+
+    func emitStreamEvent(_ event: ChatServiceStreamEvent) {
+        streamHandler?(event)
     }
 }
 
@@ -275,4 +290,51 @@ private struct TestSpeechRecognitionService: SpeechRecognitionServicing {
     func stopRecognition() async throws -> String {
         ""
     }
+}
+
+enum VoiceInputState: Equatable {
+    case idle
+    case recording
+    case transcribing
+}
+
+protocol SpeechRecognitionServicing {
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws
+    func stopRecognition() async throws -> String
+}
+
+struct SendMessageServiceResponse {
+    let userMessageId: String
+    let assistantMessageId: String
+    let conversationId: String
+}
+
+typealias ChatServiceStreamHandler = @Sendable (ChatServiceStreamEvent) -> Void
+
+@preconcurrency
+protocol ChatServiceProtocol {
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse
+    func fetchMessages(sessionId: String) async throws -> [ChatMessage]
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage]
+    func subscribeToMessages(
+        conversationId: String,
+        onInsert: @escaping (ChatMessage) -> Void,
+        onUpdate: @escaping (ChatMessage) -> Void
+    ) async
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?)
+    func unsubscribe() async
+    func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord
+}
+
+protocol WorkoutServiceProtocol {
+    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
+    func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
+    func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
+    func deleteExercise(sessionId: String, exerciseId: String) async throws
+    func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
+    func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
 }

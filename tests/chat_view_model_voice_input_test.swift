@@ -223,6 +223,11 @@ private actor IdleChatService: ChatServiceProtocol {
         return []
     }
 
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        _ = (sessionId, start, end)
+        return []
+    }
+
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
@@ -237,4 +242,69 @@ private actor IdleChatService: ChatServiceProtocol {
         _ = messageId
         return workoutRecord
     }
+}
+
+enum VoiceInputState: Equatable {
+    case idle
+    case recording
+    case transcribing
+}
+
+protocol SpeechRecognitionServicing {
+    func startRecognition(
+        onLevelUpdate: @escaping (CGFloat) -> Void,
+        onTranscriptUpdate: @escaping (String) -> Void
+    ) async throws
+    func stopRecognition() async throws -> String
+}
+
+struct SendMessageServiceResponse {
+    let userMessageId: String
+    let assistantMessageId: String
+    let conversationId: String
+}
+
+struct ChatStreamIDs: Equatable {
+    let userMessageId: String
+    let assistantMessageId: String
+}
+
+enum ChatServiceStreamEvent: Equatable {
+    case responseStarted(ChatStreamIDs)
+    case textDelta(String)
+    case workoutPreview(WorkoutRecordBlock)
+    case error(String)
+    case done
+}
+
+typealias ChatServiceStreamHandler = @Sendable (ChatServiceStreamEvent) -> Void
+
+protocol ChatServiceProtocol {
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse
+    func fetchMessages(sessionId: String) async throws -> [ChatMessage]
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage]
+    func subscribeToMessages(
+        conversationId: String,
+        onInsert: @escaping (ChatMessage) -> Void,
+        onUpdate: @escaping (ChatMessage) -> Void
+    ) async
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?)
+    func unsubscribe() async
+    func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord
+}
+
+extension ChatServiceProtocol {
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        _ = handler
+    }
+}
+
+protocol WorkoutServiceProtocol {
+    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
+    func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
+    func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
+    func deleteExercise(sessionId: String, exerciseId: String) async throws
+    func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
+    func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
 }

@@ -19,6 +19,8 @@ struct SendMessageServiceResponse {
     let conversationId: String
 }
 
+typealias ChatServiceStreamHandler = @Sendable (ChatServiceStreamEvent) -> Void
+
 struct FetchMessagesResponse: Decodable {
     let messages: [ChatMessage]
 }
@@ -34,6 +36,9 @@ protocol ChatServiceProtocol {
     /// Fetch the full message history for a chat session.
     func fetchMessages(sessionId: String) async throws -> [ChatMessage]
 
+    /// Fetch message history for a specific time window.
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage]
+
     /// Subscribe to message inserts and updates for a conversation.
     func subscribeToMessages(
         conversationId: String,
@@ -41,11 +46,20 @@ protocol ChatServiceProtocol {
         onUpdate: @escaping (ChatMessage) -> Void
     ) async
 
+    /// Registers a handler for per-request SSE stream events.
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?)
+
     /// Tear down any existing realtime subscription.
     func unsubscribe() async
 
     /// Confirm a pending workout record (low-confidence parse).
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord
+}
+
+extension ChatServiceProtocol {
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        _ = handler
+    }
 }
 
 // MARK: - Live Implementation Stub
@@ -77,6 +91,12 @@ final class LiveChatService: ChatServiceProtocol {
         return res.messages
     }
 
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        try await fetchMessages(sessionId: sessionId).filter { message in
+            message.createdAt >= start && message.createdAt < end
+        }
+    }
+
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
@@ -86,6 +106,10 @@ final class LiveChatService: ChatServiceProtocol {
     }
 
     func unsubscribe() async {}
+
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        _ = handler
+    }
 
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
         // TODO: PATCH /chat/messages/{messageId}/confirm
@@ -131,6 +155,12 @@ final class MockChatService: ChatServiceProtocol {
         return MockData.sampleMessages(sessionId: sessionId)
     }
 
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        try await fetchMessages(sessionId: sessionId).filter { message in
+            message.createdAt >= start && message.createdAt < end
+        }
+    }
+
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
@@ -140,6 +170,10 @@ final class MockChatService: ChatServiceProtocol {
     }
 
     func unsubscribe() async {}
+
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        _ = handler
+    }
 
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
         return workoutRecord

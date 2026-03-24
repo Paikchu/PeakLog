@@ -12,6 +12,11 @@ final class ChatViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published private(set) var voiceInputState: VoiceInputState = .idle
+    @Published private(set) var hasLoadedInitialDay: Bool = false
+    @Published private(set) var isLoadingOlderDays: Bool = false
+    @Published private(set) var hasMoreHistory: Bool = true
+    @Published private(set) var shouldScrollToBottomOnce: Bool = false
+    @Published private(set) var pendingTopAnchorMessageID: String?
 
     // MARK: - Session (conversation ID)
 
@@ -24,6 +29,9 @@ final class ChatViewModel: ObservableObject {
     private let speechRecognitionService: SpeechRecognitionServicing
 
     private var inputTextBeforeVoiceRecording = ""
+    private let calendar = Calendar.current
+    private let maxEmptyDaySkipsPerLoad = 30
+    private var oldestLoadedDayStart: Date?
 
     init(
         conversationId: String,
@@ -55,11 +63,18 @@ final class ChatViewModel: ObservableObject {
     // MARK: - Lifecycle
 
     func onAppear() async {
-        await loadMessages()
-        await subscribeToRealtime()
+        chatService.setStreamEventHandler { [weak self] event in
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleStreamEvent(event)
+            }
+        }
+        guard !hasLoadedInitialDay else { return }
+        await loadInitialMessagesForToday()
     }
 
     func onDisappear() async {
+        chatService.setStreamEventHandler(nil)
         await chatService.unsubscribe()
     }
 
@@ -77,26 +92,74 @@ final class ChatViewModel: ObservableObject {
         isLoading = false
     }
 
-    // MARK: - Realtime Subscription
+    func loadInitialMessagesForToday() async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            let window = todayWindow()
+            let messages = try await chatService.fetchMessages(
+                sessionId: conversationId,
+                start: window.start,
+                end: window.end
+            )
+            messageGroups = groupByDate(messages)
+            oldestLoadedDayStart = window.start
+            hasLoadedInitialDay = true
+            hasMoreHistory = true
+            pendingTopAnchorMessageID = nil
+            shouldScrollToBottomOnce = !messages.isEmpty
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
 
-    private func subscribeToRealtime() async {
-        await chatService.subscribeToMessages(
-            conversationId: conversationId,
-            onInsert: { [weak self] message in
-                guard let self else { return }
-                Task { @MainActor in
-                    self.upsertIncomingMessage(message)
-                    self.updateSendingState()
+    func loadPreviousDayIfNeeded(anchorMessageID: String?) async {
+        guard hasLoadedInitialDay, !isLoading, !isLoadingOlderDays, hasMoreHistory else { return }
+        guard let currentOldestDayStart = oldestLoadedDayStart else { return }
+
+        isLoadingOlderDays = true
+        errorMessage = nil
+
+        defer { isLoadingOlderDays = false }
+
+        var searchDayEnd = currentOldestDayStart
+
+        for _ in 0..<maxEmptyDaySkipsPerLoad {
+            let previousDayStart = calendar.date(byAdding: .day, value: -1, to: searchDayEnd) ?? searchDayEnd.addingTimeInterval(-86_400)
+
+            do {
+                let messages = try await chatService.fetchMessages(
+                    sessionId: conversationId,
+                    start: previousDayStart,
+                    end: searchDayEnd
+                )
+
+                if messages.isEmpty {
+                    searchDayEnd = previousDayStart
+                    oldestLoadedDayStart = previousDayStart
+                    continue
                 }
-            },
-            onUpdate: { [weak self] updatedMessage in
-                guard let self else { return }
-                Task { @MainActor in
-                    self.upsertIncomingMessage(updatedMessage)
-                    self.updateSendingState()
-                }
+
+                prependOlderMessages(messages, anchorMessageID: anchorMessageID)
+                oldestLoadedDayStart = previousDayStart
+                return
+            } catch {
+                errorMessage = error.localizedDescription
+                return
             }
-        )
+        }
+
+        hasMoreHistory = false
+        oldestLoadedDayStart = searchDayEnd
+    }
+
+    func consumeScrollToBottomRequest() {
+        shouldScrollToBottomOnce = false
+    }
+
+    func consumePendingTopAnchorMessageID() {
+        pendingTopAnchorMessageID = nil
     }
 
     // MARK: - Send Message
@@ -112,16 +175,6 @@ final class ChatViewModel: ObservableObject {
 
         do {
             let response = try await chatService.sendMessage(text, sessionId: conversationId)
-            reconcileOptimisticMessageID(
-                localID: optimisticMessageIDs.userMessageID,
-                serverID: response.userMessageId
-            )
-            reconcileOptimisticMessageID(
-                localID: optimisticMessageIDs.assistantMessageID,
-                serverID: response.assistantMessageId
-            )
-            // Refresh immediately so the just-saved user message and assistant placeholder
-            // are visible even if Realtime events arrive late or are missed.
             try await refreshMessages()
             await waitForAssistantMessageToComplete(messageId: response.assistantMessageId)
         } catch {
@@ -282,10 +335,24 @@ final class ChatViewModel: ObservableObject {
         messageGroups = groupByDate(all)
     }
 
+    private func prependOlderMessages(_ olderMessages: [ChatMessage], anchorMessageID: String?) {
+        let combined = olderMessages + messageGroups.flatMap(\.messages)
+        messageGroups = groupByDate(combined)
+        pendingTopAnchorMessageID = anchorMessageID
+    }
+
     private func refreshMessages() async throws {
-        let messages = try await chatService.fetchMessages(sessionId: conversationId)
-        let mergedMessages = mergeServerMessagesWithOptimisticLocals(messages)
-        messageGroups = groupByDate(mergedMessages)
+        let window = todayWindow()
+        let todayMessages = try await chatService.fetchMessages(
+            sessionId: conversationId,
+            start: window.start,
+            end: window.end
+        )
+        let mergedTodayMessages = mergeServerMessagesWithOptimisticLocals(todayMessages)
+        replaceTodayMessages(with: mergedTodayMessages)
+        if !mergedTodayMessages.isEmpty {
+            shouldScrollToBottomOnce = true
+        }
         updateSendingState()
     }
 
@@ -299,6 +366,11 @@ final class ChatViewModel: ObservableObject {
                 let allMessages = messageGroups.flatMap(\.messages)
                 if let assistant = allMessages.first(where: { $0.id == messageId }),
                    assistant.status != .processing {
+                    updateSendingState()
+                    return
+                }
+
+                if !allMessages.contains(where: { $0.role == .assistant && $0.status == .processing }) {
                     updateSendingState()
                     return
                 }
@@ -363,6 +435,7 @@ final class ChatViewModel: ObservableObject {
         )
 
         appendMessages([optimisticUserMessage, optimisticAssistantMessage])
+        shouldScrollToBottomOnce = true
         return (userMessageID, assistantMessageID)
     }
 
@@ -408,7 +481,9 @@ final class ChatViewModel: ObservableObject {
 
     private func mergeServerMessagesWithOptimisticLocals(_ serverMessages: [ChatMessage]) -> [ChatMessage] {
         var mergedMessages = serverMessages
-        let optimisticMessages = messageGroups.flatMap(\.messages).filter { $0.isLocalOnly }
+        let optimisticMessages = messageGroups
+            .flatMap(\.messages)
+            .filter { $0.isLocalOnly && calendar.isDateInToday($0.createdAt) }
 
         for optimisticMessage in optimisticMessages {
             let serverMatchIndex = mergedMessages.firstIndex { serverMessage in
@@ -423,6 +498,19 @@ final class ChatViewModel: ObservableObject {
         }
 
         return mergedMessages.sorted(by: { $0.createdAt < $1.createdAt })
+    }
+
+    private func replaceTodayMessages(with todayMessages: [ChatMessage]) {
+        let historicalMessages = messageGroups.flatMap(\.messages).filter {
+            !calendar.isDateInToday($0.createdAt)
+        }
+        messageGroups = groupByDate(historicalMessages + todayMessages)
+    }
+
+    private func todayWindow(referenceDate: Date = Date()) -> (start: Date, end: Date) {
+        let start = calendar.startOfDay(for: referenceDate)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+        return (start, end)
     }
 
     private func replaceOptimisticMatch(with incoming: ChatMessage) -> Bool {
@@ -452,6 +540,105 @@ final class ChatViewModel: ObservableObject {
         case .assistant:
             return lhs.status == .processing || rhs.status == .processing
         }
+    }
+
+    private func handleStreamEvent(_ event: ChatServiceStreamEvent) {
+        switch event {
+        case .responseStarted(let ids):
+            reconcileOptimisticMessageID(localID: latestOptimisticUserMessageID, serverID: ids.userMessageId)
+            reconcileOptimisticMessageID(localID: latestOptimisticAssistantMessageID, serverID: ids.assistantMessageId)
+        case .textDelta(let delta):
+            appendStreamingTextDelta(delta)
+        case .workoutPreview(let block):
+            applyStreamingWorkoutPreview(block)
+        case .error(let message):
+            markStreamingAssistantFailed(message: message)
+            errorMessage = message
+        case .done:
+            break
+        }
+        updateSendingState()
+    }
+
+    private var latestOptimisticUserMessageID: String {
+        messageGroups
+            .flatMap(\.messages)
+            .last(where: { $0.role == .user && $0.isLocalOnly })?
+            .id ?? ""
+    }
+
+    private var latestOptimisticAssistantMessageID: String {
+        messageGroups
+            .flatMap(\.messages)
+            .last(where: { $0.role == .assistant && $0.isLocalOnly })?
+            .id ?? ""
+    }
+
+    private func appendStreamingTextDelta(_ delta: String) {
+        guard !delta.isEmpty else { return }
+
+        updateLatestProcessingAssistant { message in
+            message.text.append(delta)
+            message.contentBlocks = Self.upsertTextBlock(
+                text: message.text,
+                into: message.contentBlocks
+            )
+        }
+    }
+
+    private func applyStreamingWorkoutPreview(_ block: WorkoutRecordBlock) {
+        updateLatestProcessingAssistant { message in
+            var blocks = message.contentBlocks ?? []
+            if !message.text.isEmpty {
+                blocks = Self.upsertTextBlock(text: message.text, into: blocks) ?? []
+            }
+            blocks.removeAll {
+                switch $0 {
+                case .workoutRecord, .workoutRecordStream:
+                    return true
+                default:
+                    return false
+                }
+            }
+            blocks.append(.workoutRecordStream(block))
+            message.contentBlocks = blocks
+        }
+    }
+
+    private func markStreamingAssistantFailed(message: String) {
+        updateLatestProcessingAssistant { assistant in
+            assistant.status = .failed
+            if !message.isEmpty {
+                assistant.text = message
+                assistant.contentBlocks = [.text(message)]
+            }
+        }
+    }
+
+    private func updateLatestProcessingAssistant(_ update: (inout ChatMessage) -> Void) {
+        for groupIndex in messageGroups.indices.reversed() {
+            for messageIndex in messageGroups[groupIndex].messages.indices.reversed() {
+                guard messageGroups[groupIndex].messages[messageIndex].role == .assistant else { continue }
+                guard messageGroups[groupIndex].messages[messageIndex].status == .processing else { continue }
+                update(&messageGroups[groupIndex].messages[messageIndex])
+                return
+            }
+        }
+    }
+
+    private static func upsertTextBlock(text: String, into blocks: [ContentBlock]?) -> [ContentBlock]? {
+        guard !text.isEmpty else { return blocks }
+
+        var result = blocks ?? []
+        if let index = result.firstIndex(where: {
+            if case .text = $0 { return true }
+            return false
+        }) {
+            result[index] = .text(text)
+        } else {
+            result.insert(.text(text), at: 0)
+        }
+        return result
     }
 
     private func updateExerciseInPlace(messageId: String, exerciseId: String, update: (inout Exercise) -> Void) {

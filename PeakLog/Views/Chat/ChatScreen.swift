@@ -8,6 +8,7 @@ struct ChatScreen: View {
     @StateObject private var viewModel: ChatViewModel
     @State private var didRunDebugAutoSend = false
     @State private var keyboardHeight: CGFloat = 0
+    @State private var hasUserInitiatedHistoryScroll = false
     var onShowHistory: (() -> Void)?
     var onShowProfile: (() -> Void)?
 
@@ -119,6 +120,7 @@ struct ChatScreen: View {
                         ProgressView()
                             .padding(.top, 40)
                     } else {
+                        historyLoadSentinel
                         ForEach(viewModel.messageGroups) { group in
                             dateSection(group: group)
                         }
@@ -131,10 +133,23 @@ struct ChatScreen: View {
             }
             .dismissKeyboardOnTap()
             .chatScrollDismissesKeyboard(chatScrollKeyboardDismissBehavior)
-            .onChange(of: viewModel.messageGroups) { _, _ in
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10).onChanged { value in
+                    guard value.translation.height > 0 else { return }
+                    hasUserInitiatedHistoryScroll = true
+                }
+            )
+            .onChange(of: viewModel.shouldScrollToBottomOnce) { _, shouldScroll in
+                guard shouldScroll else { return }
                 withAnimation {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
+                viewModel.consumeScrollToBottomRequest()
+            }
+            .onChange(of: viewModel.pendingTopAnchorMessageID) { _, anchorID in
+                guard let anchorID else { return }
+                proxy.scrollTo(anchorID, anchor: .top)
+                viewModel.consumePendingTopAnchorMessageID()
             }
             .onReceive(keyboardFrameDidChangePublisher) { notification in
                 let nextKeyboardHeight = keyboardHeight(from: notification)
@@ -199,6 +214,18 @@ struct ChatScreen: View {
 
     // MARK: - Date Section
 
+    private var historyLoadSentinel: some View {
+        Color.clear
+            .frame(height: 1)
+            .onAppear {
+                guard hasUserInitiatedHistoryScroll else { return }
+                guard let anchorMessageID = viewModel.messageGroups.first?.messages.first?.id else { return }
+                Task {
+                    await viewModel.loadPreviousDayIfNeeded(anchorMessageID: anchorMessageID)
+                }
+            }
+    }
+
     @ViewBuilder
     private func dateSection(group: MessageGroup) -> some View {
         VStack(spacing: 10) {
@@ -217,37 +244,40 @@ struct ChatScreen: View {
                 let groupIndex = viewModel.messageGroups.firstIndex { $0.id == group.id }!
                 let message = viewModel.messageGroups[groupIndex].messages[index]
 
-                if message.isTyping {
-                    // Typing bubble — AI is processing
-                    TypingBubbleView()
-                } else {
-                    MessageBubbleView(
-                        message: $viewModel.messageGroups[groupIndex].messages[index],
-                        onDeleteExercise: { _, exerciseId in
-                            let msg = group.messages[index]
-                            Task {
-                                await viewModel.deleteExercise(
-                                    messageId: msg.id,
-                                    workoutRecordId: msg.workoutRecord?.id ?? "",
-                                    exerciseId: exerciseId
-                                )
+                Group {
+                    if message.isTyping {
+                        // Typing bubble — AI is processing
+                        TypingBubbleView()
+                    } else {
+                        MessageBubbleView(
+                            message: $viewModel.messageGroups[groupIndex].messages[index],
+                            onDeleteExercise: { _, exerciseId in
+                                let msg = group.messages[index]
+                                Task {
+                                    await viewModel.deleteExercise(
+                                        messageId: msg.id,
+                                        workoutRecordId: msg.workoutRecord?.id ?? "",
+                                        exerciseId: exerciseId
+                                    )
+                                }
+                            },
+                            onSetChanged: { _, exerciseId, updatedSet in
+                                let msg = group.messages[index]
+                                Task {
+                                    await viewModel.updateSet(
+                                        messageId: msg.id,
+                                        exerciseId: exerciseId,
+                                        setId: updatedSet.id,
+                                        weight: updatedSet.weight,
+                                        weightUnit: updatedSet.weightUnit,
+                                        reps: updatedSet.reps
+                                    )
+                                }
                             }
-                        },
-                        onSetChanged: { _, exerciseId, updatedSet in
-                            let msg = group.messages[index]
-                            Task {
-                                await viewModel.updateSet(
-                                    messageId: msg.id,
-                                    exerciseId: exerciseId,
-                                    setId: updatedSet.id,
-                                    weight: updatedSet.weight,
-                                    weightUnit: updatedSet.weightUnit,
-                                    reps: updatedSet.reps
-                                )
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
+                .id(message.id)
             }
         }
     }

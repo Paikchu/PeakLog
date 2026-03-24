@@ -4,6 +4,8 @@ import CoreGraphics
 
 @main
 struct ChatViewModelDateGroupingTestRunner {
+    private static let todayLabel = String(localized: "common.today")
+
     static func main() async {
         await groupsTodayMessagesUnderTodayLabel()
         await rendersHistoricalMessagesAsAbsoluteDates()
@@ -29,7 +31,7 @@ struct ChatViewModelDateGroupingTestRunner {
         await viewModel.loadMessages()
 
         precondition(viewModel.messageGroups.count == 1, "Expected a single date group for today's messages")
-        precondition(viewModel.messageGroups[0].label == "Today", "Expected today's messages to render under the Today label")
+        precondition(viewModel.messageGroups[0].label == todayLabel, "Expected today's messages to render under the Today label")
     }
 
     @MainActor
@@ -103,7 +105,7 @@ struct ChatViewModelDateGroupingTestRunner {
         precondition(groups[0].label == localizedShortDate(twoDaysAgo), "Expected the earliest group to be the oldest absolute date")
         precondition(groups[0].messages.count == 2, "Expected messages from the same day to stay in one group")
         precondition(groups[1].label == localizedShortDate(yesterday), "Expected the middle group to be yesterday's absolute date")
-        precondition(groups[2].label == "Today", "Expected the latest group to be Today")
+        precondition(groups[2].label == todayLabel, "Expected the latest group to be Today")
     }
 
     @MainActor
@@ -139,6 +141,13 @@ actor StaticChatService: ChatServiceProtocol {
     func fetchMessages(sessionId: String) async throws -> [ChatMessage] {
         _ = sessionId
         return messages
+    }
+
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] {
+        _ = sessionId
+        return messages.filter { message in
+            message.createdAt >= start && message.createdAt < end
+        }
     }
 
     func subscribeToMessages(
@@ -213,16 +222,39 @@ struct SendMessageServiceResponse {
     let conversationId: String
 }
 
+struct ChatStreamIDs: Equatable {
+    let userMessageId: String
+    let assistantMessageId: String
+}
+
+enum ChatServiceStreamEvent: Equatable {
+    case responseStarted(ChatStreamIDs)
+    case textDelta(String)
+    case workoutPreview(WorkoutRecordBlock)
+    case error(String)
+    case done
+}
+
+typealias ChatServiceStreamHandler = @Sendable (ChatServiceStreamEvent) -> Void
+
 protocol ChatServiceProtocol {
     func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse
     func fetchMessages(sessionId: String) async throws -> [ChatMessage]
+    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage]
     func subscribeToMessages(
         conversationId: String,
         onInsert: @escaping (ChatMessage) -> Void,
         onUpdate: @escaping (ChatMessage) -> Void
     ) async
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?)
     func unsubscribe() async
     func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord
+}
+
+extension ChatServiceProtocol {
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        _ = handler
+    }
 }
 
 protocol WorkoutServiceProtocol {
