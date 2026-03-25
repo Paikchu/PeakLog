@@ -26,6 +26,7 @@ final class ChatViewModel: ObservableObject {
 
     private let chatService: ChatServiceProtocol
     private let workoutService: WorkoutServiceProtocol
+    private let trainingPlanService: TrainingPlanServiceProtocol
     private let speechRecognitionService: SpeechRecognitionServicing
 
     private var inputTextBeforeVoiceRecording = ""
@@ -37,11 +38,13 @@ final class ChatViewModel: ObservableObject {
         conversationId: String,
         chatService: ChatServiceProtocol,
         workoutService: WorkoutServiceProtocol,
+        trainingPlanService: TrainingPlanServiceProtocol = EmptyTrainingPlanService(),
         speechRecognitionService: SpeechRecognitionServicing
     ) {
         self.conversationId = conversationId
         self.chatService = chatService
         self.workoutService = workoutService
+        self.trainingPlanService = trainingPlanService
         self.speechRecognitionService = speechRecognitionService
     }
 
@@ -51,6 +54,7 @@ final class ChatViewModel: ObservableObject {
             conversationId: conversationId,
             chatService: SupabaseChatService(),
             workoutService: SupabaseWorkoutService(),
+            trainingPlanService: SupabaseTrainingPlanService(),
             speechRecognitionService: SpeechRecognitionService()
         )
     }
@@ -97,12 +101,13 @@ final class ChatViewModel: ObservableObject {
         errorMessage = nil
         do {
             let window = todayWindow()
+            let todayPlan = try await trainingPlanService.fetchTodayPlan()
             let messages = try await chatService.fetchMessages(
                 sessionId: conversationId,
                 start: window.start,
                 end: window.end
             )
-            messageGroups = groupByDate(messages)
+            messageGroups = groupByDate(injectTodayPlanMessageIfNeeded(into: messages, todayPlan: todayPlan))
             oldestLoadedDayStart = window.start
             hasLoadedInitialDay = true
             hasMoreHistory = true
@@ -289,6 +294,32 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    func completePlannedSet(
+        messageId: String,
+        planSetId: String,
+        actualWeight: Double?,
+        actualWeightUnit: WeightUnit,
+        actualReps: Int
+    ) async {
+        updatePlanSetInPlace(messageId: messageId, planSetId: planSetId) { set in
+            set.completedAt = ISO8601DateFormatter().string(from: Date())
+        }
+        do {
+            let updatedSet = try await trainingPlanService.completePlannedSet(
+                planSetId: planSetId,
+                actualWeight: actualWeight,
+                actualWeightUnit: actualWeightUnit,
+                actualReps: actualReps
+            )
+            updatePlanSetInPlace(messageId: messageId, planSetId: planSetId) { set in
+                set.completedAt = updatedSet.completedAt.map { ISO8601DateFormatter().string(from: $0) }
+                set.linkedExerciseSetId = updatedSet.linkedExerciseSetId
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     // MARK: - Private: Message list helpers
 
     private func groupByDate(_ messages: [ChatMessage]) -> [MessageGroup] {
@@ -348,8 +379,9 @@ final class ChatViewModel: ObservableObject {
             start: window.start,
             end: window.end
         )
+        let todayPlan = try? await trainingPlanService.fetchTodayPlan()
         let mergedTodayMessages = mergeServerMessagesWithOptimisticLocals(todayMessages)
-        replaceTodayMessages(with: mergedTodayMessages)
+        replaceTodayMessages(with: mergedTodayMessages, todayPlan: todayPlan ?? nil)
         if !mergedTodayMessages.isEmpty {
             shouldScrollToBottomOnce = true
         }
@@ -500,11 +532,11 @@ final class ChatViewModel: ObservableObject {
         return mergedMessages.sorted(by: { $0.createdAt < $1.createdAt })
     }
 
-    private func replaceTodayMessages(with todayMessages: [ChatMessage]) {
+    private func replaceTodayMessages(with todayMessages: [ChatMessage], todayPlan: TrainingPlanDay?) {
         let historicalMessages = messageGroups.flatMap(\.messages).filter {
             !calendar.isDateInToday($0.createdAt)
         }
-        messageGroups = groupByDate(historicalMessages + todayMessages)
+        messageGroups = groupByDate(historicalMessages + injectTodayPlanMessageIfNeeded(into: todayMessages, todayPlan: todayPlan))
     }
 
     private func todayWindow(referenceDate: Date = Date()) -> (start: Date, end: Date) {
@@ -641,6 +673,74 @@ final class ChatViewModel: ObservableObject {
         return result
     }
 
+    private func injectTodayPlanMessageIfNeeded(into messages: [ChatMessage], todayPlan: TrainingPlanDay?) -> [ChatMessage] {
+        guard !messages.contains(where: { message in
+            (message.contentBlocks ?? []).contains {
+                switch $0 {
+                case .todayPlan:
+                    return true
+                default:
+                    return false
+                }
+            }
+        }) else {
+            return messages
+        }
+
+        guard let day = todayPlan else {
+            return messages
+        }
+
+        let planMessage = ChatMessage(
+            id: "local-today-plan-\(day.id)",
+            sessionId: conversationId,
+            role: .assistant,
+            text: "Today's plan",
+            createdAt: messages.first?.createdAt.addingTimeInterval(-0.5) ?? Date(),
+            contentBlocks: [
+                .todayPlan(
+                    TodayPlanBlock(
+                        planId: "local-active-plan",
+                        goalSummary: nil,
+                        day: PlanDayBlock(
+                            planDayId: day.id,
+                            planDate: day.planDate,
+                            dayIndex: day.dayIndex,
+                            title: day.title,
+                            focus: day.focus,
+                            status: day.status,
+                            exercises: day.exercises.map { exercise in
+                                PlanExerciseBlock(
+                                    planExerciseId: exercise.id,
+                                    orderIndex: exercise.orderIndex,
+                                    exerciseName: exercise.exerciseName,
+                                    progressionMode: exercise.progressionMode,
+                                    notes: exercise.notes,
+                                    sets: exercise.sets.map { set in
+                                        PlanSetBlock(
+                                            planSetId: set.id,
+                                            setIndex: set.setIndex,
+                                            targetWeight: set.targetWeight,
+                                            targetWeightUnit: set.targetWeightUnit.rawValue,
+                                            targetReps: set.targetReps,
+                                            completedAt: set.completedAt.map { ISO8601DateFormatter().string(from: $0) },
+                                            linkedExerciseSetId: set.linkedExerciseSetId
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                    )
+                )
+            ],
+            status: .completed,
+            parseStatus: .completed,
+            isLocalOnly: true
+        )
+
+        return ([planMessage] + messages).sorted(by: { $0.createdAt < $1.createdAt })
+    }
+
     private func updateExerciseInPlace(messageId: String, exerciseId: String, update: (inout Exercise) -> Void) {
         for gi in messageGroups.indices {
             for mi in messageGroups[gi].messages.indices {
@@ -678,6 +778,33 @@ final class ChatViewModel: ObservableObject {
                    var record = messageGroups[gi].messages[mi].workoutRecord {
                     record.exercises.removeAll { $0.id == exerciseId }
                     messageGroups[gi].messages[mi].workoutRecord = record
+                }
+            }
+        }
+    }
+
+    private func updatePlanSetInPlace(messageId: String, planSetId: String, update: (inout PlanSetBlock) -> Void) {
+        for gi in messageGroups.indices {
+            for mi in messageGroups[gi].messages.indices where messageGroups[gi].messages[mi].id == messageId {
+                guard var blocks = messageGroups[gi].messages[mi].contentBlocks else { continue }
+                for blockIndex in blocks.indices {
+                    switch blocks[blockIndex] {
+                    case .todayPlan(var plan):
+                        var day = plan.day
+                        for exerciseIndex in day.exercises.indices {
+                            if let setIndex = day.exercises[exerciseIndex].sets.firstIndex(where: { $0.planSetId == planSetId }) {
+                                var set = day.exercises[exerciseIndex].sets[setIndex]
+                                update(&set)
+                                day.exercises[exerciseIndex].sets[setIndex] = set
+                                plan = TodayPlanBlock(planId: plan.planId, goalSummary: plan.goalSummary, day: day)
+                                blocks[blockIndex] = .todayPlan(plan)
+                                messageGroups[gi].messages[mi].contentBlocks = blocks
+                                return
+                            }
+                        }
+                    default:
+                        break
+                    }
                 }
             }
         }

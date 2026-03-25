@@ -188,15 +188,18 @@ private struct ValueEditSheet: View {
 struct ExerciseCardView: View {
     @Binding var exercise: Exercise
     var messageId: String
+    var isEditable: Bool = true
     var onDeleteExercise: () -> Void
     var onSetChanged: (ExerciseSet) -> Void
 
     @State private var offset: CGFloat = 0
     private let deleteWidth: CGFloat = 72
+    private let swipeCoordinator = ExerciseCardSwipeGestureCoordinator()
 
     var body: some View {
         ZStack(alignment: .trailing) {
             Button {
+                guard isEditable else { return }
                 withAnimation(.spring()) { offset = 0 }
                 onDeleteExercise()
             } label: {
@@ -214,7 +217,14 @@ struct ExerciseCardView: View {
                 .cornerRadius(AppRadius.xxl, corners: [.topRight, .bottomRight])
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            cardContent
+        }
+        .clipped()
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        let content = VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: AppRadius.full)
                         .fill(Color.accentPurple)
@@ -240,6 +250,7 @@ struct ExerciseCardView: View {
                             setIndex: index + 1,
                             set: $exercise.sets[index]
                         ) { weight, unit, reps in
+                            guard isEditable else { return }
                             var updated = exercise.sets[index]
                             updated.weight = weight
                             updated.weightUnit = unit
@@ -250,47 +261,46 @@ struct ExerciseCardView: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.bottom, 6)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.xxl)
-                    .fill(Color.appSurface)
-            )
-            .cornerRadius(AppRadius.xxl)
-            .offset(x: offset)
-            .contentShape(Rectangle())
-            .highPriorityGesture(swipeGesture)
         }
-        .clipped()
-    }
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 10)
-            .onChanged { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    return
-                }
-
-                let delta = value.translation.width
-                if delta < 0 {
-                    offset = max(-deleteWidth, delta)
-                } else {
-                    offset = min(0, (offset < 0 ? -deleteWidth : 0) + delta)
-                }
-            }
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    return
-                }
-
-                withAnimation(.spring(response: 0.3)) {
-                    if value.translation.width < -deleteWidth / 2 {
-                        offset = -deleteWidth
-                    } else {
-                        offset = 0
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.xxl)
+                .fill(Color.appSurface)
+        )
+        .cornerRadius(AppRadius.xxl)
+        .offset(x: offset)
+        .contentShape(Rectangle())
+        .allowsHitTesting(isEditable)
+        #if canImport(UIKit)
+        .background {
+            if isEditable {
+                ExerciseCardPanGesture(
+                    swipeCoordinator: swipeCoordinator,
+                    onChanged: { translation in
+                        let decision = swipeCoordinator.decision(
+                            translation: translation,
+                            currentOffset: offset,
+                            deleteWidth: deleteWidth
+                        )
+                        offset = decision.nextOffset
+                    },
+                    onEnded: { translation in
+                        withAnimation(.spring(response: 0.3)) {
+                            offset = swipeCoordinator.finalOffset(
+                                translation: translation,
+                                currentOffset: offset,
+                                deleteWidth: deleteWidth,
+                                lockedAxis: .horizontal
+                            )
+                        }
                     }
-                }
+                )
+                .allowsHitTesting(false)
             }
+        }
+        #endif
+
+        content
     }
 }
 
@@ -330,6 +340,7 @@ private struct RoundedCorner: Shape {
     ExerciseCardView(
         exercise: $exercise,
         messageId: "m-1",
+        isEditable: true,
         onDeleteExercise: {},
         onSetChanged: { _ in }
     )

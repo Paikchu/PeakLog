@@ -10,14 +10,22 @@ final class HistoryViewModel: ObservableObject {
 
     // MARK: - Sessions for selected day
     @Published var sessions: [WorkoutSession] = []
+    @Published var activePlan: TrainingPlan?
+    @Published var selectedPlanDay: TrainingPlanDay?
     @Published var isLoadingSessions: Bool = false
     @Published var isLoadingCalendar: Bool = false
+    @Published var isLoadingPlan: Bool = false
     @Published var errorMessage: String?
 
     private let workoutService: WorkoutServiceProtocol
+    private let trainingPlanService: TrainingPlanServiceProtocol
 
-    init(workoutService: WorkoutServiceProtocol = SupabaseWorkoutService()) {
+    init(
+        workoutService: WorkoutServiceProtocol = SupabaseWorkoutService(),
+        trainingPlanService: TrainingPlanServiceProtocol = SupabaseTrainingPlanService()
+    ) {
         self.workoutService = workoutService
+        self.trainingPlanService = trainingPlanService
     }
 
     // MARK: - Load Calendar
@@ -36,6 +44,17 @@ final class HistoryViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoadingCalendar = false
+    }
+
+    func loadPlan() async {
+        isLoadingPlan = true
+        do {
+            activePlan = try await trainingPlanService.fetchActiveWeeklyPlan()
+            selectedPlanDay = planDay(for: selectedDate, in: activePlan)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isLoadingPlan = false
     }
 
     // MARK: - Load Sessions for Day
@@ -70,6 +89,7 @@ final class HistoryViewModel: ObservableObject {
         if let prev = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) {
             selectedDate = prev
             displayedMonth = prev
+            selectedPlanDay = planDay(for: prev, in: activePlan)
         }
     }
 
@@ -77,6 +97,7 @@ final class HistoryViewModel: ObservableObject {
         if let next = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) {
             selectedDate = next
             displayedMonth = next
+            selectedPlanDay = planDay(for: next, in: activePlan)
         }
     }
 
@@ -84,6 +105,7 @@ final class HistoryViewModel: ObservableObject {
     func selectDate(_ date: Date) {
         selectedDate = date
         displayedMonth = date
+        selectedPlanDay = planDay(for: date, in: activePlan)
     }
 
     // MARK: - Current Week Days
@@ -188,5 +210,43 @@ final class HistoryViewModel: ObservableObject {
         }
 
         return Array(days.prefix(42))
+    }
+
+    func completePlannedSet(
+        planSetId: String,
+        actualWeight: Double?,
+        actualWeightUnit: WeightUnit,
+        actualReps: Int
+    ) async {
+        do {
+            let updatedSet = try await trainingPlanService.completePlannedSet(
+                planSetId: planSetId,
+                actualWeight: actualWeight,
+                actualWeightUnit: actualWeightUnit,
+                actualReps: actualReps
+            )
+
+            if var plan = activePlan {
+                for dayIndex in plan.days.indices {
+                    for exerciseIndex in plan.days[dayIndex].exercises.indices {
+                        if let setIndex = plan.days[dayIndex].exercises[exerciseIndex].sets.firstIndex(where: { $0.id == planSetId }) {
+                            plan.days[dayIndex].exercises[exerciseIndex].sets[setIndex] = updatedSet
+                        }
+                    }
+                }
+                activePlan = plan
+                selectedPlanDay = planDay(for: selectedDate, in: plan)
+            }
+
+            await loadSessionsForSelectedDate()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func planDay(for date: Date, in plan: TrainingPlan?) -> TrainingPlanDay? {
+        guard let plan else { return nil }
+        let formatter = WorkoutDateFormatter()
+        return plan.days.first(where: { $0.planDate == formatter.string(from: date) })
     }
 }

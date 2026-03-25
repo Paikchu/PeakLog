@@ -273,6 +273,17 @@ struct ChatScreen: View {
                                         reps: updatedSet.reps
                                     )
                                 }
+                            },
+                            onCompletePlannedSet: { messageId, planSet in
+                                Task {
+                                    await viewModel.completePlannedSet(
+                                        messageId: messageId,
+                                        planSetId: planSet.planSetId,
+                                        actualWeight: planSet.targetWeight,
+                                        actualWeightUnit: WeightUnit(rawValue: planSet.targetWeightUnit) ?? .kg,
+                                        actualReps: planSet.targetReps
+                                    )
+                                }
                             }
                         )
                     }

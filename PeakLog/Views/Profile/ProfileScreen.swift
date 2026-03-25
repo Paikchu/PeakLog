@@ -22,6 +22,7 @@ struct ProfileScreen: View {
             ScrollView {
                 VStack(spacing: 24) {
                     avatarSection
+                    goalSection
                     statsSection
                     prSection
                     preferencesSection
@@ -144,6 +145,21 @@ struct ProfileScreen: View {
                 .foregroundColor(.textMuted)
         }
         .padding(.top, 16)
+    }
+
+    @ViewBuilder
+    private var goalSection: some View {
+        if let goal = viewModel.profile?.fitnessGoalSummary, !goal.isEmpty {
+            SettingsSection(title: "Fitness Goal") {
+                Text(goal)
+                    .font(.system(size: 14))
+                    .foregroundColor(.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+            }
+            .padding(.horizontal, 16)
+        }
     }
 
     // MARK: - Stats

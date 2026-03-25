@@ -59,7 +59,7 @@ final class SupabaseChatService: ChatServiceProtocol {
     private let streamSession: URLSession
     private var streamEventHandler: ChatServiceStreamHandler?
 
-    init(streamSession: URLSession = .shared) {
+    init(streamSession: URLSession = SupabaseChatService.makeStreamingSession()) {
         self.streamSession = streamSession
     }
 
@@ -210,6 +210,7 @@ final class SupabaseChatService: ChatServiceProtocol {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = 300
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
@@ -231,6 +232,15 @@ final class SupabaseChatService: ChatServiceProtocol {
         }
         return data
     }
+
+    private static func makeStreamingSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 300
+        configuration.timeoutIntervalForResource = 600
+        configuration.waitsForConnectivity = true
+        return URLSession(configuration: configuration)
+    }
+
     private static func extractErrorMessage(from data: Data) -> String {
         if
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -11,6 +11,7 @@ struct AuthView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
+    @State private var didRunDebugAutoSignIn = false
 
     private let supabase = SupabaseManager.shared.client
 
@@ -104,6 +105,9 @@ struct AuthView: View {
             }
         }
         .dismissKeyboardOnTap()
+        .task {
+            await runDebugAutoSignInIfNeeded()
+        }
     }
 
     // MARK: - Actions
@@ -135,6 +139,28 @@ struct AuthView: View {
     private func normalizeEmail(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+
+    @MainActor
+    private func runDebugAutoSignInIfNeeded() async {
+        #if DEBUG
+        guard !didRunDebugAutoSignIn else { return }
+
+        let environment = ProcessInfo.processInfo.environment
+        guard let debugEmail = environment["PEAKLOG_DEBUG_AUTH_EMAIL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let debugPassword = environment["PEAKLOG_DEBUG_AUTH_PASSWORD"],
+              !debugEmail.isEmpty,
+              !debugPassword.isEmpty else {
+            return
+        }
+
+        didRunDebugAutoSignIn = true
+        isSignUp = false
+        email = debugEmail
+        password = debugPassword
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        await submit()
+        #endif
     }
 }
 

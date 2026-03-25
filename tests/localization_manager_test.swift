@@ -80,7 +80,8 @@ private actor RecordingProfileService: ProfileServiceProtocol {
                 weightUnit: .kg,
                 timezone: "Asia/Shanghai",
                 language: .english
-            )
+            ),
+            fitnessGoalSummary: nil
         )
     }
 
@@ -96,4 +97,8 @@ private actor RecordingProfileService: ProfileServiceProtocol {
     }
 
     func signOut() async throws {}
+
+    func updateFitnessGoalSummary(_ summary: String) async throws -> String {
+        summary
+    }
 }

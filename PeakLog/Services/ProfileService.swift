@@ -21,6 +21,9 @@ protocol ProfileServiceProtocol {
     /// Update one or more preference fields.
     func updatePreferences(_ prefs: UpdatePreferencesRequest) async throws -> UserPreferences
 
+    /// Update the stored natural-language fitness goal summary.
+    func updateFitnessGoalSummary(_ summary: String) async throws -> String
+
     /// Sign the current user out (invalidate session token on server).
     func signOut() async throws
 }
@@ -44,6 +47,17 @@ final class LiveProfileService: ProfileServiceProtocol {
         // TODO: PATCH /profile/me/preferences
         let req = try client.request(method: "PATCH", path: "profile/me/preferences", body: prefs)
         return try await client.execute(req)
+    }
+
+    func updateFitnessGoalSummary(_ summary: String) async throws -> String {
+        struct Body: Encodable { let fitnessGoalSummary: String }
+        struct Response: Decodable {
+            let fitnessGoalSummary: String
+            enum CodingKeys: String, CodingKey { case fitnessGoalSummary = "fitness_goal_summary" }
+        }
+        let req = try client.request(method: "PATCH", path: "profile/me", body: Body(fitnessGoalSummary: summary))
+        let response: Response = try await client.execute(req)
+        return response.fitnessGoalSummary
     }
 
     func signOut() async throws {
@@ -70,6 +84,7 @@ final class MockProfileService: ProfileServiceProtocol {
             timezone: TimeZone.current.identifier,
             language: .english
         ),
+        fitnessGoalSummary: "Build muscle with extra focus on upper body strength and weekly bench progress.",
         exercisePRs: [
             ExercisePR(
                 normalizedName: "deadlift",
@@ -101,6 +116,12 @@ final class MockProfileService: ProfileServiceProtocol {
         if let v = prefs.timezone { profile.preferences.timezone = v }
         if let v = prefs.language { profile.preferences.language = v }
         return profile.preferences
+    }
+
+    func updateFitnessGoalSummary(_ summary: String) async throws -> String {
+        try await Task.sleep(nanoseconds: 200_000_000)
+        profile.fitnessGoalSummary = summary
+        return summary
     }
 
     func signOut() async throws {

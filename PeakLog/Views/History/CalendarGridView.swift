@@ -34,6 +34,8 @@ struct CalendarGridView: View {
             }
 
             expandToggle
+
+            selectedPlanSection
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -137,6 +139,49 @@ struct CalendarGridView: View {
                 .foregroundColor(.textMuted)
                 .frame(maxWidth: .infinity)
                 .frame(height: 22)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedPlanSection: some View {
+        if viewModel.isLoadingPlan {
+            ProgressView()
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+        } else if let day = viewModel.selectedPlanDay {
+            Divider()
+                .background(Color.appSeparator)
+                .padding(.top, 2)
+
+            HistoryPlanDaySection(day: day) { set in
+                Task {
+                    await viewModel.completePlannedSet(
+                        planSetId: set.id,
+                        actualWeight: set.targetWeight,
+                        actualWeightUnit: set.targetWeightUnit,
+                        actualReps: set.targetReps
+                    )
+                }
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 10)
+        } else if viewModel.activePlan != nil {
+            Divider()
+                .background(Color.appSeparator)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No workout planned")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.textPrimary)
+                Text("Switch to another day in this week to view its workout plan.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+            .padding(.bottom, 10)
         }
     }
 }

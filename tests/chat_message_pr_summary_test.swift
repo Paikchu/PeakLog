@@ -161,6 +161,7 @@ struct ChatMessagePRSummaryTestRunner {
                     timezone: "Asia/Shanghai",
                     language: .english
                 ),
+                fitnessGoalSummary: "Build muscle and improve bench press.",
                 exercisePRs: [
                     ExercisePR(
                         normalizedName: "bench press",
@@ -196,6 +197,7 @@ private struct TestProfileService: ProfileServiceProtocol {
         _ = prefs
         return profile.preferences
     }
+    func updateFitnessGoalSummary(_ summary: String) async throws -> String { summary }
     func signOut() async throws {}
 
     func fetchProfileSync() throws -> UserProfile { profile }

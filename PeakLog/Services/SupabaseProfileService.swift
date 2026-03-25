@@ -17,11 +17,13 @@ final class SupabaseProfileService: ProfileServiceProtocol {
             let displayName: String
             let avatarUrl: String?
             let membershipType: String
+            let fitnessGoalSummary: String?
             enum CodingKeys: String, CodingKey {
                 case id
                 case displayName = "display_name"
                 case avatarUrl = "avatar_url"
                 case membershipType = "membership_type"
+                case fitnessGoalSummary = "fitness_goal_summary"
             }
         }
 
@@ -121,6 +123,7 @@ final class SupabaseProfileService: ProfileServiceProtocol {
                 timezone: prefs.timezone ?? TimeZone.current.identifier,
                 language: AppLanguage.resolve(prefs.language) ?? .english
             ),
+            fitnessGoalSummary: profile.fitnessGoalSummary,
             exercisePRs: exercisePRs.map {
                 ExercisePR(
                     normalizedName: $0.normalizedName,
@@ -187,5 +190,35 @@ final class SupabaseProfileService: ProfileServiceProtocol {
 
     func signOut() async throws {
         try await supabase.auth.signOut()
+    }
+
+    func updateFitnessGoalSummary(_ summary: String) async throws -> String {
+        let user = try await supabase.auth.session.user
+        let uid = user.id.uuidString
+
+        struct GoalUpdate: Encodable {
+            let fitnessGoalSummary: String
+            enum CodingKeys: String, CodingKey {
+                case fitnessGoalSummary = "fitness_goal_summary"
+            }
+        }
+
+        struct GoalRow: Decodable {
+            let fitnessGoalSummary: String?
+            enum CodingKeys: String, CodingKey {
+                case fitnessGoalSummary = "fitness_goal_summary"
+            }
+        }
+
+        let rows: [GoalRow] = try await supabase
+            .from("profiles")
+            .update(GoalUpdate(fitnessGoalSummary: summary))
+            .eq("id", value: uid)
+            .select("fitness_goal_summary")
+            .execute()
+            .value
+
+        guard let row = rows.first else { throw APIError.notFound }
+        return row.fitnessGoalSummary ?? summary
     }
 }

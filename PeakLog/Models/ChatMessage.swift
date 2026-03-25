@@ -117,11 +117,116 @@ struct ClarificationPromptBlock: Codable, Equatable {
     }
 }
 
+struct PlanSetBlock: Codable, Equatable, Identifiable {
+    let planSetId: String
+    let setIndex: Int
+    let targetWeight: Double?
+    let targetWeightUnit: String
+    let targetReps: Int
+    var completedAt: String?
+    var linkedExerciseSetId: String?
+
+    var id: String { planSetId }
+    var isCompleted: Bool { completedAt != nil || linkedExerciseSetId != nil }
+
+    enum CodingKeys: String, CodingKey {
+        case planSetId = "plan_set_id"
+        case setIndex = "set_index"
+        case targetWeight = "target_weight"
+        case targetWeightUnit = "target_weight_unit"
+        case targetReps = "target_reps"
+        case completedAt = "completed_at"
+        case linkedExerciseSetId = "linked_exercise_set_id"
+    }
+}
+
+struct PlanExerciseBlock: Codable, Equatable, Identifiable {
+    let planExerciseId: String
+    let orderIndex: Int
+    let exerciseName: String
+    let progressionMode: String
+    let notes: String?
+    var sets: [PlanSetBlock]
+
+    var id: String { planExerciseId }
+
+    enum CodingKeys: String, CodingKey {
+        case planExerciseId = "plan_exercise_id"
+        case orderIndex = "order_index"
+        case exerciseName = "exercise_name"
+        case progressionMode = "progression_mode"
+        case notes
+        case sets
+    }
+}
+
+struct PlanDayBlock: Codable, Equatable, Identifiable {
+    let planDayId: String
+    let planDate: String
+    let dayIndex: Int
+    let title: String
+    let focus: String?
+    let status: String
+    var exercises: [PlanExerciseBlock]
+
+    var id: String { planDayId }
+
+    enum CodingKeys: String, CodingKey {
+        case planDayId = "plan_day_id"
+        case planDate = "plan_date"
+        case dayIndex = "day_index"
+        case title
+        case focus
+        case status
+        case exercises
+    }
+}
+
+struct WeeklyPlanBlock: Codable, Equatable {
+    let planId: String
+    let weekStartDate: String
+    let goalSummary: String?
+    let coachSummary: String
+    let days: [PlanDayBlock]
+
+    enum CodingKeys: String, CodingKey {
+        case planId = "plan_id"
+        case weekStartDate = "week_start_date"
+        case goalSummary = "goal_summary"
+        case coachSummary = "coach_summary"
+        case days
+    }
+}
+
+struct TodayPlanBlock: Codable, Equatable {
+    let planId: String
+    let goalSummary: String?
+    let day: PlanDayBlock
+
+    enum CodingKeys: String, CodingKey {
+        case planId = "plan_id"
+        case goalSummary = "goal_summary"
+        case day
+    }
+}
+
+struct PlanAdjustmentSummaryBlock: Codable, Equatable {
+    let summaryText: String
+
+    enum CodingKeys: String, CodingKey {
+        case summaryText = "summary_text"
+    }
+}
+
 enum ContentBlock: Equatable {
     case text(String)
     case workoutRecord(WorkoutRecordBlock)
+    case workoutRecordStream(WorkoutRecordBlock)
     case prSummary(PRSummaryBlock)
     case clarificationPrompt(ClarificationPromptBlock)
+    case weeklyPlan(WeeklyPlanBlock)
+    case todayPlan(TodayPlanBlock)
+    case planAdjustmentSummary(PlanAdjustmentSummaryBlock)
     case unknown
 }
 
@@ -140,12 +245,24 @@ extension ContentBlock: Codable {
         case "workout_record":
             let record = try WorkoutRecordBlock(from: decoder)
             self = .workoutRecord(record)
+        case "workout_record_stream":
+            let record = try WorkoutRecordBlock(from: decoder)
+            self = .workoutRecordStream(record)
         case "pr_summary":
             let summary = try PRSummaryBlock(from: decoder)
             self = .prSummary(summary)
         case "clarification_prompt":
             let prompt = try ClarificationPromptBlock(from: decoder)
             self = .clarificationPrompt(prompt)
+        case "weekly_plan":
+            let plan = try WeeklyPlanBlock(from: decoder)
+            self = .weeklyPlan(plan)
+        case "today_plan":
+            let plan = try TodayPlanBlock(from: decoder)
+            self = .todayPlan(plan)
+        case "plan_adjustment_summary":
+            let summary = try PlanAdjustmentSummaryBlock(from: decoder)
+            self = .planAdjustmentSummary(summary)
         default:
             self = .unknown
         }
@@ -160,12 +277,24 @@ extension ContentBlock: Codable {
         case .workoutRecord(let record):
             try container.encode("workout_record", forKey: .type)
             try record.encode(to: encoder)
+        case .workoutRecordStream(let record):
+            try container.encode("workout_record_stream", forKey: .type)
+            try record.encode(to: encoder)
         case .prSummary(let summary):
             try container.encode("pr_summary", forKey: .type)
             try summary.encode(to: encoder)
         case .clarificationPrompt(let prompt):
             try container.encode("clarification_prompt", forKey: .type)
             try prompt.encode(to: encoder)
+        case .weeklyPlan(let plan):
+            try container.encode("weekly_plan", forKey: .type)
+            try plan.encode(to: encoder)
+        case .todayPlan(let plan):
+            try container.encode("today_plan", forKey: .type)
+            try plan.encode(to: encoder)
+        case .planAdjustmentSummary(let summary):
+            try container.encode("plan_adjustment_summary", forKey: .type)
+            try summary.encode(to: encoder)
         case .unknown:
             try container.encode("unknown", forKey: .type)
         }
@@ -178,7 +307,7 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     let id: String
     let sessionId: String          // maps to conversation_id in DB
     let role: MessageRole
-    let text: String               // plain text content (summary / fallback)
+    var text: String               // plain text content (summary / fallback)
     let createdAt: Date
 
     /// GenUI content blocks — prefer this over `workoutRecord` when non-nil.

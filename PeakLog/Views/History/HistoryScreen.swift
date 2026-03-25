@@ -9,6 +9,8 @@ struct HistoryScreen: View {
             header
             ScrollView {
                 VStack(spacing: 16) {
+                    planSection
+
                     CalendarGridView(viewModel: viewModel)
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
@@ -20,12 +22,12 @@ struct HistoryScreen: View {
         }
         .background(Color.appBackground.ignoresSafeArea())
         .task {
+            await viewModel.loadPlan()
             await viewModel.loadCalendar()
             await viewModel.loadSessionsForSelectedDate()
         }
     }
 
-    // MARK: - Header
     private var header: some View {
         HStack {
             Button {
@@ -45,7 +47,6 @@ struct HistoryScreen: View {
 
             Spacer()
 
-            // Spacer to balance the back button
             Color.clear.frame(width: 38, height: 38)
         }
         .padding(.horizontal, 12)
@@ -53,7 +54,50 @@ struct HistoryScreen: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - Session List
+    @ViewBuilder
+    private var planSection: some View {
+        if let plan = viewModel.activePlan {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Current Plan")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.textMuted)
+                Text("Week of \(plan.weekStartDate)")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.textPrimary)
+                if let goalSummary = plan.goalSummary, !goalSummary.isEmpty {
+                    Text(goalSummary)
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary)
+                }
+                Text("\(plan.days.filter { $0.status != "rest" }.count) training days · \(plan.completedSetsCount)/\(plan.totalSetsCount) planned sets completed")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.textMuted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color.appSurface)
+            .cornerRadius(18)
+            .padding(.horizontal, 16)
+        } else if !viewModel.isLoadingPlan {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Current Plan")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.textMuted)
+                Text("No active plan yet")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.textPrimary)
+                Text("Ask the AI coach in chat to create your weekly plan.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color.appSurface)
+            .cornerRadius(18)
+            .padding(.horizontal, 16)
+        }
+    }
+
     @ViewBuilder
     private var sessionList: some View {
         if viewModel.isLoadingSessions {

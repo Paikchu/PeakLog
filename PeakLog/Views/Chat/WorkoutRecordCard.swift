@@ -3,6 +3,7 @@ import SwiftUI
 struct WorkoutRecordCard: View {
     let messageId: String
     @Binding var record: WorkoutRecord
+    var isEditable: Bool = true
     var onDeleteExercise: (String) -> Void
     var onSetChanged: (String, ExerciseSet) -> Void
 
@@ -12,6 +13,7 @@ struct WorkoutRecordCard: View {
                 ExerciseCardView(
                     exercise: $record.exercises[index],
                     messageId: messageId,
+                    isEditable: isEditable,
                     onDeleteExercise: {
                         onDeleteExercise(record.exercises[index].id)
                     },
@@ -37,6 +39,7 @@ struct WorkoutRecordCard: View {
     WorkoutRecordCard(
         messageId: "m-1",
         record: $record,
+        isEditable: true,
         onDeleteExercise: { _ in },
         onSetChanged: { _, _ in }
     )

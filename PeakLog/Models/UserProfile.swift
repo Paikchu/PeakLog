@@ -73,5 +73,6 @@ struct UserProfile: Identifiable, Codable {
     var membershipLevel: MembershipLevel
     var stats: UserStats
     var preferences: UserPreferences
+    var fitnessGoalSummary: String?
     var exercisePRs: [ExercisePR] = []
 }
