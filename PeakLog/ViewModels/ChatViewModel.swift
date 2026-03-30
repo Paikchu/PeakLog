@@ -579,10 +579,14 @@ final class ChatViewModel: ObservableObject {
         case .responseStarted(let ids):
             reconcileOptimisticMessageID(localID: latestOptimisticUserMessageID, serverID: ids.userMessageId)
             reconcileOptimisticMessageID(localID: latestOptimisticAssistantMessageID, serverID: ids.assistantMessageId)
+        case .status:
+            break
         case .textDelta(let delta):
             appendStreamingTextDelta(delta)
         case .workoutPreview(let block):
             applyStreamingWorkoutPreview(block)
+        case .planContentBlock:
+            break
         case .error(let message):
             markStreamingAssistantFailed(message: message)
             errorMessage = message

@@ -2,6 +2,14 @@ import Foundation
 import Combine
 import CoreGraphics
 
+enum TodayAIOverlayPhase: Equatable {
+    case idle
+    case processing
+    case applying
+    case completed
+    case failed
+}
+
 @MainActor
 final class TodayWorkoutViewModel: ObservableObject {
     @Published var todayPlan: TrainingPlanDay?
@@ -12,25 +20,33 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var isSending = false
     @Published var errorMessage: String?
     @Published var latestAssistantReply: String?
+    @Published private(set) var isOverlayVisible = false
+    @Published private(set) var overlayPhase: TodayAIOverlayPhase = .idle
+    @Published private(set) var streamingReply = ""
+    @Published private(set) var overlayContentBlocks: [ContentBlock] = []
+    @Published private(set) var didPersistPlan = false
     @Published private(set) var voiceInputState: VoiceInputState = .idle
 
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let workoutService: WorkoutServiceProtocol
-    private let aiActionService: WorkoutAIActionServiceProtocol
+    private let chatService: ChatServiceProtocol
+    private let conversationService: ConversationServiceProtocol
     private let speechRecognitionService: SpeechRecognitionServicing
-    private let workoutDateFormatter = WorkoutDateFormatter()
 
     private var inputTextBeforeVoiceRecording = ""
+    private var shouldRefreshAfterStreamingCompletion = false
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
         workoutService: WorkoutServiceProtocol,
-        aiActionService: WorkoutAIActionServiceProtocol,
+        chatService: ChatServiceProtocol,
+        conversationService: ConversationServiceProtocol,
         speechRecognitionService: SpeechRecognitionServicing
     ) {
         self.trainingPlanService = trainingPlanService
         self.workoutService = workoutService
-        self.aiActionService = aiActionService
+        self.chatService = chatService
+        self.conversationService = conversationService
         self.speechRecognitionService = speechRecognitionService
     }
 
@@ -39,7 +55,8 @@ final class TodayWorkoutViewModel: ObservableObject {
         self.init(
             trainingPlanService: SupabaseTrainingPlanService(),
             workoutService: SupabaseWorkoutService(),
-            aiActionService: SupabaseWorkoutAIActionService(),
+            chatService: SupabaseChatService(),
+            conversationService: SupabaseConversationService(),
             speechRecognitionService: SpeechRecognitionService()
         )
     }
@@ -72,24 +89,33 @@ final class TodayWorkoutViewModel: ObservableObject {
         errorMessage = nil
         isSending = true
         inputText = ""
+        beginStreamingOverlay()
+        chatService.setStreamEventHandler { [weak self] event in
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleStreamEvent(event)
+            }
+        }
 
         do {
-            let response = try await aiActionService.submitAction(
-                text: text,
-                targetDate: workoutDateFormatter.string(from: Date())
-            )
-            latestAssistantReply = response.reply
-            quickActions = response.quickActions
-            applyExerciseInsights(response.exerciseInsights)
-            if response.requiresTodayRefresh {
+            let conversationId = try await conversationService.fetchOrCreateDefaultConversationId()
+            _ = try await chatService.sendMessage(text, sessionId: conversationId)
+            latestAssistantReply = streamingReply.trimmingCharacters(in: .whitespacesAndNewlines)
+            if shouldRefreshAfterStreamingCompletion {
                 await refresh()
             }
-            isSending = false
         } catch {
             errorMessage = error.localizedDescription
             inputText = text
-            isSending = false
+            markOverlayFailed()
         }
+
+        chatService.setStreamEventHandler(nil)
+        isSending = false
+    }
+
+    func dismissOverlay() {
+        isOverlayVisible = false
     }
 
     func completePlannedSet(planSetId: String, rpe: Double? = nil) async {
@@ -325,6 +351,98 @@ final class TodayWorkoutViewModel: ObservableObject {
         todayPlan = plan
     }
 
+    private func beginStreamingOverlay() {
+        isOverlayVisible = true
+        overlayPhase = .processing
+        streamingReply = ""
+        overlayContentBlocks = []
+        didPersistPlan = false
+        shouldRefreshAfterStreamingCompletion = false
+        quickActions = []
+    }
+
+    private func handleStreamEvent(_ event: ChatServiceStreamEvent) {
+        switch event {
+        case .responseStarted:
+            isOverlayVisible = true
+        case .status(let status):
+            switch status {
+            case .processing:
+                overlayPhase = .processing
+            case .applying:
+                overlayPhase = .applying
+            case .completed:
+                overlayPhase = .completed
+            case .failed:
+                overlayPhase = .failed
+            }
+        case .textDelta(let delta):
+            guard !delta.isEmpty else { return }
+            streamingReply.append(delta)
+            latestAssistantReply = streamingReply
+        case .workoutPreview:
+            shouldRefreshAfterStreamingCompletion = true
+        case .planContentBlock(let block):
+            overlayContentBlocks = upsertOverlayBlock(block, into: overlayContentBlocks)
+            didPersistPlan = true
+            shouldRefreshAfterStreamingCompletion = true
+            applyImmediatePlanBlock(block)
+        case .error(let message):
+            errorMessage = message
+            markOverlayFailed()
+        case .done:
+            if overlayPhase != .failed {
+                overlayPhase = .completed
+            }
+        }
+    }
+
+    private func markOverlayFailed() {
+        overlayPhase = .failed
+        isOverlayVisible = true
+    }
+
+    private func upsertOverlayBlock(_ block: ContentBlock, into existing: [ContentBlock]) -> [ContentBlock] {
+        var blocks = existing
+
+        switch block {
+        case .weeklyPlan:
+            blocks.removeAll {
+                if case .weeklyPlan = $0 { return true }
+                return false
+            }
+        case .todayPlan:
+            blocks.removeAll {
+                if case .todayPlan = $0 { return true }
+                return false
+            }
+        case .planAdjustmentSummary:
+            blocks.removeAll {
+                if case .planAdjustmentSummary = $0 { return true }
+                return false
+            }
+        default:
+            break
+        }
+
+        blocks.append(block)
+        return blocks
+    }
+
+    private func applyImmediatePlanBlock(_ block: ContentBlock) {
+        switch block {
+        case .todayPlan(let plan):
+            todayPlan = TrainingPlanDay(block: plan.day)
+        case .weeklyPlan(let plan):
+            let todayString = ISO8601DateFormatter.planDateFormatter.string(from: Date())
+            if let matchingDay = plan.days.first(where: { $0.planDate == todayString }) {
+                todayPlan = TrainingPlanDay(block: matchingDay)
+            }
+        default:
+            break
+        }
+    }
+
     private func findPlanExercise(planExerciseId: String) -> TrainingPlanExercise? {
         todayPlan?.exercises.first(where: { $0.id == planExerciseId })
     }
@@ -394,4 +512,12 @@ final class TodayWorkoutViewModel: ObservableObject {
             return
         }
     }
+}
+
+private extension ISO8601DateFormatter {
+    static let planDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        return formatter
+    }()
 }

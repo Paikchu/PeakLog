@@ -19,33 +19,49 @@ struct TodayWorkoutScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollView {
-                VStack(spacing: 18) {
-                    if viewModel.isLoading {
-                        ProgressView().padding(.top, 40)
-                    } else {
-                        summaryCard
-                        quickActionsSection
-                        plannedSection
-                        recordedSection
-                        assistantReplyCard
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                header
+                ScrollView {
+                    VStack(spacing: 18) {
+                        if viewModel.isLoading {
+                            ProgressView().padding(.top, 40)
+                        } else {
+                            summaryCard
+                            quickActionsSection
+                            plannedSection
+                            recordedSection
+                            assistantReplyCard
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 16)
+
+                ChatInputBar(
+                    text: $viewModel.inputText,
+                    isSending: viewModel.isSending,
+                    voiceState: viewModel.voiceInputState
+                ) {
+                    Task { await viewModel.sendAction() }
+                } onVoiceToggle: {
+                    Task { await viewModel.toggleVoiceInput() }
+                }
             }
 
-            ChatInputBar(
-                text: $viewModel.inputText,
-                isSending: viewModel.isSending,
-                voiceState: viewModel.voiceInputState
-            ) {
-                Task { await viewModel.sendAction() }
-            } onVoiceToggle: {
-                Task { await viewModel.toggleVoiceInput() }
+            if viewModel.isOverlayVisible {
+                TodayAIFloatingOverlay(
+                    phase: viewModel.overlayPhase,
+                    reply: viewModel.streamingReply,
+                    blocks: viewModel.overlayContentBlocks,
+                    didPersistPlan: viewModel.didPersistPlan,
+                    onClose: viewModel.dismissOverlay
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 22)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(10)
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
@@ -249,6 +265,219 @@ struct TodayWorkoutScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct TodayAIFloatingOverlay: View {
+    let phase: TodayAIOverlayPhase
+    let reply: String
+    let blocks: [ContentBlock]
+    let didPersistPlan: Bool
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                Circle()
+                    .fill(statusColor.opacity(0.9))
+                    .frame(width: 10, height: 10)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusTitle)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white)
+                    Text(statusSubtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.78))
+                }
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                }
+            }
+
+            if !reply.isEmpty {
+                Text(reply)
+                    .font(.system(size: 15))
+                    .foregroundColor(.white.opacity(0.95))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.xl)
+                            .fill(Color.white.opacity(0.12))
+                    )
+            }
+
+            if !blocks.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                        switch block {
+                        case .weeklyPlan(let plan):
+                            overlayWeeklyPlanCard(plan)
+                        case .todayPlan(let plan):
+                            overlayTodayPlanCard(plan)
+                        case .planAdjustmentSummary(let summary):
+                            Text(summary.summaryText)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white.opacity(0.86))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(12)
+                        default:
+                            EmptyView()
+                        }
+                    }
+                }
+            }
+
+            if didPersistPlan {
+                Text("训练计划已写入并同步到首页。")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.82))
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.15, green: 0.34, blue: 0.78).opacity(0.88),
+                            Color(red: 0.09, green: 0.18, blue: 0.44).opacity(0.84),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 12)
+    }
+
+    private var statusColor: Color {
+        switch phase {
+        case .idle:
+            return .white
+        case .processing:
+            return Color(red: 0.50, green: 0.84, blue: 1.0)
+        case .applying:
+            return Color(red: 0.84, green: 0.92, blue: 1.0)
+        case .completed:
+            return Color.green.opacity(0.9)
+        case .failed:
+            return Color.red.opacity(0.9)
+        }
+    }
+
+    private var statusTitle: String {
+        switch phase {
+        case .idle:
+            return "等待开始"
+        case .processing:
+            return "正在分析你的训练需求"
+        case .applying:
+            return "正在调整训练计划"
+        case .completed:
+            return "训练计划已更新"
+        case .failed:
+            return "处理失败"
+        }
+    }
+
+    private var statusSubtitle: String {
+        switch phase {
+        case .idle:
+            return "AI 浮层会在发送后显示进度。"
+        case .processing:
+            return "模型正在理解你的限制条件和周内安排。"
+        case .applying:
+            return "正在把结果写入周计划并刷新首页。"
+        case .completed:
+            return "你可以直接检查今日计划和整周变化。"
+        case .failed:
+            return "计划没有写入，请重试。"
+        }
+    }
+
+    private func overlayWeeklyPlanCard(_ plan: WeeklyPlanBlock) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("本周计划")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white.opacity(0.88))
+            Text("Week of \(plan.weekStartDate)")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+
+            ForEach(plan.days.prefix(7)) { day in
+                HStack(spacing: 10) {
+                    Text(weekdayLabel(for: day.dayIndex))
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white.opacity(0.72))
+                        .frame(width: 28, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(day.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.95))
+                        if let focus = day.focus, !focus.isEmpty {
+                            Text(focus)
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.72))
+                        }
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.10))
+        .cornerRadius(18)
+    }
+
+    private func overlayTodayPlanCard(_ plan: TodayPlanBlock) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("今日变化")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white.opacity(0.88))
+            Text(plan.day.title)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+            if let focus = plan.day.focus, !focus.isEmpty {
+                Text(focus)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.76))
+            }
+            if !plan.day.exercises.isEmpty {
+                Text(plan.day.exercises.map(\.exerciseName).joined(separator: " · "))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.82))
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.10))
+        .cornerRadius(18)
+    }
+
+    private func weekdayLabel(for dayIndex: Int) -> String {
+        switch dayIndex {
+        case 1: return "周一"
+        case 2: return "周二"
+        case 3: return "周三"
+        case 4: return "周四"
+        case 5: return "周五"
+        case 6: return "周六"
+        case 7: return "周日"
+        default: return "Day"
+        }
     }
 }
 

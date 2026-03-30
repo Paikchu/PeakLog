@@ -13,19 +13,41 @@ struct AIWorkoutExerciseInsight: Equatable {
     let suggestion: String?
 }
 
-struct WorkoutAIActionResponse {
-    let status: String
-    let reply: String
-    let requiresTodayRefresh: Bool
-    let quickActions: [AIWorkoutQuickAction]
-    let exerciseInsights: [AIWorkoutExerciseInsight]
-}
-
 enum VoiceInputState: Equatable {
     case idle
     case recording
     case transcribing
 }
+
+struct SendMessageServiceResponse {
+    let userMessageId: String
+    let assistantMessageId: String
+    let conversationId: String
+}
+
+struct ChatStreamIDs: Equatable {
+    let userMessageId: String
+    let assistantMessageId: String
+}
+
+enum ChatServiceStreamStatus: String, Equatable {
+    case processing
+    case applying
+    case completed
+    case failed
+}
+
+enum ChatServiceStreamEvent: Equatable {
+    case responseStarted(ChatStreamIDs)
+    case status(ChatServiceStreamStatus)
+    case textDelta(String)
+    case workoutPreview(WorkoutRecordBlock)
+    case planContentBlock(ContentBlock)
+    case error(String)
+    case done
+}
+
+typealias ChatServiceStreamHandler = @Sendable (ChatServiceStreamEvent) -> Void
 
 protocol SpeechRecognitionServicing {
     func startRecognition(
@@ -35,8 +57,21 @@ protocol SpeechRecognitionServicing {
     func stopRecognition() async throws -> String
 }
 
-protocol WorkoutAIActionServiceProtocol {
-    func submitAction(text: String, targetDate: String?) async throws -> WorkoutAIActionResponse
+protocol ChatServiceProtocol {
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?)
+}
+
+protocol ConversationServiceProtocol {
+    func fetchOrCreateDefaultConversationId() async throws -> String
+}
+
+struct MockConversationService: ConversationServiceProtocol {
+    let conversationId: String
+
+    func fetchOrCreateDefaultConversationId() async throws -> String {
+        conversationId
+    }
 }
 
 protocol TrainingPlanServiceProtocol {
@@ -90,54 +125,83 @@ protocol WorkoutServiceProtocol {
 @main
 struct TodayWorkoutViewModelAIActionTestRunner {
     static func main() async {
-        await appliesStructuredAIActionResponseToTodayPageState()
+        await appliesStreamingPlanAdjustmentResponseToTodayPageState()
         print("today_workout_view_model_ai_action_test passed")
     }
 
     @MainActor
-    private static func appliesStructuredAIActionResponseToTodayPageState() async {
+    private static func appliesStreamingPlanAdjustmentResponseToTodayPageState() async {
         let trainingPlanService = TestTrainingPlanService()
         let workoutService = TestWorkoutService()
-        let aiActionService = TestWorkoutAIActionService(
-            response: WorkoutAIActionResponse(
-                status: "completed",
-                reply: "卧推今天状态不错，建议后两组加 2.5kg。",
-                requiresTodayRefresh: false,
-                quickActions: [
-                    AIWorkoutQuickAction(
-                        id: "add-load",
-                        title: "后两组加 2.5kg",
-                        prompt: "把卧推后两组加 2.5kg"
+        let chatService = TestChatService(
+            events: [
+                .status(.processing),
+                .textDelta("好的，我正在按你的要求重排本周计划。"),
+                .status(.applying),
+                .planContentBlock(
+                    .todayPlan(
+                        TodayPlanBlock(
+                            planId: "plan-1",
+                            goalSummary: "增肌",
+                            day: PlanDayBlock(
+                                planDayId: "day-1",
+                                planDate: "2026-03-30",
+                                dayIndex: 1,
+                                title: "Chest + Biceps",
+                                focus: "胸和二头",
+                                status: "planned",
+                                exercises: [
+                                    PlanExerciseBlock(
+                                        planExerciseId: "exercise-1",
+                                        orderIndex: 0,
+                                        exerciseName: "Bench Press",
+                                        progressionMode: "weight_first",
+                                        notes: nil,
+                                        sets: [
+                                            PlanSetBlock(
+                                                planSetId: "set-1",
+                                                setIndex: 1,
+                                                targetWeight: 72.5,
+                                                targetWeightUnit: "kg",
+                                                targetReps: 8,
+                                                completedAt: nil,
+                                                linkedExerciseSetId: nil
+                                            )
+                                        ]
+                                    )
+                                ]
+                            )
+                        )
                     )
-                ],
-                exerciseInsights: [
-                    AIWorkoutExerciseInsight(
-                        exerciseName: "Bench Press",
-                        previousPerformanceSummary: "上次：70kg × 5",
-                        suggestion: "如果本组 RPE ≤ 8，可以加 2.5kg。"
+                ),
+                .planContentBlock(
+                    .planAdjustmentSummary(
+                        PlanAdjustmentSummaryBlock(summaryText: "已改成每周 6 天训练，周一胸 + 二头。")
                     )
-                ]
-            )
+                ),
+                .status(.completed),
+                .done,
+            ]
         )
 
         let viewModel = TodayWorkoutViewModel(
             trainingPlanService: trainingPlanService,
             workoutService: workoutService,
-            aiActionService: aiActionService,
+            chatService: chatService,
+            conversationService: MockConversationService(conversationId: "conversation-1"),
             speechRecognitionService: TestSpeechRecognitionService()
         )
 
         await viewModel.refresh()
-        viewModel.inputText = "卧推今天感觉偏轻"
+        viewModel.inputText = "帮我把周一改成胸和二头"
         await viewModel.sendAction()
 
-        precondition(viewModel.latestAssistantReply == "卧推今天状态不错，建议后两组加 2.5kg。", "Expected assistant reply to update")
-        precondition(viewModel.quickActions.count == 1, "Expected quick actions to be exposed on the page")
-        precondition(viewModel.quickActions.first?.title == "后两组加 2.5kg", "Expected quick action title to decode")
-
-        let exercise = viewModel.todayPlan?.exercises.first
-        precondition(exercise?.previousPerformanceSummary == "上次：70kg × 5", "Expected exercise insight to update previous performance summary")
-        precondition(exercise?.aiSuggestion == "如果本组 RPE ≤ 8，可以加 2.5kg。", "Expected exercise insight to update AI suggestion")
+        precondition(viewModel.isOverlayVisible, "Expected floating overlay to remain visible after completion")
+        precondition(viewModel.overlayPhase == .completed, "Expected overlay to enter completed state")
+        precondition(viewModel.streamingReply == "好的，我正在按你的要求重排本周计划。", "Expected streamed reply to accumulate text deltas")
+        precondition(viewModel.didPersistPlan, "Expected streamed plan content to mark the plan as persisted")
+        precondition(viewModel.todayPlan?.title == "Chest + Biceps", "Expected today's plan to update from streamed today_plan block")
+        precondition(viewModel.overlayContentBlocks.count == 2, "Expected plan blocks to be retained for overlay rendering")
     }
 }
 
@@ -266,12 +330,29 @@ private struct TestWorkoutService: WorkoutServiceProtocol {
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] { [] }
 }
 
-private struct TestWorkoutAIActionService: WorkoutAIActionServiceProtocol {
-    let response: WorkoutAIActionResponse
+private final class TestChatService: ChatServiceProtocol {
+    let events: [ChatServiceStreamEvent]
+    var handler: ChatServiceStreamHandler?
 
-    func submitAction(text: String, targetDate: String?) async throws -> WorkoutAIActionResponse {
-        _ = (text, targetDate)
-        return response
+    init(events: [ChatServiceStreamEvent]) {
+        self.events = events
+    }
+
+    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
+        _ = (text, sessionId)
+        handler?(.responseStarted(ChatStreamIDs(userMessageId: "user-1", assistantMessageId: "assistant-1")))
+        for event in events {
+            handler?(event)
+        }
+        return SendMessageServiceResponse(
+            userMessageId: "user-1",
+            assistantMessageId: "assistant-1",
+            conversationId: "conversation-1"
+        )
+    }
+
+    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
+        self.handler = handler
     }
 }
 

@@ -5,10 +5,19 @@ struct ChatStreamIDs: Equatable {
     let assistantMessageId: String
 }
 
+enum ChatServiceStreamStatus: String, Equatable {
+    case processing
+    case applying
+    case completed
+    case failed
+}
+
 enum ChatServiceStreamEvent: Equatable {
     case responseStarted(ChatStreamIDs)
+    case status(ChatServiceStreamStatus)
     case textDelta(String)
     case workoutPreview(WorkoutRecordBlock)
+    case planContentBlock(ContentBlock)
     case error(String)
     case done
 }
@@ -67,17 +76,28 @@ struct ChatSSEParser {
         let base = try decoder.decode(ChatSSEBasePayload.self, from: Data(payload.utf8))
 
         switch base.type {
+        case "status":
+            let event = try decoder.decode(ChatSSEStatusPayload.self, from: Data(payload.utf8))
+            guard let phase = ChatServiceStreamStatus(rawValue: event.phase) else {
+                return nil
+            }
+            return .status(phase)
         case "text-delta":
             let event = try decoder.decode(ChatSSETextDeltaPayload.self, from: Data(payload.utf8))
             return .textDelta(event.textDelta)
         case "workout-content-block":
             let event = try decoder.decode(ChatSSEWorkoutPreviewPayload.self, from: Data(payload.utf8))
             return .workoutPreview(event.block.asWorkoutRecordBlock())
+        case "plan-content-block":
+            let event = try decoder.decode(ChatSSEPlanContentBlockPayload.self, from: Data(payload.utf8))
+            return .planContentBlock(event.block)
         case "error":
             let event = try decoder.decode(ChatSSEErrorPayload.self, from: Data(payload.utf8))
             return .error(event.message)
         case "done":
             return .done
+        case "ready":
+            return nil
         case "workout-block-stream-start", "workout-block-delta":
             return nil
         default:
@@ -100,6 +120,11 @@ private struct ChatSSETextDeltaPayload: Decodable {
     }
 }
 
+private struct ChatSSEStatusPayload: Decodable {
+    let type: String
+    let phase: String
+}
+
 private struct ChatSSEErrorPayload: Decodable {
     let type: String
     let message: String
@@ -108,6 +133,11 @@ private struct ChatSSEErrorPayload: Decodable {
 private struct ChatSSEWorkoutPreviewPayload: Decodable {
     let type: String
     let block: StreamWorkoutRecordPayload
+}
+
+private struct ChatSSEPlanContentBlockPayload: Decodable {
+    let type: String
+    let block: ContentBlock
 }
 
 private struct StreamWorkoutRecordPayload: Decodable {
