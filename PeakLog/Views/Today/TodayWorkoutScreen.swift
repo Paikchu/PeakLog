@@ -5,6 +5,7 @@ import UIKit
 
 struct TodayWorkoutScreen: View {
     @StateObject private var viewModel: TodayWorkoutViewModel
+    private let chatScrollKeyboardDismissBehavior = ChatScrollKeyboardDismissBehavior()
 
     var onShowHistory: (() -> Void)?
     var onShowProfile: (() -> Void)?
@@ -38,6 +39,8 @@ struct TodayWorkoutScreen: View {
                     .padding(.top, 8)
                     .padding(.bottom, 16)
                 }
+                .dismissKeyboardOnTap()
+                .chatScrollDismissesKeyboard(chatScrollKeyboardDismissBehavior)
 
                 ChatInputBar(
                     text: $viewModel.inputText,
@@ -65,6 +68,7 @@ struct TodayWorkoutScreen: View {
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
+        .dismissKeyboardOnTap()
         .task { await viewModel.onAppear() }
         .alert("common.error_title", isPresented: Binding(
             get: { viewModel.errorMessage != nil },

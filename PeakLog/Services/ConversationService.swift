@@ -23,21 +23,26 @@ protocol ConversationServiceProtocol {
 
 final class SupabaseConversationService: ConversationServiceProtocol {
     private let supabase = SupabaseManager.shared.client
+    private static let defaultConversationType = "default"
 
     func fetchOrCreateDefaultConversationId() async throws -> String {
-        if let existingId = try await fetchLatestConversationId() {
+        let session = try await supabase.auth.session
+        let userId = session.user.id.uuidString
+
+        if let existingId = try await fetchLatestConversationId(
+            userId: userId,
+            conversationType: Self.defaultConversationType
+        ) {
             return existingId
         }
-
-        let session = try await supabase.auth.session
 
         let inserted: ConversationRow = try await supabase
             .from("conversations")
             .insert(
                 ConversationInsertPayload(
-                    userId: session.user.id.uuidString,
+                    userId: userId,
                     title: "Today Workout",
-                    conversationType: "default"
+                    conversationType: Self.defaultConversationType
                 )
             )
             .select("id")
@@ -48,10 +53,15 @@ final class SupabaseConversationService: ConversationServiceProtocol {
         return inserted.id
     }
 
-    private func fetchLatestConversationId() async throws -> String? {
+    private func fetchLatestConversationId(
+        userId: String,
+        conversationType: String
+    ) async throws -> String? {
         let rows: [ConversationRow] = try await supabase
             .from("conversations")
             .select("id")
+            .eq("user_id", value: userId)
+            .eq("conversation_type", value: conversationType)
             .is("deleted_at", value: nil)
             .order("updated_at", ascending: false)
             .limit(1)
