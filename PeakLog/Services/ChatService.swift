@@ -186,9 +186,9 @@ enum MockData {
         id: "ex-1",
         name: "Bench Press",
         sets: [
-            ExerciseSet(id: "s-1", setIndex: 1, weight: 80, weightUnit: .kg, reps: 10),
-            ExerciseSet(id: "s-2", setIndex: 2, weight: 80, weightUnit: .kg, reps: 10),
-            ExerciseSet(id: "s-3", setIndex: 3, weight: 80, weightUnit: .kg, reps: 10),
+            ExerciseSet(id: "s-1", setIndex: 1, weight: 80, weightUnit: .kg, reps: 10, rpe: nil),
+            ExerciseSet(id: "s-2", setIndex: 2, weight: 80, weightUnit: .kg, reps: 10, rpe: nil),
+            ExerciseSet(id: "s-3", setIndex: 3, weight: 80, weightUnit: .kg, reps: 10, rpe: nil),
         ]
     )
 
@@ -196,9 +196,9 @@ enum MockData {
         id: "ex-2",
         name: "Squat",
         sets: [
-            ExerciseSet(id: "s-4", setIndex: 1, weight: 100, weightUnit: .kg, reps: 8),
-            ExerciseSet(id: "s-5", setIndex: 2, weight: 100, weightUnit: .kg, reps: 8),
-            ExerciseSet(id: "s-6", setIndex: 3, weight: 100, weightUnit: .kg, reps: 8),
+            ExerciseSet(id: "s-4", setIndex: 1, weight: 100, weightUnit: .kg, reps: 8, rpe: nil),
+            ExerciseSet(id: "s-5", setIndex: 2, weight: 100, weightUnit: .kg, reps: 8, rpe: nil),
+            ExerciseSet(id: "s-6", setIndex: 3, weight: 100, weightUnit: .kg, reps: 8, rpe: nil),
         ]
     )
 
@@ -206,7 +206,7 @@ enum MockData {
         id: "ex-3",
         name: "Deadlift",
         sets: [
-            ExerciseSet(id: "s-7", setIndex: 1, weight: 120, weightUnit: .kg, reps: 5),
+            ExerciseSet(id: "s-7", setIndex: 1, weight: 120, weightUnit: .kg, reps: 5, rpe: nil),
         ]
     )
 

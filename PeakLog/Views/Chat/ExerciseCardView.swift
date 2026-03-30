@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Set Row (editable weight × reps)
 
@@ -83,6 +86,7 @@ private struct SetRowView: View {
                 title: String(localized: "chat.exercise.weight"),
                 unit: set.weight == nil ? nil : set.weightUnit.display,
                 placeholder: String(localized: "chat.exercise.bodyweight"),
+                keyboardType: .decimalPad,
                 value: $weightText
             ) {
                 let trimmed = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,6 +109,7 @@ private struct SetRowView: View {
                 title: String(localized: "chat.exercise.reps"),
                 unit: String(localized: "chat.exercise.reps"),
                 placeholder: "0",
+                keyboardType: .numberPad,
                 value: $repsText
             ) {
                 if let r = Int(repsText) {
@@ -120,16 +125,17 @@ private struct SetRowView: View {
     }
 }
 
-private func formatWeightValue(_ weight: Double) -> String {
+func formatWeightValue(_ weight: Double) -> String {
     weight.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(weight)) : String(format: "%.1f", weight)
 }
 
 // MARK: - Inline Edit Sheet
 
-private struct ValueEditSheet: View {
+struct ValueEditSheet: View {
     let title: String
     let unit: String?
     let placeholder: String
+    let keyboardType: UIKeyboardType
     @Binding var value: String
     var onDone: () -> Void
     var onCancel: () -> Void
@@ -145,7 +151,7 @@ private struct ValueEditSheet: View {
 
             HStack(alignment: .lastTextBaseline, spacing: 6) {
                 TextField(placeholder, text: $value)
-                    .keyboardType(.decimalPad)
+                    .keyboardType(keyboardType)
                     .font(.system(size: 40, weight: .bold))
                     .foregroundColor(.accentValue)
                     .multilineTextAlignment(.center)
@@ -191,6 +197,8 @@ struct ExerciseCardView: View {
     var isEditable: Bool = true
     var onDeleteExercise: () -> Void
     var onSetChanged: (ExerciseSet) -> Void
+    var onAddSet: (() -> Void)? = nil
+    var onDeleteLastSet: (() -> Void)? = nil
 
     @State private var offset: CGFloat = 0
     private let deleteWidth: CGFloat = 72
@@ -235,6 +243,22 @@ struct ExerciseCardView: View {
                         .foregroundColor(.textPrimary)
 
                     Spacer()
+
+                    if isEditable, let onDeleteLastSet, exercise.sets.count > 1 {
+                        Button(action: onDeleteLastSet) {
+                            Image(systemName: "minus.circle")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.textMuted)
+                        }
+                    }
+
+                    if isEditable, let onAddSet {
+                        Button(action: onAddSet) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.accentPurple)
+                        }
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 10)

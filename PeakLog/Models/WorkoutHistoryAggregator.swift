@@ -66,7 +66,8 @@ enum WorkoutHistoryAggregator {
                     setIndex: index + 1,
                     weight: set.weight,
                     weightUnit: set.weightUnit,
-                    reps: set.reps
+                    reps: set.reps,
+                    rpe: set.rpe
                 )
             }
             return exercise

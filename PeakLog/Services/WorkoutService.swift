@@ -38,6 +38,7 @@ protocol WorkoutServiceProtocol {
     func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
     func deleteExercise(sessionId: String, exerciseId: String) async throws
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet
 
     // MARK: History queries
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
@@ -85,6 +86,11 @@ final class LiveWorkoutService: WorkoutServiceProtocol {
         let _: Empty = try await client.execute(req)
     }
 
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
+        _ = (setId, rpe)
+        throw APIError.notFound
+    }
+
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] {
         // TODO: GET /workout/calendar?year={year}&month={month}
         let req = try client.request(path: "workout/calendar", queryItems: [
@@ -116,12 +122,12 @@ final class MockWorkoutService: WorkoutServiceProtocol {
 
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         try await Task.sleep(nanoseconds: 200_000_000)
-        return ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
+        return ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps, rpe: nil)
     }
 
     func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         try await Task.sleep(nanoseconds: 200_000_000)
-        return ExerciseSet(id: UUID().uuidString, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
+        return ExerciseSet(id: UUID().uuidString, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps, rpe: nil)
     }
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {
@@ -130,6 +136,11 @@ final class MockWorkoutService: WorkoutServiceProtocol {
 
     func deleteExercise(sessionId: String, exerciseId: String) async throws {
         try await Task.sleep(nanoseconds: 200_000_000)
+    }
+
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
+        try await Task.sleep(nanoseconds: 200_000_000)
+        return ExerciseSet(id: setId, setIndex: 1, weight: 60, weightUnit: .kg, reps: 8, rpe: rpe)
     }
 
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] {

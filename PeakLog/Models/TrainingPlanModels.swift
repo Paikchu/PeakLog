@@ -2,10 +2,10 @@ import Foundation
 
 struct TrainingPlanSet: Identifiable, Codable, Equatable {
     let id: String
-    let setIndex: Int
-    let targetWeight: Double?
-    let targetWeightUnit: WeightUnit
-    let targetReps: Int
+    var setIndex: Int
+    var targetWeight: Double?
+    var targetWeightUnit: WeightUnit
+    var targetReps: Int
     var completedAt: Date?
     var linkedExerciseSetId: String?
 
@@ -20,6 +20,8 @@ struct TrainingPlanExercise: Identifiable, Codable, Equatable {
     let exerciseName: String
     let progressionMode: String
     let notes: String?
+    var previousPerformanceSummary: String?
+    var aiSuggestion: String?
     var sets: [TrainingPlanSet]
 }
 
@@ -80,6 +82,8 @@ extension TrainingPlanExercise {
             exerciseName: block.exerciseName,
             progressionMode: block.progressionMode,
             notes: block.notes,
+            previousPerformanceSummary: nil,
+            aiSuggestion: nil,
             sets: block.sets.map(TrainingPlanSet.init(block:))
         )
     }

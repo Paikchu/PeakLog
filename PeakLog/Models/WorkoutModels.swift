@@ -15,6 +15,7 @@ struct ExerciseSet: Identifiable, Codable, Equatable {
     var weight: Double?
     var weightUnit: WeightUnit
     var reps: Int
+    var rpe: Double?
 
     var isBodyweight: Bool {
         weight == nil
@@ -58,4 +59,34 @@ struct CalendarDay: Identifiable {
     let isToday: Bool
     let isSelected: Bool
     let isCurrentMonth: Bool
+}
+
+enum CalendarDayTextColorRole: Equatable {
+    case selected
+    case primary
+    case muted
+}
+
+extension CalendarDay {
+    var isInteractable: Bool {
+        true
+    }
+
+    var showsSelectionHighlight: Bool {
+        isSelected
+    }
+
+    var showsTodayOutline: Bool {
+        isToday && !isSelected
+    }
+
+    var showsWorkoutIndicator: Bool {
+        hasWorkout
+    }
+
+    var textColorRole: CalendarDayTextColorRole {
+        if isSelected { return .selected }
+        if !isCurrentMonth { return .muted }
+        return .primary
+    }
 }

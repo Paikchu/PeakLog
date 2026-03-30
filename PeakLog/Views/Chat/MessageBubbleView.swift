@@ -134,7 +134,8 @@ struct MessageBubbleView: View {
                         setIndex: s.setIndex,
                         weight: s.weight,
                         weightUnit: WeightUnit(rawValue: s.weightUnit) ?? .kg,
-                        reps: s.reps ?? 0
+                        reps: s.reps ?? 0,
+                        rpe: nil
                     )
                 }
             )

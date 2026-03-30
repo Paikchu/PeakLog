@@ -94,6 +94,12 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
 
         guard let row = rows.first else { return nil }
 
+        let previousPerformanceByExercise = try await fetchPreviousPerformanceSummaries(
+            userId: uid,
+            excludingDate: WorkoutDateFormatter().string(from: Date()),
+            exerciseNames: (row.days ?? []).flatMap { $0.exercises ?? [] }.map(\.exerciseName)
+        )
+
         return TrainingPlan(
             id: row.id,
             weekStartDate: row.weekStartDate,
@@ -114,6 +120,8 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
                             exerciseName: exercise.exerciseName,
                             progressionMode: exercise.progressionMode,
                             notes: exercise.notes,
+                            previousPerformanceSummary: previousPerformanceByExercise[exercise.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()],
+                            aiSuggestion: nil,
                             sets: (exercise.sets ?? []).sorted(by: { $0.setIndex < $1.setIndex }).map { set in
                                 TrainingPlanSet(
                                     id: set.id,
@@ -130,6 +138,59 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
                 )
             }
         )
+    }
+
+    private func fetchPreviousPerformanceSummaries(
+        userId: String,
+        excludingDate: String,
+        exerciseNames: [String]
+    ) async throws -> [String: String] {
+        let normalizedNames = Array(Set(exerciseNames.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }))
+        guard !normalizedNames.isEmpty else { return [:] }
+
+        struct ExerciseHistoryRow: Decodable {
+            let normalizedName: String?
+
+            enum CodingKeys: String, CodingKey {
+                case normalizedName = "normalized_name"
+            }
+        }
+
+        struct ExerciseSetHistoryRow: Decodable {
+            let weight: Double?
+            let weightUnit: String
+            let reps: Int?
+            let exercise: ExerciseHistoryRow?
+
+            enum CodingKeys: String, CodingKey {
+                case weight
+                case weightUnit = "weight_unit"
+                case reps
+                case exercise = "exercises"
+            }
+        }
+
+        let rows: [ExerciseSetHistoryRow] = try await supabase
+            .from("exercise_sets")
+            .select("weight, weight_unit, reps, exercises!inner(normalized_name)")
+            .eq("user_id", value: userId)
+            .in("exercises.normalized_name", values: normalizedNames)
+            .is("deleted_at", value: nil)
+            .order("created_at", ascending: false)
+            .limit(normalizedNames.count * 4)
+            .execute()
+            .value
+
+        var summaries: [String: String] = [:]
+        for row in rows {
+            guard let normalizedName = row.exercise?.normalizedName, summaries[normalizedName] == nil else { continue }
+            if let weight = row.weight, let reps = row.reps {
+                summaries[normalizedName] = "上次：\(formatWeightValue(weight))\(row.weightUnit) × \(reps)"
+            } else if let reps = row.reps {
+                summaries[normalizedName] = "上次：自重 × \(reps)"
+            }
+        }
+        return summaries
     }
 
     func fetchTodayPlan() async throws -> TrainingPlanDay? {
@@ -318,5 +379,149 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
             completedAt: Date(),
             linkedExerciseSetId: createdSet.id
         )
+    }
+
+    func updatePlannedSet(
+        planSetId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        struct SetRow: Decodable {
+            let id: String
+            let setIndex: Int
+            let targetWeight: Double?
+            let targetWeightUnit: String
+            let targetReps: Int
+            let completedAt: Date?
+            let linkedExerciseSetId: String?
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case setIndex = "set_index"
+                case targetWeight = "target_weight"
+                case targetWeightUnit = "target_weight_unit"
+                case targetReps = "target_reps"
+                case completedAt = "completed_at"
+                case linkedExerciseSetId = "linked_exercise_set_id"
+            }
+        }
+
+        let rows: [SetRow] = try await supabase
+            .from("training_plan_sets")
+            .update([
+                "target_weight": targetWeight.map(AnyJSON.double) ?? .null,
+                "target_weight_unit": AnyJSON(targetWeightUnit.rawValue),
+                "target_reps": AnyJSON(targetReps),
+            ])
+            .eq("id", value: planSetId)
+            .select("id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id")
+            .execute()
+            .value
+
+        guard let row = rows.first else { throw APIError.notFound }
+        return TrainingPlanSet(
+            id: row.id,
+            setIndex: row.setIndex,
+            targetWeight: row.targetWeight,
+            targetWeightUnit: WeightUnit(rawValue: row.targetWeightUnit) ?? .kg,
+            targetReps: row.targetReps,
+            completedAt: row.completedAt,
+            linkedExerciseSetId: row.linkedExerciseSetId
+        )
+    }
+
+    func addPlannedSet(
+        planExerciseId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        struct MaxSetRow: Decodable {
+            let setIndex: Int
+            enum CodingKeys: String, CodingKey { case setIndex = "set_index" }
+        }
+
+        struct PlanExerciseRow: Decodable {
+            let planId: String
+            enum CodingKeys: String, CodingKey { case planId = "plan_id" }
+        }
+
+        struct NewSetRow: Decodable {
+            let id: String
+            let setIndex: Int
+            let targetWeight: Double?
+            let targetWeightUnit: String
+            let targetReps: Int
+            let completedAt: Date?
+            let linkedExerciseSetId: String?
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case setIndex = "set_index"
+                case targetWeight = "target_weight"
+                case targetWeightUnit = "target_weight_unit"
+                case targetReps = "target_reps"
+                case completedAt = "completed_at"
+                case linkedExerciseSetId = "linked_exercise_set_id"
+            }
+        }
+
+        let user = try await supabase.auth.session.user
+
+        let existingSets: [MaxSetRow] = try await supabase
+            .from("training_plan_sets")
+            .select("set_index")
+            .eq("plan_exercise_id", value: planExerciseId)
+            .order("set_index", ascending: false)
+            .limit(1)
+            .execute()
+            .value
+
+        let nextIndex = (existingSets.first?.setIndex ?? 0) + 1
+
+        let exerciseRows: [PlanExerciseRow] = try await supabase
+            .from("training_plan_exercises")
+            .select("plan_id")
+            .eq("id", value: planExerciseId)
+            .limit(1)
+            .execute()
+            .value
+
+        guard let exerciseRow = exerciseRows.first else { throw APIError.notFound }
+
+        let rows: [NewSetRow] = try await supabase
+            .from("training_plan_sets")
+            .insert([
+                "plan_id": AnyJSON(exerciseRow.planId),
+                "plan_exercise_id": AnyJSON(planExerciseId),
+                "user_id": AnyJSON(user.id.uuidString),
+                "set_index": AnyJSON(nextIndex),
+                "target_weight": targetWeight.map(AnyJSON.double) ?? .null,
+                "target_weight_unit": AnyJSON(targetWeightUnit.rawValue),
+                "target_reps": AnyJSON(targetReps),
+            ])
+            .select("id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id")
+            .execute()
+            .value
+
+        guard let row = rows.first else { throw APIError.serverError(500) }
+        return TrainingPlanSet(
+            id: row.id,
+            setIndex: row.setIndex,
+            targetWeight: row.targetWeight,
+            targetWeightUnit: WeightUnit(rawValue: row.targetWeightUnit) ?? .kg,
+            targetReps: row.targetReps,
+            completedAt: row.completedAt,
+            linkedExerciseSetId: row.linkedExerciseSetId
+        )
+    }
+
+    func deletePlannedSet(planSetId: String) async throws {
+        try await supabase
+            .from("training_plan_sets")
+            .delete()
+            .eq("id", value: planSetId)
+            .execute()
     }
 }

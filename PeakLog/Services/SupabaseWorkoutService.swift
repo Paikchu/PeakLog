@@ -44,12 +44,14 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             let weight: Double?
             let weightUnit: String
             let reps: Int?
+            let rpe: Double?
             enum CodingKeys: String, CodingKey {
                 case id
                 case setIndex = "set_index"
                 case weight
                 case weightUnit = "weight_unit"
                 case reps
+                case rpe
             }
         }
 
@@ -72,7 +74,8 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             setIndex: row.setIndex,
             weight: row.weight,
             weightUnit: WeightUnit(rawValue: row.weightUnit) ?? .kg,
-            reps: row.reps ?? 0
+            reps: row.reps ?? 0,
+            rpe: row.rpe
         )
     }
 
@@ -110,12 +113,14 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             let weight: Double?
             let weightUnit: String
             let reps: Int?
+            let rpe: Double?
             enum CodingKeys: String, CodingKey {
                 case id
                 case setIndex = "set_index"
                 case weight
                 case weightUnit = "weight_unit"
                 case reps
+                case rpe
             }
         }
 
@@ -139,7 +144,49 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             setIndex: row.setIndex,
             weight: row.weight,
             weightUnit: WeightUnit(rawValue: row.weightUnit) ?? .kg,
-            reps: row.reps ?? 0
+            reps: row.reps ?? 0,
+            rpe: row.rpe
+        )
+    }
+
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
+        struct SetRow: Decodable {
+            let id: String
+            let setIndex: Int
+            let weight: Double?
+            let weightUnit: String
+            let reps: Int?
+            let rpe: Double?
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case setIndex = "set_index"
+                case weight
+                case weightUnit = "weight_unit"
+                case reps
+                case rpe
+            }
+        }
+
+        let rows: [SetRow] = try await supabase
+            .from("exercise_sets")
+            .update([
+                "rpe": rpe.map(AnyJSON.double) ?? .null,
+            ])
+            .eq("id", value: setId)
+            .is("deleted_at", value: nil)
+            .select()
+            .execute()
+            .value
+
+        guard let row = rows.first else { throw APIError.notFound }
+        return ExerciseSet(
+            id: row.id,
+            setIndex: row.setIndex,
+            weight: row.weight,
+            weightUnit: WeightUnit(rawValue: row.weightUnit) ?? .kg,
+            reps: row.reps ?? 0,
+            rpe: row.rpe
         )
     }
 
@@ -234,12 +281,14 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             let weight: Double?
             let weightUnit: String
             let reps: Int?
+            let rpe: Double?
             enum CodingKeys: String, CodingKey {
                 case id
                 case setIndex = "set_index"
                 case weight
                 case weightUnit = "weight_unit"
                 case reps
+                case rpe
             }
         }
 
@@ -262,7 +311,8 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
                             setIndex: s.setIndex,
                             weight: s.weight,
                             weightUnit: WeightUnit(rawValue: s.weightUnit) ?? .kg,
-                            reps: s.reps ?? 0
+                            reps: s.reps ?? 0,
+                            rpe: s.rpe
                         )
                     }
                 )

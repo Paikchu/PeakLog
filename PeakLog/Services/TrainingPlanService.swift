@@ -9,6 +9,19 @@ protocol TrainingPlanServiceProtocol {
         actualWeightUnit: WeightUnit,
         actualReps: Int
     ) async throws -> TrainingPlanSet
+    func updatePlannedSet(
+        planSetId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet
+    func addPlannedSet(
+        planExerciseId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet
+    func deletePlannedSet(planSetId: String) async throws
 }
 
 final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
@@ -30,6 +43,42 @@ final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
             linkedExerciseSetId: nil
         )
     }
+
+    func updatePlannedSet(
+        planSetId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        TrainingPlanSet(
+            id: planSetId,
+            setIndex: 1,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps,
+            completedAt: nil,
+            linkedExerciseSetId: nil
+        )
+    }
+
+    func addPlannedSet(
+        planExerciseId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        TrainingPlanSet(
+            id: "\(planExerciseId)-new-set",
+            setIndex: 1,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps,
+            completedAt: nil,
+            linkedExerciseSetId: nil
+        )
+    }
+
+    func deletePlannedSet(planSetId: String) async throws {}
 }
 
 final class MockTrainingPlanService: TrainingPlanServiceProtocol {
@@ -56,6 +105,8 @@ final class MockTrainingPlanService: TrainingPlanServiceProtocol {
                             exerciseName: "Bench Press",
                             progressionMode: "weight_first",
                             notes: "Complete all sets before increasing load next week.",
+                            previousPerformanceSummary: nil,
+                            aiSuggestion: nil,
                             sets: [
                                 TrainingPlanSet(
                                     id: "set-1",
@@ -107,4 +158,40 @@ final class MockTrainingPlanService: TrainingPlanServiceProtocol {
             linkedExerciseSetId: "exercise-set-\(planSetId)"
         )
     }
+
+    func updatePlannedSet(
+        planSetId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        TrainingPlanSet(
+            id: planSetId,
+            setIndex: 1,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps,
+            completedAt: nil,
+            linkedExerciseSetId: nil
+        )
+    }
+
+    func addPlannedSet(
+        planExerciseId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        TrainingPlanSet(
+            id: UUID().uuidString,
+            setIndex: 99,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps,
+            completedAt: nil,
+            linkedExerciseSetId: nil
+        )
+    }
+
+    func deletePlannedSet(planSetId: String) async throws {}
 }
