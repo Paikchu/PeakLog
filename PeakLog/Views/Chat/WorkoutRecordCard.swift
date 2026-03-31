@@ -6,6 +6,8 @@ struct WorkoutRecordCard: View {
     var isEditable: Bool = true
     var onDeleteExercise: (String) -> Void
     var onSetChanged: (String, ExerciseSet) -> Void
+    var onAddSet: ((String) -> Void)? = nil
+    var onDeleteLastSet: ((String) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 8) {
@@ -19,6 +21,12 @@ struct WorkoutRecordCard: View {
                     },
                     onSetChanged: { updatedSet in
                         onSetChanged(record.exercises[index].id, updatedSet)
+                    },
+                    onAddSet: {
+                        onAddSet?(record.exercises[index].id)
+                    },
+                    onDeleteLastSet: {
+                        onDeleteLastSet?(record.exercises[index].id)
                     }
                 )
             }

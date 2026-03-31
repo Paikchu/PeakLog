@@ -16,7 +16,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "83"
             endingLineNumber = "83"
-            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkName = "fetchMessages(sessionId:start:end:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -32,7 +32,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "81"
             endingLineNumber = "81"
-            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkName = "fetchMessages(sessionId:start:end:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -48,7 +48,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "89"
             endingLineNumber = "89"
-            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkName = "fetchMessages(sessionId:start:end:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -64,7 +64,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "90"
             endingLineNumber = "90"
-            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkName = "fetchMessages(sessionId:start:end:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -80,7 +80,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "91"
             endingLineNumber = "91"
-            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkName = "fetchMessages(sessionId:start:end:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -96,7 +96,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "92"
             endingLineNumber = "92"
-            landmarkName = "sendMessage(_:sessionId:)"
+            landmarkName = "fetchMessages(sessionId:start:end:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -112,7 +112,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "163"
             endingLineNumber = "163"
-            landmarkName = "invokeChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
+            landmarkName = "streamChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -128,7 +128,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "173"
             endingLineNumber = "173"
-            landmarkName = "invokeChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
+            landmarkName = "streamChatSendMessage(conversationId:text:clientMessageId:refreshAuth:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

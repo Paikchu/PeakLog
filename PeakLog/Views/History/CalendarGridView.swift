@@ -108,8 +108,7 @@ struct CalendarGridView: View {
         HStack(spacing: 0) {
             ForEach(viewModel.currentWeekDays()) { day in
                 DayCell(day: day) {
-                    viewModel.selectDate(day.date)
-                    Task { await viewModel.loadSessionsForSelectedDate() }
+                    Task { await viewModel.selectDateAndRefresh(day.date) }
                 }
             }
         }
@@ -120,8 +119,7 @@ struct CalendarGridView: View {
         LazyVGrid(columns: columns, spacing: 4) {
             ForEach(viewModel.calendarDays()) { day in
                 DayCell(day: day) {
-                    viewModel.selectDate(day.date)
-                    Task { await viewModel.loadSessionsForSelectedDate() }
+                    Task { await viewModel.selectDateAndRefresh(day.date) }
                 }
             }
         }
@@ -195,14 +193,14 @@ private struct DayCell: View {
 
     var body: some View {
         Button {
-            if day.isCurrentMonth { onTap() }
+            if day.isInteractable { onTap() }
         } label: {
             ZStack {
-                if day.isSelected && day.isCurrentMonth {
+                if day.showsSelectionHighlight {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.accentPurple)
                         .frame(width: 36, height: 36)
-                } else if day.isToday && day.isCurrentMonth {
+                } else if day.showsTodayOutline {
                     RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(Color.accentPurple, lineWidth: 1.5)
                         .frame(width: 36, height: 36)
@@ -213,7 +211,7 @@ private struct DayCell: View {
                         .font(.system(size: 14, weight: day.isToday || day.isSelected ? .bold : .regular))
                         .foregroundColor(textColor)
 
-                    if day.hasWorkout && day.isCurrentMonth {
+                    if day.showsWorkoutIndicator {
                         Circle()
                             .fill(day.isSelected ? Color.white : Color.accentPurple)
                             .frame(width: 4, height: 4)
@@ -229,9 +227,14 @@ private struct DayCell: View {
     }
 
     private var textColor: Color {
-        if !day.isCurrentMonth { return .textDarkMuted }
-        if day.isSelected { return .white }
-        return .textPrimary
+        switch day.textColorRole {
+        case .selected:
+            return .white
+        case .primary:
+            return .textPrimary
+        case .muted:
+            return .textDarkMuted
+        }
     }
 
     private func dayNumber(_ date: Date) -> String {

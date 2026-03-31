@@ -108,6 +108,20 @@ final class HistoryViewModel: ObservableObject {
         selectedPlanDay = planDay(for: date, in: activePlan)
     }
 
+    func selectDateAndRefresh(_ date: Date) async {
+        let calendar = Calendar.current
+        let previousMonth = calendar.dateComponents([.year, .month], from: displayedMonth)
+        let nextMonth = calendar.dateComponents([.year, .month], from: date)
+
+        selectDate(date)
+
+        if previousMonth.year != nextMonth.year || previousMonth.month != nextMonth.month {
+            await loadCalendar()
+        }
+
+        await loadSessionsForSelectedDate()
+    }
+
     // MARK: - Current Week Days
     func currentWeekDays() -> [CalendarDay] {
         var calendar = Calendar.current
