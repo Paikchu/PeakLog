@@ -35,6 +35,7 @@ final class TodayWorkoutViewModel: ObservableObject {
 
     private var inputTextBeforeVoiceRecording = ""
     private var shouldRefreshAfterStreamingCompletion = false
+    private var persistenceFallbackTask: Task<Void, Never>?
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
@@ -100,11 +101,15 @@ final class TodayWorkoutViewModel: ObservableObject {
         do {
             let conversationId = try await conversationService.fetchOrCreateDefaultConversationId()
             _ = try await chatService.sendMessage(text, sessionId: conversationId)
+            persistenceFallbackTask?.cancel()
+            persistenceFallbackTask = nil
             latestAssistantReply = streamingReply.trimmingCharacters(in: .whitespacesAndNewlines)
             if shouldRefreshAfterStreamingCompletion {
                 await refresh()
             }
         } catch {
+            persistenceFallbackTask?.cancel()
+            persistenceFallbackTask = nil
             errorMessage = error.localizedDescription
             inputText = text
             markOverlayFailed()
@@ -380,13 +385,22 @@ final class TodayWorkoutViewModel: ObservableObject {
             guard !delta.isEmpty else { return }
             streamingReply.append(delta)
             latestAssistantReply = streamingReply
-        case .workoutPreview:
+        case .workoutPreview(let block):
+            applyStreamingWorkoutPreview(block)
             shouldRefreshAfterStreamingCompletion = true
+            if overlayPhase == .processing {
+                overlayPhase = .applying
+            }
+            schedulePersistenceFallback(refreshScope: .recordOnly)
         case .planContentBlock(let block):
             overlayContentBlocks = upsertOverlayBlock(block, into: overlayContentBlocks)
             didPersistPlan = true
             shouldRefreshAfterStreamingCompletion = true
             applyImmediatePlanBlock(block)
+            if overlayPhase == .processing {
+                overlayPhase = .applying
+            }
+            schedulePersistenceFallback(refreshScope: .fullRefresh)
         case .error(let message):
             errorMessage = message
             markOverlayFailed()
@@ -394,12 +408,64 @@ final class TodayWorkoutViewModel: ObservableObject {
             if overlayPhase != .failed {
                 overlayPhase = .completed
             }
+            persistenceFallbackTask?.cancel()
+            persistenceFallbackTask = nil
         }
     }
 
     private func markOverlayFailed() {
+        persistenceFallbackTask?.cancel()
+        persistenceFallbackTask = nil
         overlayPhase = .failed
         isOverlayVisible = true
+    }
+
+    private func applyStreamingWorkoutPreview(_ block: WorkoutRecordBlock) {
+        todayRecord = WorkoutRecord(
+            id: block.workoutSessionId.isEmpty ? "today-record-preview" : block.workoutSessionId,
+            exercises: block.exercises.map { exercise in
+                Exercise(
+                    id: exercise.exerciseId.isEmpty ? "preview-\(exercise.orderIndex)-\(exercise.name)" : exercise.exerciseId,
+                    name: exercise.name,
+                    sets: exercise.sets.map { set in
+                        ExerciseSet(
+                            id: set.setId.isEmpty ? "preview-\(exercise.orderIndex)-set-\(set.setIndex)" : set.setId,
+                            setIndex: set.setIndex,
+                            weight: set.weight,
+                            weightUnit: WeightUnit(rawValue: set.weightUnit) ?? .kg,
+                            reps: set.reps ?? 0,
+                            rpe: nil
+                        )
+                    }
+                )
+            }
+        )
+    }
+
+    private enum PersistenceRefreshScope {
+        case recordOnly
+        case fullRefresh
+    }
+
+    private func schedulePersistenceFallback(refreshScope: PersistenceRefreshScope) {
+        persistenceFallbackTask?.cancel()
+        persistenceFallbackTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+
+            switch refreshScope {
+            case .recordOnly:
+                await self.refreshTodayRecordOnly()
+            case .fullRefresh:
+                await self.refresh()
+            }
+
+            if self.overlayPhase != .failed {
+                self.overlayPhase = .completed
+            }
+            self.isSending = false
+        }
     }
 
     private func upsertOverlayBlock(_ block: ContentBlock, into existing: [ContentBlock]) -> [ContentBlock] {
