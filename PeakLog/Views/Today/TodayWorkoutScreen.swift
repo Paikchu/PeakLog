@@ -32,7 +32,6 @@ struct TodayWorkoutScreen: View {
                             quickActionsSection
                             plannedSection
                             recordedSection
-                            assistantReplyCard
                         }
                     }
                     .padding(.horizontal, 16)
@@ -241,22 +240,6 @@ struct TodayWorkoutScreen: View {
         }
     }
 
-    @ViewBuilder
-    private var assistantReplyCard: some View {
-        if let reply = viewModel.latestAssistantReply, !reply.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                sectionHeader(title: "AI 结果", subtitle: nil)
-                Text(reply)
-                    .font(.chatBody)
-                    .foregroundColor(.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(Color.appSurface)
-                    .cornerRadius(AppRadius.xl)
-            }
-        }
-    }
-
     private func sectionHeader(title: String, subtitle: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -384,30 +367,32 @@ private struct TodayAIFloatingOverlay: View {
     }
 
     private var statusTitle: String {
+        let isPlanFlow = didPersistPlan || !blocks.isEmpty
         switch phase {
         case .idle:
             return "等待开始"
         case .processing:
-            return "正在分析你的训练需求"
+            return "正在分析你的输入"
         case .applying:
-            return "正在调整训练计划"
+            return isPlanFlow ? "正在应用 AI 结果" : "正在写入训练记录"
         case .completed:
-            return "训练计划已更新"
+            return isPlanFlow ? "AI 结果已更新" : "训练记录已更新"
         case .failed:
             return "处理失败"
         }
     }
 
     private var statusSubtitle: String {
+        let isPlanFlow = didPersistPlan || !blocks.isEmpty
         switch phase {
         case .idle:
             return "AI 浮层会在发送后显示进度。"
         case .processing:
-            return "模型正在理解你的限制条件和周内安排。"
+            return "模型正在结合上下文理解你的意图。"
         case .applying:
-            return "正在把结果写入周计划并刷新首页。"
+            return isPlanFlow ? "正在把结果写入并同步首页。" : "正在把识别到的内容写入今天的记录。"
         case .completed:
-            return "你可以直接检查今日计划和整周变化。"
+            return isPlanFlow ? "结果已保留在首页浮层中，可直接关闭。" : "记录已完成，可继续补充下一句。"
         case .failed:
             return "计划没有写入，请重试。"
         }

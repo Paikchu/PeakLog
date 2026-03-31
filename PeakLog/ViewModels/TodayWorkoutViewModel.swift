@@ -35,7 +35,6 @@ final class TodayWorkoutViewModel: ObservableObject {
 
     private var inputTextBeforeVoiceRecording = ""
     private var shouldRefreshAfterStreamingCompletion = false
-    private var overlayAutoDismissTask: Task<Void, Never>?
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
@@ -116,8 +115,6 @@ final class TodayWorkoutViewModel: ObservableObject {
     }
 
     func dismissOverlay() {
-        overlayAutoDismissTask?.cancel()
-        overlayAutoDismissTask = nil
         isOverlayVisible = false
     }
 
@@ -355,8 +352,6 @@ final class TodayWorkoutViewModel: ObservableObject {
     }
 
     private func beginStreamingOverlay() {
-        overlayAutoDismissTask?.cancel()
-        overlayAutoDismissTask = nil
         isOverlayVisible = true
         overlayPhase = .processing
         streamingReply = ""
@@ -378,11 +373,8 @@ final class TodayWorkoutViewModel: ObservableObject {
                 overlayPhase = .applying
             case .completed:
                 overlayPhase = .completed
-                scheduleOverlayAutoDismissIfNeeded()
             case .failed:
                 overlayPhase = .failed
-                overlayAutoDismissTask?.cancel()
-                overlayAutoDismissTask = nil
             }
         case .textDelta(let delta):
             guard !delta.isEmpty else { return }
@@ -401,27 +393,13 @@ final class TodayWorkoutViewModel: ObservableObject {
         case .done:
             if overlayPhase != .failed {
                 overlayPhase = .completed
-                scheduleOverlayAutoDismissIfNeeded()
             }
         }
     }
 
     private func markOverlayFailed() {
-        overlayAutoDismissTask?.cancel()
-        overlayAutoDismissTask = nil
         overlayPhase = .failed
         isOverlayVisible = true
-    }
-
-    private func scheduleOverlayAutoDismissIfNeeded() {
-        guard isOverlayVisible else { return }
-
-        overlayAutoDismissTask?.cancel()
-        overlayAutoDismissTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_200_000_000)
-            guard let self, !Task.isCancelled, self.overlayPhase == .completed else { return }
-            self.isOverlayVisible = false
-        }
     }
 
     private func upsertOverlayBlock(_ block: ContentBlock, into existing: [ContentBlock]) -> [ContentBlock] {
