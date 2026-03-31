@@ -1,0 +1,5 @@
+.env
+.env.local
+supabase/.*
+.DS_Store
+.vscode/
