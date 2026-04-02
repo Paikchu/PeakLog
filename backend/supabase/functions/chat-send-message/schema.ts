@@ -27,6 +27,13 @@ export interface CommitWorkoutToolInput {
   exercises: ParsedExercise[];
 }
 
+export interface CommitRunningWorkoutToolInput {
+  reply: string;
+  workoutDate?: string;
+  durationMinutes: number;
+  distanceKm: number;
+}
+
 export interface TrainingPlanSetInput {
   planSetId?: string;
   setIndex: number;
@@ -39,6 +46,7 @@ export interface TrainingPlanExerciseInput {
   planExerciseId?: string;
   orderIndex: number;
   exerciseName: string;
+  exerciseLoadType: "bodyweight" | "weighted" | "unknown";
   progressionMode: "weight_first" | "reps_first" | "maintain";
   notes?: string | null;
   sets: TrainingPlanSetInput[];
@@ -108,6 +116,7 @@ const trainingPlanExerciseSchema = z.object({
   planExerciseId: z.string().optional(),
   orderIndex: z.number(),
   exerciseName: z.string(),
+  exerciseLoadType: z.enum(["bodyweight", "weighted", "unknown"]),
   progressionMode: z.enum(["weight_first", "reps_first", "maintain"]),
   notes: z.string().nullable().optional(),
   sets: z.array(trainingPlanSetSchema),
@@ -128,6 +137,13 @@ export const commitWorkoutToolInputSchema = z.object({
   reply: z.string(),
   workoutDate: z.string().optional(),
   exercises: z.array(parsedExerciseSchema).min(1),
+});
+
+export const commitRunningWorkoutToolInputSchema = z.object({
+  reply: z.string().min(1),
+  workoutDate: z.string().optional(),
+  durationMinutes: z.number().int().positive(),
+  distanceKm: z.number().positive(),
 });
 
 export const updateProfileGoalToolInputSchema = z.object({
@@ -231,6 +247,36 @@ export function parseCommitWorkoutToolInput(value: unknown): {
   };
 }
 
+export function parseCommitRunningWorkoutToolInput(value: unknown): {
+  success: true;
+  data: CommitRunningWorkoutToolInput;
+} | {
+  success: false;
+} {
+  if (typeof value !== "object" || value === null) {
+    return { success: false };
+  }
+
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.reply !== "string" ||
+    typeof record.durationMinutes !== "number" ||
+    typeof record.distanceKm !== "number"
+  ) {
+    return { success: false };
+  }
+
+  return {
+    success: true,
+    data: {
+      reply: record.reply,
+      workoutDate: typeof record.workoutDate === "string" ? record.workoutDate : undefined,
+      durationMinutes: record.durationMinutes,
+      distanceKm: record.distanceKm,
+    },
+  };
+}
+
 function parseTrainingPlanSet(value: unknown): TrainingPlanSetInput | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
@@ -258,6 +304,7 @@ function parseTrainingPlanExercise(value: unknown): TrainingPlanExerciseInput | 
   if (
     typeof record.orderIndex !== "number" ||
     typeof record.exerciseName !== "string" ||
+    !["bodyweight", "weighted", "unknown"].includes(String(record.exerciseLoadType)) ||
     !["weight_first", "reps_first", "maintain"].includes(String(record.progressionMode)) ||
     !Array.isArray(record.sets)
   ) {
@@ -273,6 +320,7 @@ function parseTrainingPlanExercise(value: unknown): TrainingPlanExerciseInput | 
     planExerciseId: typeof record.planExerciseId === "string" ? record.planExerciseId : undefined,
     orderIndex: record.orderIndex,
     exerciseName: record.exerciseName,
+    exerciseLoadType: record.exerciseLoadType as TrainingPlanExerciseInput["exerciseLoadType"],
     progressionMode: record.progressionMode as TrainingPlanExerciseInput["progressionMode"],
     notes: typeof record.notes === "string" ? record.notes : record.notes === null ? null : undefined,
     sets: sets as TrainingPlanSetInput[],

@@ -144,6 +144,7 @@ struct PlanExerciseBlock: Codable, Equatable, Identifiable {
     let planExerciseId: String
     let orderIndex: Int
     let exerciseName: String
+    let exerciseLoadType: ExerciseLoadType
     let progressionMode: String
     let notes: String?
     var sets: [PlanSetBlock]
@@ -154,9 +155,50 @@ struct PlanExerciseBlock: Codable, Equatable, Identifiable {
         case planExerciseId = "plan_exercise_id"
         case orderIndex = "order_index"
         case exerciseName = "exercise_name"
+        case exerciseLoadType = "exercise_load_type"
         case progressionMode = "progression_mode"
         case notes
         case sets
+    }
+
+    init(
+        planExerciseId: String,
+        orderIndex: Int,
+        exerciseName: String,
+        exerciseLoadType: ExerciseLoadType,
+        progressionMode: String,
+        notes: String?,
+        sets: [PlanSetBlock]
+    ) {
+        self.planExerciseId = planExerciseId
+        self.orderIndex = orderIndex
+        self.exerciseName = exerciseName
+        self.exerciseLoadType = exerciseLoadType
+        self.progressionMode = progressionMode
+        self.notes = notes
+        self.sets = sets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        planExerciseId = try container.decode(String.self, forKey: .planExerciseId)
+        orderIndex = try container.decode(Int.self, forKey: .orderIndex)
+        exerciseName = try container.decode(String.self, forKey: .exerciseName)
+        exerciseLoadType = try container.decodeIfPresent(ExerciseLoadType.self, forKey: .exerciseLoadType) ?? .unknown
+        progressionMode = try container.decode(String.self, forKey: .progressionMode)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        sets = try container.decode([PlanSetBlock].self, forKey: .sets)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(planExerciseId, forKey: .planExerciseId)
+        try container.encode(orderIndex, forKey: .orderIndex)
+        try container.encode(exerciseName, forKey: .exerciseName)
+        try container.encode(exerciseLoadType, forKey: .exerciseLoadType)
+        try container.encode(progressionMode, forKey: .progressionMode)
+        try container.encodeIfPresent(notes, forKey: .notes)
+        try container.encode(sets, forKey: .sets)
     }
 }
 

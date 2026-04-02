@@ -582,7 +582,7 @@ private struct TodayPlannedSetRow: View {
                             .font(.exerciseUnit)
                             .foregroundColor(.textSecondary)
                     } else {
-                        Text("chat.exercise.bodyweight")
+                        Text(exerciseLoadLabel)
                             .font(.exerciseValue)
                             .foregroundColor(.accentValue)
                     }
@@ -651,7 +651,7 @@ private struct TodayPlannedSetRow: View {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.weight"),
                 unit: set.targetWeight == nil ? nil : set.targetWeightUnit.display,
-                placeholder: String(localized: "chat.exercise.bodyweight"),
+                placeholder: exerciseLoadType.displayLabel,
                 keyboardType: .decimalPad,
                 value: $weightText
             ) {
@@ -662,7 +662,7 @@ private struct TodayPlannedSetRow: View {
             } onCancel: {
                 editingWeight = false
             }
-            .presentationDetents([.height(220)])
+            .presentationDetents([.height(280)])
         }
         .sheet(isPresented: $editingReps) {
             ValueEditSheet(
@@ -679,8 +679,12 @@ private struct TodayPlannedSetRow: View {
             } onCancel: {
                 editingReps = false
             }
-            .presentationDetents([.height(220)])
+            .presentationDetents([.height(280)])
         }
+    }
+
+    private var exerciseLoadLabel: String {
+        exerciseLoadType.displayLabel
     }
 }
 

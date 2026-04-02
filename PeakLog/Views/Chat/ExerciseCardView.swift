@@ -186,6 +186,14 @@ struct ValueEditSheet: View {
         .background(Color.appCard)
         .dismissKeyboardOnTap()
         .onAppear { focused = true }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(String(localized: "common.done")) {
+                    focused = false
+                }
+            }
+        }
     }
 }
 

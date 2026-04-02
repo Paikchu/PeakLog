@@ -38,6 +38,7 @@ struct TrainingPlanContentBlocksTestRunner {
                       "plan_exercise_id": "exercise-1",
                       "order_index": 0,
                       "exercise_name": "Bench Press",
+                      "exercise_load_type": "weighted",
                       "progression_mode": "weight_first",
                       "notes": "全部完成后下周加重",
                       "sets": [
@@ -97,12 +98,13 @@ struct TrainingPlanContentBlocksTestRunner {
                 "focus": "胸肩三头",
                 "status": "planned",
                 "exercises": [
-                  {
-                    "plan_exercise_id": "exercise-1",
-                    "order_index": 0,
-                    "exercise_name": "Bench Press",
-                    "progression_mode": "weight_first",
-                    "notes": null,
+                    {
+                      "plan_exercise_id": "exercise-1",
+                      "order_index": 0,
+                      "exercise_name": "Bench Press",
+                      "exercise_load_type": "weighted",
+                      "progression_mode": "weight_first",
+                      "notes": null,
                     "sets": [
                       {
                         "plan_set_id": "set-1",

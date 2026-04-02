@@ -31,6 +31,7 @@ Deno.test("create_or_refresh_weekly_plan parser accepts structured week plans", 
           {
             orderIndex: 0,
             exerciseName: "Bench Press",
+            exerciseLoadType: "weighted",
             progressionMode: "weight_first",
             notes: "若全部完成则下周小幅加重",
             sets: [

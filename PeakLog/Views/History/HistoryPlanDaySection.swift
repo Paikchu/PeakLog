@@ -28,7 +28,7 @@ struct HistoryPlanDaySection: View {
 
                     ForEach(exercise.sets) { set in
                         HStack {
-                            Text(setDisplayText(set))
+                            Text(setDisplayText(set, loadType: exercise.exerciseLoadType))
                                 .font(.system(size: 13))
                                 .foregroundColor(.textSecondary)
 
@@ -51,11 +51,11 @@ struct HistoryPlanDaySection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func setDisplayText(_ set: TrainingPlanSet) -> String {
+    private func setDisplayText(_ set: TrainingPlanSet, loadType: ExerciseLoadType) -> String {
         if let weight = set.targetWeight {
             return "\(weight.clean) \(set.targetWeightUnit.display) × \(set.targetReps)"
         }
-        return "Bodyweight × \(set.targetReps)"
+        return "\(loadType.displayLabel) × \(set.targetReps)"
     }
 }
 

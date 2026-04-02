@@ -155,6 +155,7 @@ struct TodayWorkoutViewModelAIActionTestRunner {
                                         planExerciseId: "exercise-1",
                                         orderIndex: 0,
                                         exerciseName: "Bench Press",
+                                        exerciseLoadType: .weighted,
                                         progressionMode: "weight_first",
                                         notes: nil,
                                         sets: [
@@ -221,6 +222,7 @@ private struct TestTrainingPlanService: TrainingPlanServiceProtocol {
                     id: "exercise-1",
                     orderIndex: 0,
                     exerciseName: "Bench Press",
+                    exerciseLoadType: .weighted,
                     progressionMode: "weight_first",
                     notes: nil,
                     previousPerformanceSummary: nil,

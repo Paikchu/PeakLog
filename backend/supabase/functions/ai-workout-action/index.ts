@@ -103,6 +103,7 @@ interface ContentBlockPlanExercise {
   plan_exercise_id: string;
   order_index: number;
   exercise_name: string;
+  exercise_load_type: "bodyweight" | "weighted" | "unknown";
   progression_mode: "weight_first" | "reps_first" | "maintain";
   notes?: string | null;
   sets: ContentBlockPlanSet[];
@@ -185,6 +186,7 @@ interface StoredTrainingPlanExercise {
   id: string;
   order_index: number;
   exercise_name: string;
+  exercise_load_type: "bodyweight" | "weighted" | "unknown";
   progression_mode: "weight_first" | "reps_first" | "maintain";
   notes?: string | null;
   training_plan_sets?: StoredTrainingPlanSet[];
@@ -788,7 +790,7 @@ async function fetchActiveWeeklyPlan(
   const { data, error } = await supabase
     .from("training_plans")
     .select(
-      "id, week_start_date, goal_snapshot, coach_summary, status, training_plan_days(id, plan_date, day_index, title, focus, status, training_plan_exercises(id, order_index, exercise_name, progression_mode, notes, training_plan_sets(id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id)))",
+      "id, week_start_date, goal_snapshot, coach_summary, status, training_plan_days(id, plan_date, day_index, title, focus, status, training_plan_exercises(id, order_index, exercise_name, exercise_load_type, progression_mode, notes, training_plan_sets(id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id)))",
     )
     .eq("user_id", userId)
     .eq("status", "active")
@@ -950,6 +952,7 @@ async function upsertStructuredWeeklyPlan({
           user_id: userId,
           order_index: exercise.orderIndex,
           exercise_name: exercise.exerciseName,
+          exercise_load_type: exercise.exerciseLoadType,
           progression_mode: exercise.progressionMode,
           notes: exercise.notes ?? null,
         })
@@ -1135,6 +1138,7 @@ function toContentPlanDay(day: StoredTrainingPlanDay): ContentBlockPlanDay {
         plan_exercise_id: exercise.id,
         order_index: exercise.order_index,
         exercise_name: exercise.exercise_name,
+        exercise_load_type: exercise.exercise_load_type,
         progression_mode: exercise.progression_mode,
         notes: exercise.notes ?? null,
         sets: [...(exercise.training_plan_sets ?? [])]

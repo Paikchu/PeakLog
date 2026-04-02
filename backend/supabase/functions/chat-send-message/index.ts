@@ -18,6 +18,7 @@ import {
 import {
   pickWorkoutSessionDate,
   type AdjustCurrentOrNextWeekPlanToolInput,
+  type CommitRunningWorkoutToolInput,
   type CommitWorkoutToolInput,
   type CreateOrRefreshWeeklyPlanToolInput,
   type LogPlannedSetCompletionToolInput,
@@ -26,12 +27,14 @@ import {
   type UpdateProfileGoalToolInput,
 } from "./schema.ts";
 import {
+  runningContentBlockFromCommitToolInput,
   streamablePlanContentBlocksFromAssistantToolResult,
   workoutContentBlockFromCommitToolInput,
 } from "./stream-events.ts";
 import { createChatSSEStream } from "./streaming.ts";
 import {
   ADJUST_CURRENT_OR_NEXT_WEEK_PLAN_TOOL_NAME,
+  COMMIT_RUNNING_WORKOUT_TOOL_NAME,
   COMMIT_WORKOUT_TOOL_NAME,
   CREATE_OR_REFRESH_WEEKLY_PLAN_TOOL_NAME,
   LOG_PLANNED_SET_COMPLETION_TOOL_NAME,
@@ -151,6 +154,15 @@ interface ContentBlockPRSummary {
   items: PRSummaryItem[];
 }
 
+interface ContentBlockRunningRecord {
+  type: "running_record";
+  running_workout_id: string;
+  workout_date: string;
+  duration_minutes: number;
+  distance_km: number;
+  source: string;
+}
+
 interface ContentBlockPlanSet {
   plan_set_id: string;
   set_index: number;
@@ -165,6 +177,7 @@ interface ContentBlockPlanExercise {
   plan_exercise_id: string;
   order_index: number;
   exercise_name: string;
+  exercise_load_type: "bodyweight" | "weighted" | "unknown";
   progression_mode: "weight_first" | "reps_first" | "maintain";
   notes?: string | null;
   sets: ContentBlockPlanSet[];
@@ -204,6 +217,7 @@ interface ContentBlockPlanAdjustmentSummary {
 type ContentBlock =
   | ContentBlockText
   | ContentBlockWorkoutRecord
+  | ContentBlockRunningRecord
   | ContentBlockPRSummary
   | ContentBlockWeeklyPlan
   | ContentBlockTodayPlan
@@ -230,6 +244,14 @@ interface StoredWorkoutRecordBlock {
       reps?: number | null;
     }>;
   }>;
+}
+
+interface StoredRunningRecordBlock {
+  type: "running_record";
+  running_workout_id: string;
+  workout_date: string;
+  duration_minutes: number;
+  distance_km: number;
 }
 
 // ============================================================
@@ -451,6 +473,26 @@ Deno.serve(async (req: Request) => {
             throw error;
           }
         },
+        onCommitRunningWorkout: async (parsed) => {
+          try {
+            assistantToolResult = await persistCommitRunningWorkoutInTool({
+              supabaseAdmin,
+              userId: user.id,
+              sourceMessageId: savedUserMsg.id,
+              parsed,
+              today,
+            });
+          } catch (error) {
+            console.error("commit_running_workout persistence failed", {
+              conversationId: conversation_id,
+              userId: user.id,
+              sourceMessageId: savedUserMsg.id,
+              assistantMessageId,
+              error,
+            });
+            throw error;
+          }
+        },
         onUpdateProfileGoal: async (parsed) => {
           assistantToolResult = await persistProfileGoalUpdateInTool({
             supabaseAdmin,
@@ -515,7 +557,7 @@ Deno.serve(async (req: Request) => {
               }
               break;
             case "tool-input-start":
-              if (parsed.toolName === COMMIT_WORKOUT_TOOL_NAME) {
+              if (parsed.toolName === COMMIT_WORKOUT_TOOL_NAME || parsed.toolName === COMMIT_RUNNING_WORKOUT_TOOL_NAME) {
                 commitToolCallId = parsed.id;
                 send({ type: "workout-block-stream-start", toolCallId: parsed.id });
               }
@@ -537,6 +579,14 @@ Deno.serve(async (req: Request) => {
                 );
                 if (block) {
                   send({ type: "workout-content-block", block });
+                }
+              } else if (parsed.toolName === COMMIT_RUNNING_WORKOUT_TOOL_NAME) {
+                const block = runningContentBlockFromCommitToolInput(
+                  parsed.input,
+                  { fallbackDate: today },
+                );
+                if (block) {
+                  send({ type: "running-content-block", block });
                 }
               } else if (PLAN_TOOL_NAMES.has(parsed.toolName)) {
                 send({ type: "status", phase: "applying" });
@@ -707,6 +757,52 @@ async function persistCommitWorkoutInTool({
     parsed,
     today,
   );
+}
+
+async function persistCommitRunningWorkoutInTool({
+  supabaseAdmin,
+  userId,
+  sourceMessageId,
+  parsed,
+  today,
+}: {
+  supabaseAdmin: any;
+  userId: string;
+  sourceMessageId: string;
+  parsed: CommitRunningWorkoutToolInput;
+  today: string;
+}): Promise<AssistantToolResult> {
+  const workoutDate = pickWorkoutSessionDate(parsed.workoutDate, today);
+  const { data, error } = await supabaseAdmin
+    .from("running_workouts")
+    .insert({
+      user_id: userId,
+      source_message_id: sourceMessageId,
+      workout_date: workoutDate,
+      duration_minutes: parsed.durationMinutes,
+      distance_km: parsed.distanceKm,
+      source: "chat",
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to create running_workout: ${error?.message}`);
+  }
+
+  return {
+    contentBlocks: [
+      { type: "text", text: parsed.reply },
+      {
+        type: "running_record",
+        running_workout_id: data.id,
+        workout_date: workoutDate,
+        duration_minutes: parsed.durationMinutes,
+        distance_km: parsed.distanceKm,
+        source: "chat",
+      },
+    ],
+  };
 }
 
 async function persistProfileGoalUpdateInTool({
@@ -1047,6 +1143,7 @@ interface StoredTrainingPlanExercise {
   id: string;
   order_index: number;
   exercise_name: string;
+  exercise_load_type: "bodyweight" | "weighted" | "unknown";
   progression_mode: "weight_first" | "reps_first" | "maintain";
   notes?: string | null;
   training_plan_sets?: StoredTrainingPlanSet[];
@@ -1091,7 +1188,7 @@ async function fetchActiveWeeklyPlan(
   const { data, error } = await supabase
     .from("training_plans")
     .select(
-      "id, week_start_date, goal_snapshot, coach_summary, status, training_plan_days(id, plan_date, day_index, title, focus, status, training_plan_exercises(id, order_index, exercise_name, progression_mode, notes, training_plan_sets(id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id)))",
+      "id, week_start_date, goal_snapshot, coach_summary, status, training_plan_days(id, plan_date, day_index, title, focus, status, training_plan_exercises(id, order_index, exercise_name, exercise_load_type, progression_mode, notes, training_plan_sets(id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id)))",
     )
     .eq("user_id", userId)
     .eq("status", "active")
@@ -1261,6 +1358,7 @@ async function upsertStructuredWeeklyPlan({
           user_id: userId,
           order_index: exercise.orderIndex,
           exercise_name: exercise.exerciseName,
+          exercise_load_type: exercise.exerciseLoadType,
           progression_mode: exercise.progressionMode,
           notes: exercise.notes ?? null,
         })
@@ -1307,6 +1405,7 @@ function toContentPlanDay(day: StoredTrainingPlanDay): ContentBlockPlanDay {
         plan_exercise_id: exercise.id,
         order_index: exercise.order_index,
         exercise_name: exercise.exercise_name,
+        exercise_load_type: exercise.exercise_load_type,
         progression_mode: exercise.progression_mode,
         notes: exercise.notes ?? null,
         sets: [...(exercise.training_plan_sets ?? [])]
@@ -1544,18 +1643,27 @@ async function fetchRecentSavedRecordSummaries(
   const summaries: RecentSavedRecordSummary[] = [];
 
   for (const row of data ?? []) {
-    const contentBlocks = Array.isArray(row.content_blocks) ? row.content_blocks as StoredWorkoutRecordBlock[] : [];
-    const workoutRecord = contentBlocks.find((block) => block?.type === "workout_record");
-    if (!workoutRecord?.workout_session_id || !workoutRecord.workout_date) {
-      continue;
-    }
+    const contentBlocks = Array.isArray(row.content_blocks)
+      ? row.content_blocks as Array<StoredWorkoutRecordBlock | StoredRunningRecordBlock>
+      : [];
+    const workoutRecord = contentBlocks.find((block) => block?.type === "workout_record") as StoredWorkoutRecordBlock | undefined;
+    const runningRecord = contentBlocks.find((block) => block?.type === "running_record") as StoredRunningRecordBlock | undefined;
 
-    summaries.push({
-      workoutSessionId: workoutRecord.workout_session_id,
-      workoutDate: workoutRecord.workout_date,
-      summaryText: summarizeWorkoutRecord(workoutRecord),
-      sourceMessageId: row.id,
-    });
+    if (runningRecord?.running_workout_id && runningRecord.workout_date) {
+      summaries.push({
+        workoutSessionId: runningRecord.running_workout_id,
+        workoutDate: runningRecord.workout_date,
+        summaryText: `${runningRecord.distance_km} km in ${runningRecord.duration_minutes} min`,
+        sourceMessageId: row.id,
+      });
+    } else if (workoutRecord?.workout_session_id && workoutRecord.workout_date) {
+      summaries.push({
+        workoutSessionId: workoutRecord.workout_session_id,
+        workoutDate: workoutRecord.workout_date,
+        summaryText: summarizeWorkoutRecord(workoutRecord),
+        sourceMessageId: row.id,
+      });
+    }
 
     if (summaries.length >= 3) {
       break;

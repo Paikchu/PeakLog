@@ -48,6 +48,7 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
             let id: String
             let orderIndex: Int
             let exerciseName: String
+            let exerciseLoadType: String
             let progressionMode: String
             let notes: String?
             let sets: [SetRow]?
@@ -56,6 +57,7 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
                 case id
                 case orderIndex = "order_index"
                 case exerciseName = "exercise_name"
+                case exerciseLoadType = "exercise_load_type"
                 case progressionMode = "progression_mode"
                 case notes
                 case sets = "training_plan_sets"
@@ -84,7 +86,7 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
 
         let rows: [PlanRow] = try await supabase
             .from("training_plans")
-            .select("id, week_start_date, goal_snapshot, coach_summary, training_plan_days(id, plan_date, day_index, title, focus, status, training_plan_exercises(id, order_index, exercise_name, progression_mode, notes, training_plan_sets(id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id)))")
+            .select("id, week_start_date, goal_snapshot, coach_summary, training_plan_days(id, plan_date, day_index, title, focus, status, training_plan_exercises(id, order_index, exercise_name, exercise_load_type, progression_mode, notes, training_plan_sets(id, set_index, target_weight, target_weight_unit, target_reps, completed_at, linked_exercise_set_id)))")
             .eq("user_id", value: uid)
             .eq("status", value: "active")
             .order("week_start_date", ascending: false)
@@ -118,6 +120,7 @@ final class SupabaseTrainingPlanService: TrainingPlanServiceProtocol {
                             id: exercise.id,
                             orderIndex: exercise.orderIndex,
                             exerciseName: exercise.exerciseName,
+                            exerciseLoadType: ExerciseLoadType(rawValue: exercise.exerciseLoadType) ?? .unknown,
                             progressionMode: exercise.progressionMode,
                             notes: exercise.notes,
                             previousPerformanceSummary: previousPerformanceByExercise[exercise.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()],

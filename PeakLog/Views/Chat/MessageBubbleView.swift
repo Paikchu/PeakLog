@@ -55,6 +55,12 @@ struct MessageBubbleView: View {
                     case .workoutRecordStream(let recordBlock):
                         workoutRecordCard(for: recordBlock, isEditable: false)
 
+                    case .runningRecord(let recordBlock):
+                        RunningRecordCard(record: runningRecord(for: recordBlock))
+
+                    case .runningRecordStream(let recordBlock):
+                        RunningRecordCard(record: runningRecord(for: recordBlock), isPreview: true)
+
                     case .prSummary(let summary):
                         PRSummaryCard(summary: summary)
 
@@ -161,6 +167,20 @@ struct MessageBubbleView: View {
         )
     }
 
+    private func runningRecord(for block: RunningRecordBlock) -> RunningWorkoutRecord {
+        let formatter = WorkoutDateFormatter()
+        return RunningWorkoutRecord(
+            id: block.runningWorkoutId.isEmpty ? "running-preview" : block.runningWorkoutId,
+            userId: "local",
+            workoutDate: formatter.date(from: block.workoutDate) ?? Date(),
+            durationMinutes: block.durationMinutes,
+            distanceKm: block.distanceKm,
+            source: RunningWorkoutSource(rawValue: block.source) ?? .chat,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+    }
+
     private func weeklyPlanCard(_ plan: WeeklyPlanBlock) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Current Plan")
@@ -216,7 +236,7 @@ struct MessageBubbleView: View {
                         .foregroundColor(.textPrimary)
                     ForEach(exercise.sets) { set in
                         HStack {
-                            Text(planSetText(set))
+                            Text(planSetText(set, loadType: exercise.exerciseLoadType))
                                 .font(.system(size: 13))
                                 .foregroundColor(.textSecondary)
                             Spacer()
@@ -238,11 +258,11 @@ struct MessageBubbleView: View {
         .cornerRadius(16)
     }
 
-    private func planSetText(_ set: PlanSetBlock) -> String {
+    private func planSetText(_ set: PlanSetBlock, loadType: ExerciseLoadType) -> String {
         if let weight = set.targetWeight {
             return "\(weight.clean) \(set.targetWeightUnit) × \(set.targetReps)"
         }
-        return "Bodyweight × \(set.targetReps)"
+        return "\(loadType.displayLabel) × \(set.targetReps)"
     }
 }
 

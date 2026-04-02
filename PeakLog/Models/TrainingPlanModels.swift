@@ -1,5 +1,22 @@
 import Foundation
 
+enum ExerciseLoadType: String, Codable, Equatable {
+    case bodyweight
+    case weighted
+    case unknown
+
+    var displayLabel: String {
+        switch self {
+        case .bodyweight:
+            return String(localized: "chat.exercise.bodyweight")
+        case .weighted:
+            return "待设置重量"
+        case .unknown:
+            return "未设置"
+        }
+    }
+}
+
 struct TrainingPlanSet: Identifiable, Codable, Equatable {
     let id: String
     var setIndex: Int
@@ -18,6 +35,7 @@ struct TrainingPlanExercise: Identifiable, Codable, Equatable {
     let id: String
     let orderIndex: Int
     let exerciseName: String
+    let exerciseLoadType: ExerciseLoadType
     let progressionMode: String
     let notes: String?
     var previousPerformanceSummary: String?
@@ -80,6 +98,7 @@ extension TrainingPlanExercise {
             id: block.planExerciseId,
             orderIndex: block.orderIndex,
             exerciseName: block.exerciseName,
+            exerciseLoadType: block.exerciseLoadType,
             progressionMode: block.progressionMode,
             notes: block.notes,
             previousPerformanceSummary: nil,
