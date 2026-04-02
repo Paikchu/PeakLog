@@ -84,6 +84,7 @@ private struct SetRowView: View {
         .sheet(isPresented: $editingWeight) {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.weight"),
+                titleKey: "chat.exercise.edit_weight",
                 unit: set.weight == nil ? nil : set.weightUnit.display,
                 placeholder: String(localized: "chat.exercise.bodyweight"),
                 keyboardType: .decimalPad,
@@ -107,6 +108,7 @@ private struct SetRowView: View {
         .sheet(isPresented: $editingReps) {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.reps"),
+                titleKey: "chat.exercise.edit_reps",
                 unit: String(localized: "chat.exercise.reps"),
                 placeholder: "0",
                 keyboardType: .numberPad,
@@ -133,6 +135,7 @@ func formatWeightValue(_ weight: Double) -> String {
 
 struct ValueEditSheet: View {
     let title: String
+    let titleKey: String?
     let unit: String?
     let placeholder: String
     let keyboardType: UIKeyboardType
@@ -144,7 +147,7 @@ struct ValueEditSheet: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Edit \(title)")
+            Text(titleKey.map { String(localized: String.LocalizationValue($0)) } ?? title)
                 .font(.headerTitle)
                 .foregroundColor(.textPrimary)
                 .padding(.top, 24)
@@ -186,14 +189,6 @@ struct ValueEditSheet: View {
         .background(Color.appCard)
         .dismissKeyboardOnTap()
         .onAppear { focused = true }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button(String(localized: "common.done")) {
-                    focused = false
-                }
-            }
-        }
     }
 }
 

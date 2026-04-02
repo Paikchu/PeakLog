@@ -1,0 +1,26 @@
+# PeakLog 架构文档导航
+
+本目录用于维护 PeakLog 的核心技术文档，帮助后续迭代、排障、交接和重构。
+
+## 文档清单
+
+- `system-architecture.md`  
+  系统架构文档，包含分层结构、模块职责、数据存储与关键设计决策。
+
+- `business-flow.md`  
+  业务功能流程文档，覆盖核心用户路径与主要时序（聊天记录、今日计划、历史回顾、个人目标）。
+
+- `api-reference.md`  
+  接口文档，包含 iOS 侧调用的 Supabase Edge Functions、SSE 事件协议、关键数据结构与错误语义。
+
+## 阅读建议
+
+1. 新成员入项：先读 `system-architecture.md`
+2. 理解功能闭环：再读 `business-flow.md`
+3. 联调/排障：重点看 `api-reference.md`
+
+## 维护约定
+
+- 功能行为或数据结构变化时，同步更新对应文档。
+- 接口字段变更时，必须同时更新 `api-reference.md`。
+- 新增跨模块能力时，先补充架构与流程图，再进入开发实现。

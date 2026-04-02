@@ -750,6 +750,7 @@ private struct TodayPlannedSetRow: View {
         .sheet(isPresented: $editingWeight) {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.weight"),
+                titleKey: "chat.exercise.edit_weight",
                 unit: set.targetWeight == nil ? nil : set.targetWeightUnit.display,
                 placeholder: exerciseLoadType.displayLabel,
                 keyboardType: .decimalPad,
@@ -767,6 +768,7 @@ private struct TodayPlannedSetRow: View {
         .sheet(isPresented: $editingReps) {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.reps"),
+                titleKey: "chat.exercise.edit_reps",
                 unit: String(localized: "chat.exercise.reps"),
                 placeholder: "0",
                 keyboardType: .numberPad,

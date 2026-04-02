@@ -237,6 +237,40 @@
         }
       }
     },
+    "chat.exercise.edit_reps" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Reps"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑次数"
+          }
+        }
+      }
+    },
+    "chat.exercise.edit_weight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Weight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑重量"
+          }
+        }
+      }
+    },
     "chat.exercise.reps" : {
       "extractionState" : "manual",
       "localizations" : {
