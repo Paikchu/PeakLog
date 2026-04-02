@@ -330,4 +330,136 @@ final class SupabaseWorkoutService: WorkoutServiceProtocol {
             )
         }
     }
+
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
+        let workoutDateFormatter = WorkoutDateFormatter()
+        let calendar = workoutDateFormatter.calendar
+        var components = DateComponents(year: year, month: month, day: 1)
+        guard let start = calendar.date(from: components) else { return [] }
+        components.month = month + 1
+        guard let end = calendar.date(from: components) else { return [] }
+
+        struct DateRow: Decodable {
+            let workoutDate: String
+
+            enum CodingKeys: String, CodingKey {
+                case workoutDate = "workout_date"
+            }
+        }
+
+        let rows: [DateRow] = try await supabase
+            .from("running_workouts")
+            .select("workout_date")
+            .gte("workout_date", value: workoutDateFormatter.string(from: start))
+            .lt("workout_date", value: workoutDateFormatter.string(from: end))
+            .execute()
+            .value
+
+        return Array(Set(rows.compactMap { workoutDateFormatter.date(from: $0.workoutDate) }))
+    }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
+        let workoutDateFormatter = WorkoutDateFormatter()
+        let dateString = workoutDateFormatter.string(from: date)
+
+        struct Row: Decodable {
+            let id: String
+            let userId: String
+            let workoutDate: String
+            let durationMinutes: Int
+            let distanceKm: Double
+            let source: String
+            let createdAt: Date
+            let updatedAt: Date
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case userId = "user_id"
+                case workoutDate = "workout_date"
+                case durationMinutes = "duration_minutes"
+                case distanceKm = "distance_km"
+                case source
+                case createdAt = "created_at"
+                case updatedAt = "updated_at"
+            }
+        }
+
+        let rows: [Row] = try await supabase
+            .from("running_workouts")
+            .select()
+            .eq("workout_date", value: dateString)
+            .order("created_at", ascending: true)
+            .execute()
+            .value
+
+        return rows.map { row in
+            RunningWorkoutRecord(
+                id: row.id,
+                userId: row.userId,
+                workoutDate: workoutDateFormatter.date(from: row.workoutDate) ?? date,
+                durationMinutes: row.durationMinutes,
+                distanceKm: row.distanceKm,
+                source: RunningWorkoutSource(rawValue: row.source) ?? .chat,
+                createdAt: row.createdAt,
+                updatedAt: row.updatedAt
+            )
+        }
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        let workoutDateFormatter = WorkoutDateFormatter()
+        let user = try await supabase.auth.session.user
+
+        struct Row: Decodable {
+            let id: String
+            let userId: String
+            let workoutDate: String
+            let durationMinutes: Int
+            let distanceKm: Double
+            let source: String
+            let createdAt: Date
+            let updatedAt: Date
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case userId = "user_id"
+                case workoutDate = "workout_date"
+                case durationMinutes = "duration_minutes"
+                case distanceKm = "distance_km"
+                case source
+                case createdAt = "created_at"
+                case updatedAt = "updated_at"
+            }
+        }
+
+        let rows: [Row] = try await supabase
+            .from("running_workouts")
+            .insert([
+                "user_id": AnyJSON(user.id.uuidString),
+                "workout_date": AnyJSON(workoutDateFormatter.string(from: workoutDate)),
+                "duration_minutes": AnyJSON(durationMinutes),
+                "distance_km": AnyJSON(distanceKm),
+                "source": AnyJSON(source.rawValue),
+            ])
+            .select()
+            .execute()
+            .value
+
+        guard let row = rows.first else { throw APIError.serverError(500) }
+        return RunningWorkoutRecord(
+            id: row.id,
+            userId: row.userId,
+            workoutDate: workoutDateFormatter.date(from: row.workoutDate) ?? workoutDate,
+            durationMinutes: row.durationMinutes,
+            distanceKm: row.distanceKm,
+            source: RunningWorkoutSource(rawValue: row.source) ?? source,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt
+        )
+    }
 }

@@ -41,6 +41,7 @@ export function buildAIWorkoutActionResponse(
 
   const requiresTodayRefresh = contentBlocks.some((block) =>
     block.type === "workout_record" ||
+    block.type === "running_record" ||
     block.type === "today_plan" ||
     block.type === "weekly_plan" ||
     block.type === "plan_adjustment_summary"

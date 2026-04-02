@@ -17,6 +17,7 @@ enum ChatServiceStreamEvent: Equatable {
     case status(ChatServiceStreamStatus)
     case textDelta(String)
     case workoutPreview(WorkoutRecordBlock)
+    case runningPreview(RunningRecordBlock)
     case planContentBlock(ContentBlock)
     case error(String)
     case done
@@ -88,6 +89,9 @@ struct ChatSSEParser {
         case "workout-content-block":
             let event = try decoder.decode(ChatSSEWorkoutPreviewPayload.self, from: Data(payload.utf8))
             return .workoutPreview(event.block.asWorkoutRecordBlock())
+        case "running-content-block":
+            let event = try decoder.decode(ChatSSERunningPreviewPayload.self, from: Data(payload.utf8))
+            return .runningPreview(event.block.asRunningRecordBlock())
         case "plan-content-block":
             let event = try decoder.decode(ChatSSEPlanContentBlockPayload.self, from: Data(payload.utf8))
             return .planContentBlock(event.block)
@@ -140,6 +144,11 @@ private struct ChatSSEPlanContentBlockPayload: Decodable {
     let block: ContentBlock
 }
 
+private struct ChatSSERunningPreviewPayload: Decodable {
+    let type: String
+    let block: StreamRunningRecordPayload
+}
+
 private struct StreamWorkoutRecordPayload: Decodable {
     let workoutSessionId: String
     let workoutDate: String
@@ -162,6 +171,32 @@ private struct StreamWorkoutRecordPayload: Decodable {
             title: title,
             parseStatus: parseStatus,
             exercises: exercises
+        )
+    }
+}
+
+private struct StreamRunningRecordPayload: Decodable {
+    let runningWorkoutId: String
+    let workoutDate: String
+    let durationMinutes: Int
+    let distanceKm: Double
+    let source: String
+
+    enum CodingKeys: String, CodingKey {
+        case runningWorkoutId = "running_workout_id"
+        case workoutDate = "workout_date"
+        case durationMinutes = "duration_minutes"
+        case distanceKm = "distance_km"
+        case source
+    }
+
+    func asRunningRecordBlock() -> RunningRecordBlock {
+        RunningRecordBlock(
+            runningWorkoutId: runningWorkoutId,
+            workoutDate: workoutDate,
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            source: source
         )
     }
 }

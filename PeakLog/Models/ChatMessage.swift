@@ -75,6 +75,22 @@ struct WorkoutRecordBlock: Codable, Equatable {
     }
 }
 
+struct RunningRecordBlock: Codable, Equatable {
+    let runningWorkoutId: String
+    let workoutDate: String
+    let durationMinutes: Int
+    let distanceKm: Double
+    let source: String
+
+    enum CodingKeys: String, CodingKey {
+        case runningWorkoutId = "running_workout_id"
+        case workoutDate = "workout_date"
+        case durationMinutes = "duration_minutes"
+        case distanceKm = "distance_km"
+        case source
+    }
+}
+
 struct PRSummaryItem: Codable, Equatable {
     let normalizedName: String
     let displayName: String
@@ -264,6 +280,8 @@ enum ContentBlock: Equatable {
     case text(String)
     case workoutRecord(WorkoutRecordBlock)
     case workoutRecordStream(WorkoutRecordBlock)
+    case runningRecord(RunningRecordBlock)
+    case runningRecordStream(RunningRecordBlock)
     case prSummary(PRSummaryBlock)
     case clarificationPrompt(ClarificationPromptBlock)
     case weeklyPlan(WeeklyPlanBlock)
@@ -290,6 +308,12 @@ extension ContentBlock: Codable {
         case "workout_record_stream":
             let record = try WorkoutRecordBlock(from: decoder)
             self = .workoutRecordStream(record)
+        case "running_record":
+            let record = try RunningRecordBlock(from: decoder)
+            self = .runningRecord(record)
+        case "running_record_stream":
+            let record = try RunningRecordBlock(from: decoder)
+            self = .runningRecordStream(record)
         case "pr_summary":
             let summary = try PRSummaryBlock(from: decoder)
             self = .prSummary(summary)
@@ -321,6 +345,12 @@ extension ContentBlock: Codable {
             try record.encode(to: encoder)
         case .workoutRecordStream(let record):
             try container.encode("workout_record_stream", forKey: .type)
+            try record.encode(to: encoder)
+        case .runningRecord(let record):
+            try container.encode("running_record", forKey: .type)
+            try record.encode(to: encoder)
+        case .runningRecordStream(let record):
+            try container.encode("running_record_stream", forKey: .type)
             try record.encode(to: encoder)
         case .prSummary(let summary):
             try container.encode("pr_summary", forKey: .type)

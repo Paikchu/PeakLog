@@ -1,10 +1,12 @@
 import { tool } from "./deps.ts";
 import {
+  commitRunningWorkoutToolInputSchema,
   adjustCurrentOrNextWeekPlanToolInputSchema,
   commitWorkoutToolInputSchema,
   createOrRefreshWeeklyPlanToolInputSchema,
   logPlannedSetCompletionToolInputSchema,
   type AdjustCurrentOrNextWeekPlanToolInput,
+  type CommitRunningWorkoutToolInput,
   type CommitWorkoutToolInput,
   type CreateOrRefreshWeeklyPlanToolInput,
   type LogPlannedSetCompletionToolInput,
@@ -13,6 +15,7 @@ import {
 } from "./schema.ts";
 
 export const COMMIT_WORKOUT_TOOL_NAME = "commit_workout" as const;
+export const COMMIT_RUNNING_WORKOUT_TOOL_NAME = "commit_running_workout" as const;
 export const UPDATE_PROFILE_GOAL_TOOL_NAME = "update_profile_goal" as const;
 export const CREATE_OR_REFRESH_WEEKLY_PLAN_TOOL_NAME = "create_or_refresh_weekly_plan" as const;
 export const ADJUST_CURRENT_OR_NEXT_WEEK_PLAN_TOOL_NAME = "adjust_current_or_next_week_plan" as const;
@@ -20,6 +23,7 @@ export const LOG_PLANNED_SET_COMPLETION_TOOL_NAME = "log_planned_set_completion"
 
 export interface CommitWorkoutToolOptions {
   onCommitWorkout?: (input: CommitWorkoutToolInput) => Promise<void>;
+  onCommitRunningWorkout?: (input: CommitRunningWorkoutToolInput) => Promise<void>;
   onUpdateProfileGoal?: (input: UpdateProfileGoalToolInput) => Promise<void>;
   onCreateOrRefreshWeeklyPlan?: (input: CreateOrRefreshWeeklyPlanToolInput) => Promise<void>;
   onAdjustCurrentOrNextWeekPlan?: (input: AdjustCurrentOrNextWeekPlanToolInput) => Promise<void>;
@@ -40,6 +44,18 @@ export function createWorkoutAgentTools(options: CommitWorkoutToolOptions) {
     execute: async (input) => {
       if (options.onCommitWorkout) {
         await options.onCommitWorkout(input);
+      }
+      return input;
+    },
+  });
+
+  const commit_running_workout = tool({
+    description:
+      "Commit a complete running workout to the database when duration and distance are both present and unambiguous.",
+    inputSchema: commitRunningWorkoutToolInputSchema,
+    execute: async (input) => {
+      if (options.onCommitRunningWorkout) {
+        await options.onCommitRunningWorkout(input);
       }
       return input;
     },
@@ -95,6 +111,7 @@ export function createWorkoutAgentTools(options: CommitWorkoutToolOptions) {
 
   return {
     [COMMIT_WORKOUT_TOOL_NAME]: commit_workout,
+    [COMMIT_RUNNING_WORKOUT_TOOL_NAME]: commit_running_workout,
     [UPDATE_PROFILE_GOAL_TOOL_NAME]: update_profile_goal,
     [CREATE_OR_REFRESH_WEEKLY_PLAN_TOOL_NAME]: create_or_refresh_weekly_plan,
     [ADJUST_CURRENT_OR_NEXT_WEEK_PLAN_TOOL_NAME]: adjust_current_or_next_week_plan,

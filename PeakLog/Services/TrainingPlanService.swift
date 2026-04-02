@@ -103,6 +103,7 @@ final class MockTrainingPlanService: TrainingPlanServiceProtocol {
                             id: "exercise-1",
                             orderIndex: 0,
                             exerciseName: "Bench Press",
+                            exerciseLoadType: .weighted,
                             progressionMode: "weight_first",
                             notes: "Complete all sets before increasing load next week.",
                             previousPerformanceSummary: nil,

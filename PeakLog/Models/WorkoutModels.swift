@@ -1,5 +1,21 @@
 import Foundation
 
+enum RunningWorkoutSource: String, Codable, Equatable {
+    case chat
+    case manual
+}
+
+struct RunningWorkoutRecord: Identifiable, Codable, Equatable {
+    let id: String
+    let userId: String
+    var workoutDate: Date
+    var durationMinutes: Int
+    var distanceKm: Double
+    var source: RunningWorkoutSource
+    var createdAt: Date
+    var updatedAt: Date
+}
+
 // MARK: - Weight Unit
 enum WeightUnit: String, Codable, CaseIterable {
     case kg

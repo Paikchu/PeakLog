@@ -12,6 +12,7 @@ enum TodayAIOverlayPhase: Equatable {
 
 @MainActor
 final class TodayWorkoutViewModel: ObservableObject {
+    @Published var runningRecords: [RunningWorkoutRecord] = []
     @Published var todayPlan: TrainingPlanDay?
     @Published var todayRecord: WorkoutRecord?
     @Published var quickActions: [AIWorkoutQuickAction] = []
@@ -64,7 +65,7 @@ final class TodayWorkoutViewModel: ObservableObject {
     #endif
 
     func onAppear() async {
-        guard todayPlan == nil, todayRecord == nil else { return }
+        guard todayPlan == nil, todayRecord == nil, runningRecords.isEmpty else { return }
         await refresh()
     }
 
@@ -75,7 +76,9 @@ final class TodayWorkoutViewModel: ObservableObject {
         do {
             async let plan = trainingPlanService.fetchTodayPlan()
             async let sessions = workoutService.sessionsForDay(Date())
-            let (loadedPlan, loadedSessions) = try await (plan, sessions)
+            async let records = workoutService.runningRecordsForDay(Date())
+            let (loadedPlan, loadedSessions, loadedRecords) = try await (plan, sessions, records)
+            runningRecords = loadedRecords
             todayPlan = loadedPlan
             todayRecord = mergeSessionsIntoRecord(loadedSessions)
         } catch {
@@ -327,8 +330,26 @@ final class TodayWorkoutViewModel: ObservableObject {
 
     private func refreshTodayRecordOnly() async {
         do {
-            let sessions = try await workoutService.sessionsForDay(Date())
-            todayRecord = mergeSessionsIntoRecord(sessions)
+            async let sessions = workoutService.sessionsForDay(Date())
+            async let records = workoutService.runningRecordsForDay(Date())
+            let (loadedSessions, loadedRecords) = try await (sessions, records)
+            todayRecord = mergeSessionsIntoRecord(loadedSessions)
+            runningRecords = loadedRecords
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func addRunningRecord(durationMinutes: Int, distanceKm: Double) async {
+        do {
+            let record = try await workoutService.createRunningRecord(
+                workoutDate: Date(),
+                durationMinutes: durationMinutes,
+                distanceKm: distanceKm,
+                source: .manual
+            )
+            runningRecords.append(record)
+            runningRecords.sort { $0.createdAt < $1.createdAt }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -392,6 +413,13 @@ final class TodayWorkoutViewModel: ObservableObject {
                 overlayPhase = .applying
             }
             schedulePersistenceFallback(refreshScope: .recordOnly)
+        case .runningPreview(let block):
+            applyStreamingRunningPreview(block)
+            shouldRefreshAfterStreamingCompletion = true
+            if overlayPhase == .processing {
+                overlayPhase = .applying
+            }
+            schedulePersistenceFallback(refreshScope: .recordOnly)
         case .planContentBlock(let block):
             overlayContentBlocks = upsertOverlayBlock(block, into: overlayContentBlocks)
             didPersistPlan = true
@@ -440,6 +468,24 @@ final class TodayWorkoutViewModel: ObservableObject {
                 )
             }
         )
+    }
+
+    private func applyStreamingRunningPreview(_ block: RunningRecordBlock) {
+        let formatter = WorkoutDateFormatter()
+        let record = RunningWorkoutRecord(
+            id: block.runningWorkoutId.isEmpty ? UUID().uuidString : block.runningWorkoutId,
+            userId: "local",
+            workoutDate: formatter.date(from: block.workoutDate) ?? Date(),
+            durationMinutes: block.durationMinutes,
+            distanceKm: block.distanceKm,
+            source: RunningWorkoutSource(rawValue: block.source) ?? .chat,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+
+        runningRecords.removeAll { $0.id == record.id }
+        runningRecords.append(record)
+        runningRecords.sort { $0.createdAt < $1.createdAt }
     }
 
     private enum PersistenceRefreshScope {

@@ -10,6 +10,7 @@ final class HistoryViewModel: ObservableObject {
 
     // MARK: - Sessions for selected day
     @Published var sessions: [WorkoutSession] = []
+    @Published var runningRecords: [RunningWorkoutRecord] = []
     @Published var activePlan: TrainingPlan?
     @Published var selectedPlanDay: TrainingPlanDay?
     @Published var isLoadingSessions: Bool = false
@@ -38,8 +39,10 @@ final class HistoryViewModel: ObservableObject {
         isLoadingCalendar = true
         errorMessage = nil
         do {
-            let dates = try await workoutService.activeDaysInMonth(year: year, month: month)
-            activeDates = Set(dates.map { workoutDateFormatter.string(from: $0) })
+            async let strengthDates = workoutService.activeDaysInMonth(year: year, month: month)
+            async let runningDates = workoutService.activeRunningDaysInMonth(year: year, month: month)
+            let combinedDates = try await strengthDates + runningDates
+            activeDates = Set(combinedDates.map { workoutDateFormatter.string(from: $0) })
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -62,10 +65,14 @@ final class HistoryViewModel: ObservableObject {
         isLoadingSessions = true
         errorMessage = nil
         do {
-            let loadedSessions = try await workoutService.sessionsForDay(selectedDate)
-            sessions = WorkoutHistoryAggregator.mergeSessionsForHistory(loadedSessions)
+            async let loadedSessions = workoutService.sessionsForDay(selectedDate)
+            async let loadedRuns = workoutService.runningRecordsForDay(selectedDate)
+            let (strengthSessions, runs) = try await (loadedSessions, loadedRuns)
+            sessions = WorkoutHistoryAggregator.mergeSessionsForHistory(strengthSessions)
+            runningRecords = runs
         } catch {
             errorMessage = error.localizedDescription
+            runningRecords = []
             sessions = []
         }
         isLoadingSessions = false

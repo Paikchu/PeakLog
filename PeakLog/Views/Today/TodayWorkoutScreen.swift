@@ -5,6 +5,7 @@ import UIKit
 
 struct TodayWorkoutScreen: View {
     @StateObject private var viewModel: TodayWorkoutViewModel
+    @State private var isPresentingManualEntry = false
     private let chatScrollKeyboardDismissBehavior = ChatScrollKeyboardDismissBehavior()
 
     var onShowHistory: (() -> Void)?
@@ -69,6 +70,13 @@ struct TodayWorkoutScreen: View {
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
         .task { await viewModel.onAppear() }
+        .sheet(isPresented: $isPresentingManualEntry) {
+            ManualRunningEntrySheet { durationMinutes, distanceKm in
+                Task {
+                    await viewModel.addRunningRecord(durationMinutes: durationMinutes, distanceKm: distanceKm)
+                }
+            }
+        }
         .alert("common.error_title", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
@@ -97,11 +105,22 @@ struct TodayWorkoutScreen: View {
 
             Spacer()
 
-            Button { onShowProfile?() } label: {
-                Image(systemName: "person.circle")
-                    .font(.system(size: 22))
-                    .foregroundColor(.textPrimary)
-                    .frame(width: 38, height: 38)
+            HStack(spacing: 6) {
+                Button {
+                    isPresentingManualEntry = true
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(.textPrimary)
+                        .frame(width: 38, height: 38)
+                }
+
+                Button { onShowProfile?() } label: {
+                    Image(systemName: "person.circle")
+                        .font(.system(size: 22))
+                        .foregroundColor(.textPrimary)
+                        .frame(width: 38, height: 38)
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -130,18 +149,37 @@ struct TodayWorkoutScreen: View {
                     .foregroundColor(.textMuted)
 
                 progressBar(progress: plan.totalSetsCount == 0 ? 0 : Double(plan.completedSetsCount) / Double(plan.totalSetsCount))
+                if !viewModel.runningRecords.isEmpty {
+                    Text("今日跑步 \(totalDistance.cleanDistance) km · \(totalDuration) 分钟 · \(viewModel.runningRecords.count) 条")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.textSecondary)
+                        .padding(.top, 2)
+                }
             } else if viewModel.todayRecord != nil {
                 Text("自由记录日")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
-                Text("今天没有预设计划，你仍然可以直接记录训练内容。")
+                Text("今天没有预设计划，你仍然可以直接记录训练内容，也可以额外记录跑步。")
                     .font(.system(size: 15))
                     .foregroundColor(.textSecondary)
-            } else {
-                Text("休息日")
+                if !viewModel.runningRecords.isEmpty {
+                    Text("今日跑步 \(totalDistance.cleanDistance) km · \(totalDuration) 分钟 · \(viewModel.runningRecords.count) 条")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.textSecondary)
+                }
+            } else if !viewModel.runningRecords.isEmpty {
+                Text("今日跑步")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
-                Text("今天没有训练计划。你可以通过底部输入框让 AI 帮你添加记录或调整计划。")
+
+                Text("\(totalDistance.cleanDistance) km · \(totalDuration) 分钟 · \(viewModel.runningRecords.count) 条记录")
+                    .font(.system(size: 15))
+                    .foregroundColor(.textMuted)
+            } else {
+                Text("今天还没有跑步记录")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundColor(.textPrimary)
+                Text("可以点右上角手动添加跑步，也可以直接在底部聊天框输入“今天跑了 5 公里 30 分钟”。原有健身计划和力量训练记录仍会继续显示。")
                     .font(.system(size: 15))
                     .foregroundColor(.textSecondary)
             }
@@ -214,9 +252,9 @@ struct TodayWorkoutScreen: View {
 
     @ViewBuilder
     private var recordedSection: some View {
-        if let record = viewModel.todayRecord {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(title: "今日记录", subtitle: "AI 添加的动作和你手动记录的动作都可以继续编辑")
+        VStack(alignment: .leading, spacing: 12) {
+            if let record = viewModel.todayRecord {
+                sectionHeader(title: "今日力量记录", subtitle: "AI 添加的动作和你手动记录的动作都可以继续编辑")
 
                 WorkoutRecordCard(
                     messageId: "today-record",
@@ -237,7 +275,23 @@ struct TodayWorkoutScreen: View {
                     }
                 )
             }
+
+            if !viewModel.runningRecords.isEmpty {
+                sectionHeader(title: "今日有氧记录", subtitle: "每次跑步独立保存，同一天可以记录多条")
+
+                ForEach(viewModel.runningRecords) { record in
+                    RunningRecordCard(record: record)
+                }
+            }
         }
+    }
+
+    private var totalDuration: Int {
+        viewModel.runningRecords.reduce(0) { $0 + $1.durationMinutes }
+    }
+
+    private var totalDistance: Double {
+        viewModel.runningRecords.reduce(0) { $0 + $1.distanceKm }
     }
 
     private func sectionHeader(title: String, subtitle: String?) -> some View {
@@ -252,6 +306,50 @@ struct TodayWorkoutScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension Double {
+    var cleanDistance: String {
+        truncatingRemainder(dividingBy: 1) == 0 ? String(Int(self)) : String(format: "%.1f", self)
+    }
+}
+
+private struct ManualRunningEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var durationText = ""
+    @State private var distanceText = ""
+
+    let onSave: (Int, Double) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("跑步时长") {
+                    TextField("分钟", text: $durationText)
+                        .keyboardType(.numberPad)
+                }
+
+                Section("跑步里程") {
+                    TextField("公里", text: $distanceText)
+                        .keyboardType(.decimalPad)
+                }
+            }
+            .navigationTitle("手动添加跑步")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        guard let duration = Int(durationText), let distance = Double(distanceText) else { return }
+                        onSave(duration, distance)
+                        dismiss()
+                    }
+                    .disabled(Int(durationText) == nil || Double(distanceText) == nil)
+                }
+            }
+        }
     }
 }
 
@@ -529,6 +627,7 @@ private struct TodayPlannedExerciseCard: View {
                 ForEach(exercise.sets) { set in
                     TodayPlannedSetRow(
                         set: set,
+                        exerciseLoadType: exercise.exerciseLoadType,
                         onCommit: { weight, unit, reps in
                             onUpdateSet(set.id, weight, unit, reps)
                         },
@@ -553,6 +652,7 @@ private struct TodayPlannedExerciseCard: View {
 
 private struct TodayPlannedSetRow: View {
     let set: TrainingPlanSet
+    let exerciseLoadType: ExerciseLoadType
     let onCommit: (Double?, WeightUnit, Int) -> Void
     let onToggleComplete: (Double?) -> Void
 

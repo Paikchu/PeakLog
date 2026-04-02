@@ -27,6 +27,10 @@ struct DaySessionsResponse: Decodable {
     let sessions: [WorkoutSession]
 }
 
+struct DayRunningRecordsResponse: Decodable {
+    let records: [RunningWorkoutRecord]
+}
+
 // MARK: - Protocol
 
 /// All workout CRUD and history query operations.
@@ -43,6 +47,35 @@ protocol WorkoutServiceProtocol {
     // MARK: History queries
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date]
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord]
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord
+}
+
+extension WorkoutServiceProtocol {
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
+        try await activeDaysInMonth(year: year, month: month)
+    }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
+        _ = date
+        return []
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        _ = (workoutDate, durationMinutes, distanceKm, source)
+        throw APIError.notFound
+    }
 }
 
 // MARK: - Live Implementation Stub
@@ -110,6 +143,46 @@ final class LiveWorkoutService: WorkoutServiceProtocol {
         let res: DaySessionsResponse = try await client.execute(req)
         return res.sessions
     }
+
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
+        try await activeDaysInMonth(year: year, month: month)
+    }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
+        let formatter = WorkoutDateFormatter()
+        let req = try client.request(path: "running-workouts", queryItems: [
+            URLQueryItem(name: "date", value: formatter.string(from: date))
+        ])
+        let res: DayRunningRecordsResponse = try await client.execute(req)
+        return res.records
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        struct Request: Encodable {
+            let workoutDate: String
+            let durationMinutes: Int
+            let distanceKm: Double
+            let source: String
+        }
+
+        let formatter = WorkoutDateFormatter()
+        let req = try client.request(
+            method: "POST",
+            path: "running-workouts",
+            body: Request(
+                workoutDate: formatter.string(from: workoutDate),
+                durationMinutes: durationMinutes,
+                distanceKm: distanceKm,
+                source: source.rawValue
+            )
+        )
+        return try await client.execute(req)
+    }
 }
 
 // MARK: - Mock Implementation
@@ -171,5 +244,45 @@ final class MockWorkoutService: WorkoutServiceProtocol {
                 updatedAt: now
             )
         ]
+    }
+
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
+        try await activeDaysInMonth(year: year, month: month)
+    }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
+        let now = Date()
+        return [
+            RunningWorkoutRecord(
+                id: "run-1",
+                userId: "user-1",
+                workoutDate: date,
+                durationMinutes: 30,
+                distanceKm: 5,
+                source: .chat,
+                createdAt: now,
+                updatedAt: now
+            )
+        ]
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let now = Date()
+        return RunningWorkoutRecord(
+            id: UUID().uuidString,
+            userId: "user-1",
+            workoutDate: workoutDate,
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            source: source,
+            createdAt: now,
+            updatedAt: now
+        )
     }
 }

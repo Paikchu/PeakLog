@@ -1,4 +1,8 @@
-import { parseCommitWorkoutToolInput, pickWorkoutSessionDate } from "./schema.ts";
+import {
+  parseCommitRunningWorkoutToolInput,
+  parseCommitWorkoutToolInput,
+  pickWorkoutSessionDate,
+} from "./schema.ts";
 
 /**
  * Set row shape for rendering a workout card from streamed LLM output (before DB assigns UUIDs).
@@ -35,6 +39,15 @@ export interface WorkoutContentBlock {
   /** Empty during stream; optional hint after tool execute (still prefer Realtime for canonical id). */
   workout_session_id: string;
   exercises: WorkoutContentBlockExercise[];
+}
+
+export interface RunningContentBlock {
+  type: "running_record_stream";
+  running_workout_id: string;
+  workout_date: string;
+  duration_minutes: number;
+  distance_km: number;
+  source: string;
 }
 
 export interface WeeklyPlanStreamBlock {
@@ -91,6 +104,25 @@ export function workoutContentBlockFromCommitToolInput(
         reps: s.reps,
       })),
     })),
+  };
+}
+
+export function runningContentBlockFromCommitToolInput(
+  raw: unknown,
+  opts: { fallbackDate: string },
+): RunningContentBlock | null {
+  const parsed = parseCommitRunningWorkoutToolInput(raw);
+  if (!parsed.success) {
+    return null;
+  }
+
+  return {
+    type: "running_record_stream",
+    running_workout_id: "",
+    workout_date: pickWorkoutSessionDate(parsed.data.workoutDate, opts.fallbackDate),
+    duration_minutes: parsed.data.durationMinutes,
+    distance_km: parsed.data.distanceKm,
+    source: "chat",
   };
 }
 

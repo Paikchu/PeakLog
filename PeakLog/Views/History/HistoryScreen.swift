@@ -103,7 +103,7 @@ struct HistoryScreen: View {
         if viewModel.isLoadingSessions {
             ProgressView()
                 .padding(.top, 20)
-        } else if viewModel.sessions.isEmpty {
+        } else if viewModel.runningRecords.isEmpty && viewModel.sessions.isEmpty {
             Text("history.empty")
                 .font(.chatBody)
                 .foregroundColor(.textMuted)
@@ -112,6 +112,10 @@ struct HistoryScreen: View {
             VStack(spacing: 12) {
                 ForEach(viewModel.sessions) { session in
                     SessionDetailRow(session: session)
+                        .padding(.horizontal, 16)
+                }
+                ForEach(viewModel.runningRecords) { record in
+                    RunningRecordCard(record: record)
                         .padding(.horizontal, 16)
                 }
             }

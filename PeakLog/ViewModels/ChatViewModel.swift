@@ -585,6 +585,8 @@ final class ChatViewModel: ObservableObject {
             appendStreamingTextDelta(delta)
         case .workoutPreview(let block):
             applyStreamingWorkoutPreview(block)
+        case .runningPreview(let block):
+            applyStreamingRunningPreview(block)
         case .planContentBlock:
             break
         case .error(let message):
@@ -637,6 +639,25 @@ final class ChatViewModel: ObservableObject {
                 }
             }
             blocks.append(.workoutRecordStream(block))
+            message.contentBlocks = blocks
+        }
+    }
+
+    private func applyStreamingRunningPreview(_ block: RunningRecordBlock) {
+        updateLatestProcessingAssistant { message in
+            var blocks = message.contentBlocks ?? []
+            if !message.text.isEmpty {
+                blocks = Self.upsertTextBlock(text: message.text, into: blocks) ?? []
+            }
+            blocks.removeAll {
+                switch $0 {
+                case .runningRecord, .runningRecordStream:
+                    return true
+                default:
+                    return false
+                }
+            }
+            blocks.append(.runningRecordStream(block))
             message.contentBlocks = blocks
         }
     }
@@ -718,6 +739,7 @@ final class ChatViewModel: ObservableObject {
                                     planExerciseId: exercise.id,
                                     orderIndex: exercise.orderIndex,
                                     exerciseName: exercise.exerciseName,
+                                    exerciseLoadType: exercise.exerciseLoadType,
                                     progressionMode: exercise.progressionMode,
                                     notes: exercise.notes,
                                     sets: exercise.sets.map { set in
