@@ -5,6 +5,7 @@ struct MessageBubbleView: View {
     var onDeleteExercise: (String, String) -> Void    // (recordId, exerciseId)
     var onSetChanged: (String, String, ExerciseSet) -> Void // (recordId, exerciseId, set)
     var onCompletePlannedSet: (String, PlanSetBlock) -> Void = { _, _ in }
+    @Environment(\.locale) private var locale
 
     var body: some View {
         Group {
@@ -186,7 +187,7 @@ struct MessageBubbleView: View {
             Text("Current Plan")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.textMuted)
-            Text("Week of \(plan.weekStartDate)")
+            Text(LocalizedPlanText.weekOf(plan.weekStartDate, locale: locale))
                 .font(.system(size: 18, weight: .bold))
                 .foregroundColor(.textPrimary)
             if let goal = plan.goalSummary, !goal.isEmpty {
@@ -205,7 +206,7 @@ struct MessageBubbleView: View {
                             .foregroundColor(.textMuted)
                     }
                     Spacer()
-                    Text(day.status.capitalized)
+                    Text(LocalizedPlanText.planStatusLabel(for: day.status))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.textSecondary)
                 }

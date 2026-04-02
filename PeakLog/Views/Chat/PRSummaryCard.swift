@@ -47,7 +47,7 @@ struct PRSummaryCard: View {
         if let previous = item.previousWeight {
             return "\(formatWeight(previous))\(item.weightUnit) → \(formatWeight(item.currentWeight))\(item.weightUnit)"
         }
-        return "First recorded PR"
+        return String(localized: "First recorded PR")
     }
 
     private func formatWeight(_ value: Double) -> String {

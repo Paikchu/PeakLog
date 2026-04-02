@@ -164,6 +164,26 @@ final class HistoryViewModel: ObservableObject {
         return activeDates.contains(workoutDateFormatter.string(from: date))
     }
 
+    var completedDaySummary: CompletedDaySummary {
+        HistoryCompletedAggregator.daySummary(
+            selectedDate: selectedDate,
+            sessions: sessions,
+            runningRecords: runningRecords
+        )
+    }
+
+    var completedStrengthExercises: [CompletedStrengthExerciseViewData] {
+        HistoryCompletedAggregator.strengthExercises(from: sessions)
+    }
+
+    var completedCardioRecords: [CompletedCardioRecordViewData] {
+        HistoryCompletedAggregator.cardioRecords(from: runningRecords)
+    }
+
+    var hasCompletedRecords: Bool {
+        completedDaySummary.hasCompletedRecords
+    }
+
     var displayedMonthTitle: String {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMMM yyyy"

@@ -10,9 +10,9 @@ enum ExerciseLoadType: String, Codable, Equatable {
         case .bodyweight:
             return String(localized: "chat.exercise.bodyweight")
         case .weighted:
-            return "待设置重量"
+            return String(localized: "plan.load.weighted_placeholder")
         case .unknown:
-            return "未设置"
+            return String(localized: "plan.load.unset")
         }
     }
 }

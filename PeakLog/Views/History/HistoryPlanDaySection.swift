@@ -6,7 +6,7 @@ struct HistoryPlanDaySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(day.planDate == WorkoutDateFormatter().string(from: Date()) ? "Today" : day.planDate)
+            Text(day.planDate == WorkoutDateFormatter().string(from: Date()) ? String(localized: "Today") : day.planDate)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.textMuted)
 

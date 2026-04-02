@@ -7,6 +7,7 @@ struct TodayWorkoutScreen: View {
     @StateObject private var viewModel: TodayWorkoutViewModel
     @State private var isPresentingManualEntry = false
     private let chatScrollKeyboardDismissBehavior = ChatScrollKeyboardDismissBehavior()
+    @Environment(\.locale) private var locale
 
     var onShowHistory: (() -> Void)?
     var onShowProfile: (() -> Void)?
@@ -98,7 +99,7 @@ struct TodayWorkoutScreen: View {
 
             Spacer()
 
-            Text("AI 健身记录")
+            Text("today.header.title")
                 .font(.headerTitle)
                 .foregroundColor(.textPrimary)
                 .tracking(-0.4)
@@ -144,42 +145,63 @@ struct TodayWorkoutScreen: View {
                         .foregroundColor(.textSecondary)
                 }
 
-                Text("\(plan.completedSetsCount) / \(plan.totalSetsCount) sets completed")
+                Text(LocalizedPlanText.setsCompleted(completed: plan.completedSetsCount, total: plan.totalSetsCount, locale: locale))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.textMuted)
 
                 progressBar(progress: plan.totalSetsCount == 0 ? 0 : Double(plan.completedSetsCount) / Double(plan.totalSetsCount))
                 if !viewModel.runningRecords.isEmpty {
-                    Text("今日跑步 \(totalDistance.cleanDistance) km · \(totalDuration) 分钟 · \(viewModel.runningRecords.count) 条")
+                    Text(
+                        LocalizedPlanText.todayRunningSummary(
+                            distance: totalDistance.cleanDistance,
+                            durationMinutes: totalDuration,
+                            count: viewModel.runningRecords.count,
+                            locale: locale
+                        )
+                    )
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.textSecondary)
                         .padding(.top, 2)
                 }
             } else if viewModel.todayRecord != nil {
-                Text("自由记录日")
+                Text("today.summary.free_record_day.title")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
-                Text("今天没有预设计划，你仍然可以直接记录训练内容，也可以额外记录跑步。")
+                Text("today.summary.free_record_day.subtitle")
                     .font(.system(size: 15))
                     .foregroundColor(.textSecondary)
                 if !viewModel.runningRecords.isEmpty {
-                    Text("今日跑步 \(totalDistance.cleanDistance) km · \(totalDuration) 分钟 · \(viewModel.runningRecords.count) 条")
+                    Text(
+                        LocalizedPlanText.todayRunningSummary(
+                            distance: totalDistance.cleanDistance,
+                            durationMinutes: totalDuration,
+                            count: viewModel.runningRecords.count,
+                            locale: locale
+                        )
+                    )
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.textSecondary)
                 }
             } else if !viewModel.runningRecords.isEmpty {
-                Text("今日跑步")
+                Text("today.summary.running_only.title")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
 
-                Text("\(totalDistance.cleanDistance) km · \(totalDuration) 分钟 · \(viewModel.runningRecords.count) 条记录")
+                Text(
+                    LocalizedPlanText.todayRunningRecordsSummary(
+                        distance: totalDistance.cleanDistance,
+                        durationMinutes: totalDuration,
+                        count: viewModel.runningRecords.count,
+                        locale: locale
+                    )
+                )
                     .font(.system(size: 15))
                     .foregroundColor(.textMuted)
             } else {
-                Text("今天还没有跑步记录")
+                Text("today.summary.empty.title")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
-                Text("可以点右上角手动添加跑步，也可以直接在底部聊天框输入“今天跑了 5 公里 30 分钟”。原有健身计划和力量训练记录仍会继续显示。")
+                Text("today.summary.empty.subtitle")
                     .font(.system(size: 15))
                     .foregroundColor(.textSecondary)
             }
@@ -194,7 +216,10 @@ struct TodayWorkoutScreen: View {
     private var quickActionsSection: some View {
         if !viewModel.quickActions.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(title: "AI 快捷建议", subtitle: "点一下即可复用到输入框")
+                sectionHeader(
+                    title: String(localized: "today.section.quick_actions.title"),
+                    subtitle: String(localized: "today.section.quick_actions.subtitle")
+                )
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(viewModel.quickActions) { action in
@@ -220,7 +245,10 @@ struct TodayWorkoutScreen: View {
     private var plannedSection: some View {
         if let plan = viewModel.todayPlan {
             VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(title: "今日计划", subtitle: "直接勾选完成，或手动调整重量、次数、组数")
+                sectionHeader(
+                    title: String(localized: "today.section.plan.title"),
+                    subtitle: String(localized: "today.section.plan.subtitle")
+                )
 
                 ForEach(plan.exercises) { exercise in
                     TodayPlannedExerciseCard(
@@ -254,7 +282,10 @@ struct TodayWorkoutScreen: View {
     private var recordedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let record = viewModel.todayRecord {
-                sectionHeader(title: "今日力量记录", subtitle: "AI 添加的动作和你手动记录的动作都可以继续编辑")
+                sectionHeader(
+                    title: String(localized: "today.section.strength_record.title"),
+                    subtitle: String(localized: "today.section.strength_record.subtitle")
+                )
 
                 WorkoutRecordCard(
                     messageId: "today-record",
@@ -277,7 +308,10 @@ struct TodayWorkoutScreen: View {
             }
 
             if !viewModel.runningRecords.isEmpty {
-                sectionHeader(title: "今日有氧记录", subtitle: "每次跑步独立保存，同一天可以记录多条")
+                sectionHeader(
+                    title: String(localized: "today.section.cardio_record.title"),
+                    subtitle: String(localized: "today.section.cardio_record.subtitle")
+                )
 
                 ForEach(viewModel.runningRecords) { record in
                     RunningRecordCard(record: record)
@@ -325,23 +359,23 @@ private struct ManualRunningEntrySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("跑步时长") {
-                    TextField("分钟", text: $durationText)
+                Section("today.manual_running.duration_section") {
+                    TextField(String(localized: "today.manual_running.duration_placeholder"), text: $durationText)
                         .keyboardType(.numberPad)
                 }
 
-                Section("跑步里程") {
-                    TextField("公里", text: $distanceText)
+                Section("today.manual_running.distance_section") {
+                    TextField(String(localized: "today.manual_running.distance_placeholder"), text: $distanceText)
                         .keyboardType(.decimalPad)
                 }
             }
-            .navigationTitle("手动添加跑步")
+            .navigationTitle("today.manual_running.title")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    Button("today.manual_running.cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
+                    Button("today.manual_running.save") {
                         guard let duration = Int(durationText), let distance = Double(distanceText) else { return }
                         onSave(duration, distance)
                         dismiss()
@@ -359,6 +393,7 @@ private struct TodayAIFloatingOverlay: View {
     let blocks: [ContentBlock]
     let didPersistPlan: Bool
     let onClose: () -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -423,7 +458,7 @@ private struct TodayAIFloatingOverlay: View {
             }
 
             if didPersistPlan {
-                Text("训练计划已写入并同步到首页。")
+                Text("today.overlay.plan_persisted")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white.opacity(0.82))
             }
@@ -468,15 +503,15 @@ private struct TodayAIFloatingOverlay: View {
         let isPlanFlow = didPersistPlan || !blocks.isEmpty
         switch phase {
         case .idle:
-            return "等待开始"
+            return String(localized: "today.overlay.status.idle.title")
         case .processing:
-            return "正在分析你的输入"
+            return String(localized: "today.overlay.status.processing.title")
         case .applying:
-            return isPlanFlow ? "正在应用 AI 结果" : "正在写入训练记录"
+            return String(localized: isPlanFlow ? "today.overlay.status.applying_plan.title" : "today.overlay.status.applying_record.title")
         case .completed:
-            return isPlanFlow ? "AI 结果已更新" : "训练记录已更新"
+            return String(localized: isPlanFlow ? "today.overlay.status.completed_plan.title" : "today.overlay.status.completed_record.title")
         case .failed:
-            return "处理失败"
+            return String(localized: "today.overlay.status.failed.title")
         }
     }
 
@@ -484,30 +519,30 @@ private struct TodayAIFloatingOverlay: View {
         let isPlanFlow = didPersistPlan || !blocks.isEmpty
         switch phase {
         case .idle:
-            return "AI 浮层会在发送后显示进度。"
+            return String(localized: "today.overlay.status.idle.subtitle")
         case .processing:
-            return "模型正在结合上下文理解你的意图。"
+            return String(localized: "today.overlay.status.processing.subtitle")
         case .applying:
-            return isPlanFlow ? "正在把结果写入并同步首页。" : "正在把识别到的内容写入今天的记录。"
+            return String(localized: isPlanFlow ? "today.overlay.status.applying_plan.subtitle" : "today.overlay.status.applying_record.subtitle")
         case .completed:
-            return isPlanFlow ? "结果已保留在首页浮层中，可直接关闭。" : "记录已完成，可继续补充下一句。"
+            return String(localized: isPlanFlow ? "today.overlay.status.completed_plan.subtitle" : "today.overlay.status.completed_record.subtitle")
         case .failed:
-            return "计划没有写入，请重试。"
+            return String(localized: "today.overlay.status.failed.subtitle")
         }
     }
 
     private func overlayWeeklyPlanCard(_ plan: WeeklyPlanBlock) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("本周计划")
+            Text("today.overlay.weekly_plan.title")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.white.opacity(0.88))
-            Text("Week of \(plan.weekStartDate)")
+            Text(LocalizedPlanText.weekOf(plan.weekStartDate, locale: locale))
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
 
             ForEach(plan.days.prefix(7)) { day in
                 HStack(spacing: 10) {
-                    Text(weekdayLabel(for: day.dayIndex))
+                    Text(LocalizedPlanText.weekdayLabel(dayIndex: day.dayIndex, locale: locale))
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white.opacity(0.72))
                         .frame(width: 28, alignment: .leading)
@@ -532,7 +567,7 @@ private struct TodayAIFloatingOverlay: View {
 
     private func overlayTodayPlanCard(_ plan: TodayPlanBlock) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("今日变化")
+            Text("today.overlay.today_changes.title")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.white.opacity(0.88))
             Text(plan.day.title)
@@ -552,19 +587,6 @@ private struct TodayAIFloatingOverlay: View {
         .padding(14)
         .background(Color.white.opacity(0.10))
         .cornerRadius(18)
-    }
-
-    private func weekdayLabel(for dayIndex: Int) -> String {
-        switch dayIndex {
-        case 1: return "周一"
-        case 2: return "周二"
-        case 3: return "周三"
-        case 4: return "周四"
-        case 5: return "周五"
-        case 6: return "周六"
-        case 7: return "周日"
-        default: return "Day"
-        }
     }
 }
 
@@ -655,6 +677,7 @@ private struct TodayPlannedSetRow: View {
     let exerciseLoadType: ExerciseLoadType
     let onCommit: (Double?, WeightUnit, Int) -> Void
     let onToggleComplete: (Double?) -> Void
+    @Environment(\.locale) private var locale
 
     @State private var editingWeight = false
     @State private var editingReps = false
@@ -732,7 +755,7 @@ private struct TodayPlannedSetRow: View {
             .disabled(set.isCompleted)
             .contextMenu {
                 ForEach([6, 7, 8, 9, 10], id: \.self) { value in
-                    Button("完成并记录 RPE \(value)") {
+                    Button(LocalizedPlanText.formatted("today.plan.complete_with_rpe", locale: locale, Int64(value))) {
                         onToggleComplete(Double(value))
 #if canImport(UIKit)
                         UINotificationFeedbackGenerator().notificationOccurred(.success)

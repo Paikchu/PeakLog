@@ -3,6 +3,7 @@ import SwiftUI
 struct HistoryScreen: View {
     @StateObject private var viewModel = HistoryViewModel()
     var onBack: (() -> Void)?
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,7 +62,7 @@ struct HistoryScreen: View {
                 Text("Current Plan")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.textMuted)
-                Text("Week of \(plan.weekStartDate)")
+                Text(LocalizedPlanText.weekOf(plan.weekStartDate, locale: locale))
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.textPrimary)
                 if let goalSummary = plan.goalSummary, !goalSummary.isEmpty {
@@ -69,7 +70,14 @@ struct HistoryScreen: View {
                         .font(.system(size: 13))
                         .foregroundColor(.textSecondary)
                 }
-                Text("\(plan.days.filter { $0.status != "rest" }.count) training days · \(plan.completedSetsCount)/\(plan.totalSetsCount) planned sets completed")
+                Text(
+                    LocalizedPlanText.weeklyPlanSummary(
+                        trainingDays: plan.days.filter { $0.status != "rest" }.count,
+                        completedSets: plan.completedSetsCount,
+                        totalSets: plan.totalSetsCount,
+                        locale: locale
+                    )
+                )
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.textMuted)
             }
@@ -103,22 +111,18 @@ struct HistoryScreen: View {
         if viewModel.isLoadingSessions {
             ProgressView()
                 .padding(.top, 20)
-        } else if viewModel.runningRecords.isEmpty && viewModel.sessions.isEmpty {
+        } else if !viewModel.hasCompletedRecords {
             Text("history.empty")
                 .font(.chatBody)
                 .foregroundColor(.textMuted)
                 .padding(.top, 20)
         } else {
-            VStack(spacing: 12) {
-                ForEach(viewModel.sessions) { session in
-                    SessionDetailRow(session: session)
-                        .padding(.horizontal, 16)
-                }
-                ForEach(viewModel.runningRecords) { record in
-                    RunningRecordCard(record: record)
-                        .padding(.horizontal, 16)
-                }
-            }
+            HistoryCompletedTrainingSection(
+                summary: viewModel.completedDaySummary,
+                strengthExercises: viewModel.completedStrengthExercises,
+                cardioRecords: viewModel.completedCardioRecords
+            )
+            .padding(.horizontal, 16)
         }
     }
 }

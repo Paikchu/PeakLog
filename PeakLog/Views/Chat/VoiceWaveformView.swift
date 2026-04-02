@@ -22,7 +22,7 @@ struct VoiceWaveformView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(height: 28)
-        .accessibilityLabel(isTranscribing ? "Transcribing voice input" : "Recording voice input")
+        .accessibilityLabel(isTranscribing ? String(localized: "Transcribing voice input") : String(localized: "Recording voice input"))
     }
 
     private var normalizedSamples: [CGFloat] {
