@@ -29,7 +29,7 @@ struct TodayWorkoutScreen: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 132)
+                    .padding(.bottom, 104)
                 }
                 .dismissKeyboardOnTap()
             }
@@ -276,7 +276,9 @@ struct TodayWorkoutScreen: View {
     @ViewBuilder
     private var recordedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let record = viewModel.todayRecord {
+            // With a plan present, completed sets already show as checked-off plan rows;
+            // the mirrored strength record would duplicate them, so only show it on free-record days.
+            if viewModel.todayPlan == nil, let record = viewModel.todayRecord {
                 sectionHeader(
                     title: String(localized: "today.section.strength_record.title"),
                     subtitle: String(localized: "today.section.strength_record.subtitle")

@@ -35,8 +35,8 @@ struct HomeDockBar: View {
 
     var body: some View {
         dockContent
-            .padding(6)
-            .frame(maxWidth: 330)
+            .padding(4)
+            .frame(maxWidth: 288)
             .background(dockBackground)
             .padding(.horizontal, 22)
             .accessibilityIdentifier("homeDockBar")
@@ -66,19 +66,30 @@ struct HomeDockBar: View {
     private var dockBackground: some View {
         if #available(iOS 26, *) {
             GlassEffectContainer(spacing: 8) {
-                RoundedRectangle(cornerRadius: 34, style: .continuous)
-                    .fill(Color.appSurface.opacity(0.12))
-                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 34))
+                Capsule(style: .continuous)
+                    .fill(Color.appSurface.opacity(0.05))
+                    .glassEffect(.regular.interactive(), in: .capsule)
             }
+            .overlay(rimHighlight)
+            .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 8)
         } else {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
+            Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.12), radius: 20, x: 0, y: 10)
+                .overlay(rimHighlight)
+                .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 8)
         }
+    }
+
+    private var rimHighlight: some View {
+        Capsule(style: .continuous)
+            .strokeBorder(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.32), Color.white.opacity(0.04)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 1
+            )
     }
 }
 
@@ -88,19 +99,19 @@ private struct HomeDockItem: View {
     let isSelected: Bool
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             Image(systemName: symbolName)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
                 .symbolVariant(isSelected ? .fill : .none)
 
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .foregroundColor(isSelected ? Color.accentPurple : Color.textPrimary)
         .frame(maxWidth: .infinity)
-        .frame(height: 72)
+        .frame(height: 48)
         .background(itemBackground)
         .clipShape(Capsule())
     }
@@ -109,7 +120,11 @@ private struct HomeDockItem: View {
     private var itemBackground: some View {
         if isSelected {
             Capsule()
-                .fill(Color.appSurface.opacity(0.72))
+                .fill(Color.appSurface.opacity(0.55))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                )
         }
     }
 }

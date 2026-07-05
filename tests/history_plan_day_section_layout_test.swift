@@ -1,6 +1,7 @@
 import Foundation
 
-let sourceURL = URL(fileURLWithPath: "/Users/max/Developer/IOS/PeakLog/PeakLog/Views/History/HistoryPlanDaySection.swift")
+let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+let sourceURL = rootURL.appendingPathComponent("PeakLog/Views/History/HistoryPlanDaySection.swift")
 let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
 precondition(

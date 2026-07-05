@@ -26,7 +26,7 @@ struct ContentView: View {
     private var currentScreen: some View {
         switch selectedTab {
         case .calendar:
-            HistoryScreen(onBack: { selectedTab = .plan })
+            HistoryScreen()
         case .plan:
             TodayWorkoutScreen()
         case .settings:
