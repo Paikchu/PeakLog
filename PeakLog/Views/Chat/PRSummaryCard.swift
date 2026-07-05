@@ -7,7 +7,7 @@ struct PRSummaryCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: summary.items.isEmpty ? "flag.slash" : "trophy.fill")
-                    .foregroundColor(summary.items.isEmpty ? .textMuted : Color(hex: "#F59E0B"))
+                    .foregroundColor(summary.items.isEmpty ? .textMuted : Color.accentValue)
                 Text(summary.summaryText)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.textPrimary)
@@ -28,7 +28,7 @@ struct PRSummaryCard: View {
                             Spacer()
                             Text("\(formatWeight(item.currentWeight))\(item.weightUnit)")
                                 .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Color(hex: "#F59E0B"))
+                                .foregroundColor(Color.accentValue)
                         }
                     }
                 }
@@ -39,7 +39,7 @@ struct PRSummaryCard: View {
         .cornerRadius(AppRadius.xl)
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(summary.items.isEmpty ? Color.appSeparator : Color(hex: "#F59E0B").opacity(0.3), lineWidth: 1)
+                .strokeBorder(summary.items.isEmpty ? Color.appSeparator : Color.accentValue.opacity(0.3), lineWidth: 1)
         )
     }
 

@@ -101,7 +101,7 @@ struct TrainingSessionScreen: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.white)
-            .glassActionBackground(cornerRadius: AppRadius.xl, tint: Color.accentPurple.opacity(0.42))
+            .glassActionBackground(cornerRadius: AppRadius.xl, tint: Color.accentPrimary.opacity(0.42))
             .disabled(session.completedSetsCount == 0)
         }
         .padding(.horizontal, 16)
@@ -120,7 +120,7 @@ private struct TrainingSessionExerciseCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: AppRadius.full)
-                    .fill(Color.accentPurple)
+                    .fill(Color.accentPrimary)
                     .frame(width: 5, height: 22)
 
                 Text(exercise.name)

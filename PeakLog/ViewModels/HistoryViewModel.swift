@@ -115,6 +115,18 @@ final class HistoryViewModel: ObservableObject {
         }
     }
 
+    func goToPreviousWeekAndRefresh() async {
+        goToPreviousWeek()
+        await loadCalendar()
+        await loadSessionsForSelectedDate()
+    }
+
+    func goToNextWeekAndRefresh() async {
+        goToNextWeek()
+        await loadCalendar()
+        await loadSessionsForSelectedDate()
+    }
+
     // MARK: - Select Day
     func selectDate(_ date: Date) {
         selectedDate = date

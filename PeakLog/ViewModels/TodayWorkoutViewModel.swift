@@ -406,23 +406,10 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
-    func addPlanExercise(
-        name: String,
-        loadType: ExerciseLoadType,
-        targetWeight: Double?,
-        targetWeightUnit: WeightUnit,
-        targetReps: Int,
-        setsCount: Int
-    ) async {
+    func addPlanExercises(_ drafts: [PlanExerciseDraft]) async {
+        guard !drafts.isEmpty else { return }
         do {
-            let updatedDay = try await trainingPlanService.addPlannedExercise(
-                exerciseName: name,
-                exerciseLoadType: loadType,
-                targetWeight: targetWeight,
-                targetWeightUnit: targetWeightUnit,
-                targetReps: targetReps,
-                setsCount: setsCount
-            )
+            let updatedDay = try await trainingPlanService.addPlannedExercises(drafts)
             todayPlan = updatedDay
         } catch {
             errorMessage = error.localizedDescription

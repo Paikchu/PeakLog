@@ -48,14 +48,14 @@ struct CalendarGridView: View {
     private var monthNavigation: some View {
         HStack {
             Button {
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    if isExpanded {
+                if isExpanded {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                         viewModel.goToPreviousMonth()
-                    } else {
-                        viewModel.goToPreviousWeek()
                     }
+                    Task { await viewModel.loadCalendar() }
+                } else {
+                    Task { await viewModel.goToPreviousWeekAndRefresh() }
                 }
-                Task { await viewModel.loadCalendar() }
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 14, weight: .semibold))
@@ -72,14 +72,14 @@ struct CalendarGridView: View {
             Spacer()
 
             Button {
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    if isExpanded {
+                if isExpanded {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                         viewModel.goToNextMonth()
-                    } else {
-                        viewModel.goToNextWeek()
                     }
+                    Task { await viewModel.loadCalendar() }
+                } else {
+                    Task { await viewModel.goToNextWeekAndRefresh() }
                 }
-                Task { await viewModel.loadCalendar() }
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
@@ -154,11 +154,11 @@ private struct DayCell: View {
             ZStack {
                 if day.showsSelectionHighlight {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.accentPurple)
+                        .fill(Color.accentPrimary)
                         .frame(width: 36, height: 36)
                 } else if day.showsTodayOutline {
                     RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color.accentPurple, lineWidth: 1.5)
+                        .strokeBorder(Color.accentPrimary, lineWidth: 1.5)
                         .frame(width: 36, height: 36)
                 }
 
@@ -169,7 +169,7 @@ private struct DayCell: View {
 
                     if day.showsWorkoutIndicator {
                         Circle()
-                            .fill(day.isSelected ? Color.white : Color.accentPurple)
+                            .fill(day.isSelected ? Color.white : Color.accentPrimary)
                             .frame(width: 4, height: 4)
                     } else {
                         Color.clear.frame(width: 4, height: 4)

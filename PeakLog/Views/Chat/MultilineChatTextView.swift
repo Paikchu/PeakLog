@@ -20,7 +20,7 @@ struct MultilineChatTextView: UIViewRepresentable {
         textView.backgroundColor = .clear
         textView.font = .systemFont(ofSize: 14.5, weight: .regular)
         textView.textColor = UIColor(Color.textPrimary)
-        textView.tintColor = UIColor(Color.accentPurple)
+        textView.tintColor = UIColor(Color.accentPrimary)
         textView.isScrollEnabled = false
         textView.showsVerticalScrollIndicator = false
         textView.textContainerInset = UIEdgeInsets(

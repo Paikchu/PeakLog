@@ -30,36 +30,106 @@ enum HomeTab: String, CaseIterable, Identifiable {
     }
 }
 
+struct DockPlanAction {
+    let title: String
+    let isEnabled: Bool
+    let action: () -> Void
+}
+
 struct HomeDockBar: View {
     @Binding var selectedTab: HomeTab
+    var planAction: DockPlanAction?
+
+    @Namespace private var dockNamespace
+
+    // One curve for every dock change so width, slot morph, and the sliding
+    // selection capsule all move together.
+    static let dockSpring = Animation.spring(response: 0.35, dampingFraction: 0.82)
+    private static let planSlotID = "planSlot"
+    private static let selectionID = "selection"
+
+    // The plan slot doubles as the start-training CTA while the plan tab is
+    // active and today's plan has sets to run.
+    private var showsPlanAction: Bool {
+        selectedTab == .plan && planAction != nil
+    }
 
     var body: some View {
         dockContent
             .padding(4)
-            .frame(maxWidth: 288)
             .background(dockBackground)
             .padding(.horizontal, 22)
+            .animation(Self.dockSpring, value: showsPlanAction)
             .accessibilityIdentifier("homeDockBar")
     }
 
     private var dockContent: some View {
         HStack(spacing: 4) {
             ForEach(HomeTab.allCases) { tab in
-                Button {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                        selectedTab = tab
-                    }
-                } label: {
-                    HomeDockItem(
-                        title: tab.title,
-                        symbolName: tab.symbolName,
-                        isSelected: selectedTab == tab
-                    )
+                if tab == .plan, showsPlanAction, let planAction {
+                    startTrainingButton(planAction)
+                } else {
+                    tabButton(tab)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("homeDock.\(tab.rawValue)")
             }
         }
+    }
+
+    private func tabButton(_ tab: HomeTab) -> some View {
+        Button {
+            withAnimation(Self.dockSpring) {
+                selectedTab = tab
+            }
+        } label: {
+            Image(systemName: tab.symbolName)
+                .font(.system(size: 18, weight: .semibold))
+                .symbolVariant(selectedTab == tab ? .fill : .none)
+                .foregroundColor(selectedTab == tab ? Color.accentPrimary : Color.textPrimary)
+                .frame(width: 56, height: 48)
+                .background {
+                    if selectedTab == tab {
+                        selectionBackground
+                    }
+                }
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .matchedGeometryEffect(
+            id: tab == .plan ? Self.planSlotID : tab.rawValue,
+            in: dockNamespace
+        )
+        .transition(.opacity)
+        .accessibilityLabel(tab.title)
+        .accessibilityIdentifier("homeDock.\(tab.rawValue)")
+    }
+
+    private var selectionBackground: some View {
+        Capsule()
+            .fill(Color.appSurface.opacity(0.55))
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+            )
+            .matchedGeometryEffect(id: Self.selectionID, in: dockNamespace)
+    }
+
+    private func startTrainingButton(_ planAction: DockPlanAction) -> some View {
+        Button(action: planAction.action) {
+            Label(planAction.title, systemImage: "play.fill")
+                .font(.system(size: 14, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 22)
+                .frame(height: 48)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.white)
+        .glassActionBackground(cornerRadius: AppRadius.full, tint: Color.accentPrimary.opacity(0.42))
+        .clipShape(Capsule())
+        .disabled(!planAction.isEnabled)
+        .matchedGeometryEffect(id: Self.planSlotID, in: dockNamespace)
+        .transition(.opacity)
+        .accessibilityIdentifier("today.startPlan")
     }
 
     @ViewBuilder
@@ -93,48 +163,16 @@ struct HomeDockBar: View {
     }
 }
 
-private struct HomeDockItem: View {
-    let title: String
-    let symbolName: String
-    let isSelected: Bool
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Image(systemName: symbolName)
-                .font(.system(size: 18, weight: .semibold))
-                .symbolVariant(isSelected ? .fill : .none)
-
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .foregroundColor(isSelected ? Color.accentPurple : Color.textPrimary)
-        .frame(maxWidth: .infinity)
-        .frame(height: 48)
-        .background(itemBackground)
-        .clipShape(Capsule())
-    }
-
-    @ViewBuilder
-    private var itemBackground: some View {
-        if isSelected {
-            Capsule()
-                .fill(Color.appSurface.opacity(0.55))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                )
-        }
-    }
-}
-
 #Preview {
     ZStack {
         Color.appBackground.ignoresSafeArea()
-        VStack {
+        VStack(spacing: 16) {
             Spacer()
-            HomeDockBar(selectedTab: .constant(.plan))
+            HomeDockBar(selectedTab: .constant(.calendar))
+            HomeDockBar(
+                selectedTab: .constant(.plan),
+                planAction: DockPlanAction(title: "开始训练", isEnabled: true, action: {})
+            )
         }
     }
 }

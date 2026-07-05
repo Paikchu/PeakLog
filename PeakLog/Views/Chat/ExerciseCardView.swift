@@ -238,7 +238,7 @@ struct ExerciseCardView: View {
         let content = VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: AppRadius.full)
-                        .fill(Color.accentPurple)
+                        .fill(Color.accentPrimary)
                         .frame(width: 5, height: 22)
 
                     Text(exercise.name)
@@ -259,7 +259,7 @@ struct ExerciseCardView: View {
                         Button(action: onAddSet) {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.accentPurple)
+                                .foregroundColor(.accentPrimary)
                         }
                     }
                 }

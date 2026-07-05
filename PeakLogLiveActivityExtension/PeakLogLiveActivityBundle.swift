@@ -51,7 +51,7 @@ struct PlanLiveActivityWidget: Widget {
             VStack(alignment: .leading, spacing: 6) {
                 Text(context.state.isComplete ? "完成" : "进行中")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(.orange)
                 Text(context.state.currentExerciseName)
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
@@ -85,7 +85,7 @@ struct PlanLiveActivityWidget: Widget {
                 .font(.caption.weight(.bold))
         }
         .disabled(context.state.isComplete)
-        .tint(.purple)
+        .tint(.orange)
     }
 
     private func progressText(_ state: PlanLiveActivityAttributes.ContentState) -> some View {

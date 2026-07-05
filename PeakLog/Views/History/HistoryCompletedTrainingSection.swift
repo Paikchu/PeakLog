@@ -77,7 +77,7 @@ struct HistoryCompletedDaySummaryCard: View {
                 summaryChip(
                     title: String(localized: "history.completed.summary.strength"),
                     value: LocalizedPlanText.completedStrengthValue(summary.strengthExerciseCount, locale: locale),
-                    tint: .accentPurple
+                    tint: .accentPrimary
                 )
                 summaryChip(
                     title: String(localized: "history.completed.summary.sets"),
@@ -154,7 +154,7 @@ struct HistoryCompletedStrengthExerciseCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: AppRadius.full)
-                    .fill(Color.accentPurple)
+                    .fill(Color.accentPrimary)
                     .frame(width: 5, height: 22)
 
                 Text(exercise.name)
@@ -192,7 +192,7 @@ struct HistoryCompletedStrengthExerciseCard: View {
         .cornerRadius(AppRadius.xl)
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(Color.accentPurple.opacity(0.12), lineWidth: 1)
+                .strokeBorder(Color.accentPrimary.opacity(0.12), lineWidth: 1)
         )
     }
 }
@@ -217,7 +217,7 @@ private struct HistoryCompletedStrengthSetRow: View {
 
             infoChip(
                 LocalizedPlanText.formatted("history.completed.reps_value", locale: locale, Int64(set.reps)),
-                accentColor: .accentPurple
+                accentColor: .accentPrimary
             )
 
             Spacer(minLength: 4)
@@ -254,7 +254,7 @@ private struct HistoryCompletedStrengthSetRow: View {
     private var loadTint: Color {
         switch set.loadDisplay {
         case .weighted:
-            return .accentPurple
+            return .accentPrimary
         case .bodyweight:
             return .green
         case .unrecordedWeight:

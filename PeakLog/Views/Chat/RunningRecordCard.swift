@@ -8,7 +8,7 @@ struct RunningRecordCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "figure.run")
-                    .foregroundColor(.accentPurple)
+                    .foregroundColor(.accentPrimary)
                 Text(isPreview ? "跑步记录预览" : "跑步记录")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.textPrimary)

@@ -468,45 +468,20 @@ actor LocalAppDatabase {
         try persist()
     }
 
-    func addPlannedExercise(
-        exerciseName: String,
-        exerciseLoadType: ExerciseLoadType,
-        targetWeight: Double?,
-        targetWeightUnit: WeightUnit,
-        targetReps: Int,
-        setsCount: Int
-    ) throws -> TrainingPlanDay {
-        let trimmedName = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { throw LocalAppDatabaseError.invalidPlanExerciseName }
+    func addPlannedExercises(_ drafts: [PlanExerciseDraft]) throws -> TrainingPlanDay {
+        guard !drafts.isEmpty,
+              drafts.allSatisfy({ !$0.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw LocalAppDatabaseError.invalidPlanExerciseName
+        }
 
         let todayDateString = Self.planDateString(from: Date())
-        let sets = (1...max(setsCount, 1)).map { index in
-            TrainingPlanSet(
-                id: UUID().uuidString,
-                setIndex: index,
-                targetWeight: targetWeight,
-                targetWeightUnit: targetWeightUnit,
-                targetReps: targetReps,
-                completedAt: nil,
-                linkedExerciseSetId: nil
-            )
-        }
 
         if let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) {
             var day = state.activePlan.days[dayIndex]
             let wasEmpty = day.exercises.isEmpty
-            let exercise = TrainingPlanExercise(
-                id: UUID().uuidString,
-                orderIndex: day.exercises.count,
-                exerciseName: trimmedName,
-                exerciseLoadType: exerciseLoadType,
-                progressionMode: "manual",
-                notes: nil,
-                previousPerformanceSummary: nil,
-                aiSuggestion: nil,
-                sets: sets
-            )
-            day.exercises.append(exercise)
+            for draft in drafts {
+                day.exercises.append(makePlanExercise(from: draft, orderIndex: day.exercises.count))
+            }
             if wasEmpty {
                 day = TrainingPlanDay(
                     id: day.id,
@@ -523,17 +498,9 @@ actor LocalAppDatabase {
             return day
         }
 
-        let exercise = TrainingPlanExercise(
-            id: UUID().uuidString,
-            orderIndex: 0,
-            exerciseName: trimmedName,
-            exerciseLoadType: exerciseLoadType,
-            progressionMode: "manual",
-            notes: nil,
-            previousPerformanceSummary: nil,
-            aiSuggestion: nil,
-            sets: sets
-        )
+        let exercises = drafts.enumerated().map { index, draft in
+            makePlanExercise(from: draft, orderIndex: index)
+        }
         let nextDayIndex = (state.activePlan.days.map(\.dayIndex).max() ?? 0) + 1
         let day = TrainingPlanDay(
             id: UUID().uuidString,
@@ -542,11 +509,35 @@ actor LocalAppDatabase {
             title: String(localized: "today.plan.manual_day_title"),
             focus: nil,
             status: "planned",
-            exercises: [exercise]
+            exercises: exercises
         )
         state.activePlan.days.append(day)
         try persist()
         return day
+    }
+
+    private func makePlanExercise(from draft: PlanExerciseDraft, orderIndex: Int) -> TrainingPlanExercise {
+        TrainingPlanExercise(
+            id: UUID().uuidString,
+            orderIndex: orderIndex,
+            exerciseName: draft.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines),
+            exerciseLoadType: draft.isBodyweight ? .bodyweight : .weighted,
+            progressionMode: "manual",
+            notes: nil,
+            previousPerformanceSummary: nil,
+            aiSuggestion: nil,
+            sets: draft.sets.enumerated().map { index, set in
+                TrainingPlanSet(
+                    id: UUID().uuidString,
+                    setIndex: index + 1,
+                    targetWeight: set.targetWeight,
+                    targetWeightUnit: set.targetWeightUnit,
+                    targetReps: set.targetReps,
+                    completedAt: nil,
+                    linkedExerciseSetId: nil
+                )
+            }
+        )
     }
 
     func applyCoachActions(_ actions: LocalCoachActionBundle, conversationId: String, assistantMessageId: String) throws -> LocalCoachApplicationResult {

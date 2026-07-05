@@ -12,7 +12,7 @@ struct SessionDetailRow: View {
                 .padding(.vertical, 10)
                 .background(
                     LinearGradient(
-                        colors: [Color.accentPurple.opacity(0.15), Color.accentPurple.opacity(0.05)],
+                        colors: [Color.accentPrimary.opacity(0.15), Color.accentPrimary.opacity(0.05)],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
@@ -43,7 +43,7 @@ struct SessionDetailRow: View {
         HStack(spacing: 8) {
             Image(systemName: "figure.strengthtraining.traditional")
                 .font(.system(size: 14))
-                .foregroundColor(.accentPurple)
+                .foregroundColor(.accentPrimary)
 
             if let label = session.label {
                 Text(label)

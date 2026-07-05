@@ -6,8 +6,18 @@ protocol WorkoutServiceProtocol {
     func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
     func deleteExercise(sessionId: String, exerciseId: String) async throws
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date]
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord]
+    func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord
 }
 
 protocol TrainingPlanServiceProtocol {
@@ -39,6 +49,7 @@ struct HistoryCalendarCrossMonthSelectionTestRunner {
     static func main() async {
         validatesCrossMonthCalendarDayInteractionRules()
         await selectsCrossMonthDateAndUpdatesDisplayedMonth()
+        await weekNavigationRefreshesSelectedDayRecords()
         print("history_calendar_cross_month_selection_test passed")
     }
 
@@ -100,9 +111,75 @@ struct HistoryCalendarCrossMonthSelectionTestRunner {
             "Expected selected plan day to refresh for the cross-month date"
         )
     }
+
+    @MainActor
+    private static func weekNavigationRefreshesSelectedDayRecords() async {
+        let formatter = WorkoutDateFormatter(timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+        let today = formatter.date(from: "2026-08-09")!
+        let previousWeek = formatter.date(from: "2026-08-02")!
+        let todaySession = makeSession(id: "today-session", date: today, exerciseName: "杠铃卧推")
+        let previousWeekSession = makeSession(id: "previous-week-session", date: previousWeek, exerciseName: "深蹲")
+
+        let viewModel = HistoryViewModel(
+            workoutService: HistoryCalendarSelectionWorkoutService(
+                sessionsByDay: [
+                    "2026-08-09": [todaySession],
+                    "2026-08-02": [previousWeekSession]
+                ]
+            ),
+            trainingPlanService: HistoryCalendarSelectionTrainingPlanService()
+        )
+
+        viewModel.selectDate(today)
+        await viewModel.loadSessionsForSelectedDate()
+        precondition(
+            viewModel.sessions.first?.exercises.first?.name == "杠铃卧推",
+            "Expected initial selected day records to load"
+        )
+
+        await viewModel.goToPreviousWeekAndRefresh()
+
+        precondition(
+            formatter.string(from: viewModel.selectedDate) == "2026-08-02",
+            "Expected previous week navigation to move selected date"
+        )
+        precondition(
+            viewModel.sessions.first?.exercises.first?.name == "深蹲",
+            "Expected week navigation to refresh records for the new selected day"
+        )
+    }
+
+    private static func makeSession(id: String, date: Date, exerciseName: String) -> WorkoutSession {
+        WorkoutSession(
+            id: id,
+            userId: "user-1",
+            date: date,
+            durationMinutes: 30,
+            label: nil,
+            exercises: [
+                Exercise(
+                    id: "\(id)-exercise",
+                    name: exerciseName,
+                    sets: [
+                        ExerciseSet(id: "\(id)-set", setIndex: 1, weight: 50, weightUnit: .kg, reps: 8)
+                    ]
+                )
+            ],
+            createdAt: date,
+            updatedAt: date
+        )
+    }
 }
 
-private actor HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
+enum AppServices {
+    static let workoutService: WorkoutServiceProtocol = HistoryCalendarSelectionWorkoutService()
+    static let trainingPlanService: TrainingPlanServiceProtocol = HistoryCalendarSelectionTrainingPlanService()
+}
+
+private struct HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
+    var sessionsByDay: [String: [WorkoutSession]] = [:]
+    private let formatter = WorkoutDateFormatter(timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+
     func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
         Exercise(id: exerciseId, name: name, sets: [])
     }
@@ -119,14 +196,55 @@ private actor HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
 
     func deleteExercise(sessionId: String, exerciseId: String) async throws {}
 
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
+        ExerciseSet(id: setId, setIndex: 1, weight: nil, weightUnit: .kg, reps: 0, rpe: rpe)
+    }
+
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] {
-        let formatter = WorkoutDateFormatter(timeZone: TimeZone(identifier: "Asia/Shanghai")!)
-        return [formatter.date(from: "2026-04-01")!]
+        sessionsByDay.keys.compactMap(formatter.date(from:))
     }
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] {
-        _ = date
-        return []
+        sessionsByDay[formatter.string(from: date)] ?? []
+    }
+
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
+        []
+    }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
+        []
+    }
+
+    func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession {
+        WorkoutSession(
+            id: "created-session",
+            userId: "user-1",
+            date: draft.workoutDate,
+            durationMinutes: nil,
+            label: draft.title,
+            exercises: [],
+            createdAt: draft.workoutDate,
+            updatedAt: draft.workoutDate
+        )
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        RunningWorkoutRecord(
+            id: "created-run",
+            userId: "user-1",
+            workoutDate: workoutDate,
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            source: source,
+            createdAt: workoutDate,
+            updatedAt: workoutDate
+        )
     }
 }
 
@@ -147,9 +265,48 @@ actor SupabaseWorkoutService: WorkoutServiceProtocol {
 
     func deleteExercise(sessionId: String, exerciseId: String) async throws {}
 
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
+        ExerciseSet(id: setId, setIndex: 1, weight: nil, weightUnit: .kg, reps: 0, rpe: rpe)
+    }
+
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] { [] }
+
+    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] { [] }
+
+    func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession {
+        WorkoutSession(
+            id: "created-session",
+            userId: "user-1",
+            date: draft.workoutDate,
+            durationMinutes: nil,
+            label: draft.title,
+            exercises: [],
+            createdAt: draft.workoutDate,
+            updatedAt: draft.workoutDate
+        )
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        RunningWorkoutRecord(
+            id: "created-run",
+            userId: "user-1",
+            workoutDate: workoutDate,
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            source: source,
+            createdAt: workoutDate,
+            updatedAt: workoutDate
+        )
+    }
 }
 
 private struct HistoryCalendarSelectionTrainingPlanService: TrainingPlanServiceProtocol {

@@ -34,10 +34,10 @@ struct WorkoutRecordCard: View {
         .padding(8)
         .background(Color.appSurface)
         .cornerRadius(AppRadius.xl)
-        .shadow(color: Color.accentPurple.opacity(0.1), radius: 14, x: 0, y: 4)
+        .shadow(color: Color.accentPrimary.opacity(0.1), radius: 14, x: 0, y: 4)
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(Color.accentPurple.opacity(0.14), lineWidth: 1)
+                .strokeBorder(Color.accentPrimary.opacity(0.14), lineWidth: 1)
         )
     }
 }

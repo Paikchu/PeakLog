@@ -5,6 +5,10 @@ let sourceURL = rootURL.appendingPathComponent("PeakLog/Views/Today/TodayWorkout
 let source = try String(contentsOf: sourceURL, encoding: .utf8)
 let viewModelSourceURL = rootURL.appendingPathComponent("PeakLog/ViewModels/TodayWorkoutViewModel.swift")
 let viewModelSource = try String(contentsOf: viewModelSourceURL, encoding: .utf8)
+let dockSourceURL = rootURL.appendingPathComponent("PeakLog/Views/Home/HomeDockBar.swift")
+let dockSource = try String(contentsOf: dockSourceURL, encoding: .utf8)
+let contentViewSourceURL = rootURL.appendingPathComponent("PeakLog/ContentView.swift")
+let contentViewSource = try String(contentsOf: contentViewSourceURL, encoding: .utf8)
 
 precondition(
     !source.contains("ChatInputBar("),
@@ -27,8 +31,16 @@ precondition(
     "Expected floating plus to expose both manual daily record and manual plan exercise semantics"
 )
 precondition(
-    source.contains("\"开始训练\"") && source.contains("today.startPlan"),
-    "Expected existing plans to keep the Start Plan action"
+    !source.contains("today.startPlan"),
+    "Expected the today screen to stop hosting its own Start Plan button"
+)
+precondition(
+    dockSource.contains("today.startPlan") && dockSource.contains("DockPlanAction"),
+    "Expected the dock's plan slot to host the Start Plan action"
+)
+precondition(
+    contentViewSource.contains("today.start_training") && contentViewSource.contains("startPlanLiveWorkout"),
+    "Expected ContentView to wire the dock Start Plan action to the live workout"
 )
 precondition(
     source.contains("TrainingSessionScreen"),

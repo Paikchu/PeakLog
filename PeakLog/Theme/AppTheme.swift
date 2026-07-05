@@ -1,56 +1,66 @@
 import SwiftUI
 
+// MARK: - Graphite Theme
+// Carbon-dark neutrals with a single amber accent. Numbers are the hero;
+// chrome stays out of the way. All tokens adapt to light/dark automatically.
+
 // MARK: - Color Tokens (Adaptive — auto-switches with preferredColorScheme)
 extension Color {
     // Backgrounds
     static let appBackground = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#0F0F14") : UIColor(appHex: "#f8f8fa")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#0B0B0D") : UIColor(appHex: "#F5F5F4")
     }))
     static let appSurface = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#1A1A24") : UIColor(appHex: "#FFFFFF")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#17171A") : UIColor(appHex: "#FFFFFF")
     }))
     static let appCard = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#252536") : UIColor(appHex: "#FFFFFF")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#1D1D21") : UIColor(appHex: "#FFFFFF")
     }))
     static let appSeparator = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2A2A3A") : UIColor(appHex: "#f3f4f6")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#29292E") : UIColor(appHex: "#E7E5E4")
     }))
     static let workoutShell = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2A2A3A") : UIColor(appHex: "#FCFCFE")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#202024") : UIColor(appHex: "#FAFAF9")
     }))
     static let workoutPanel = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2F2F44") : UIColor(appHex: "#F0EDFF")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#26262B") : UIColor(appHex: "#F0EFED")
     }))
     static let workoutPanelStrong = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#373753") : UIColor(appHex: "#E6E0FF")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2E2E34") : UIColor(appHex: "#E7E5E1")
     }))
     static let workoutIndexFill = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#3A3958") : UIColor(appHex: "#E8E3FF")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2E2E34") : UIColor(appHex: "#ECEAE7")
     }))
 
     // Bubbles
-    static let userBubble = Color(hex: "#7C7FBF")
+    static let userBubble = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#2E2E33") : UIColor(appHex: "#292524")
+    }))
 
-    // Accents (same in both themes)
-    static let accentPurple = Color(hex: "#4F39F6")
-    static let accentBorder = Color(hex: "#6366F1")
-    static let accentRed = Color(hex: "#FB2C36")
+    // Accents
+    static let accentPrimary = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#F59E0B") : UIColor(appHex: "#D97706")
+    }))
+    static let accentBorder = Color(uiColor: UIColor(dynamicProvider: { tc in
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#8A8A93") : UIColor(appHex: "#A8A29E")
+    }))
+    static let accentRed = Color(hex: "#EF4444")
     static let accentValue = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#A3B3FF") : UIColor(appHex: "#4F39F6")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#FBBF24") : UIColor(appHex: "#B45309")
     }))
 
     // Text
     static let textPrimary = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#F3F4F6") : UIColor(appHex: "#101828")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#F5F5F4") : UIColor(appHex: "#1C1917")
     }))
     static let textSecondary = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#99A1AF") : UIColor(appHex: "#1e2939")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#A8A29E") : UIColor(appHex: "#57534E")
     }))
     static let textMuted = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#6A7282") : UIColor(appHex: "#99a1af")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#737373") : UIColor(appHex: "#A8A29E")
     }))
     static let textDarkMuted = Color(uiColor: UIColor(dynamicProvider: { tc in
-        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#4A5565") : UIColor(appHex: "#9CA3AF")
+        tc.userInterfaceStyle == .dark ? UIColor(appHex: "#47474E") : UIColor(appHex: "#C7C2BC")
     }))
 }
 
@@ -98,13 +108,14 @@ extension UIColor {
 // MARK: - Gradient
 extension LinearGradient {
     static let accentGradient = LinearGradient(
-        colors: [Color(hex: "#4F39F6"), Color(hex: "#6366F1")],
+        colors: [Color.accentValue, Color(hex: "#F97316")],
         startPoint: .leading,
         endPoint: .trailing
     )
 }
 
 // MARK: - Font Tokens
+// Numeric styles use the rounded design so weights/reps read like gym plates.
 extension Font {
     // Headers
     static let headerTitle = Font.system(size: 17, weight: .semibold)
@@ -116,17 +127,17 @@ extension Font {
 
     // Exercise
     static let exerciseName = Font.system(size: 14, weight: .bold)
-    static let exerciseValue = Font.system(size: 15, weight: .bold)
-    static let exerciseUnit = Font.system(size: 11, weight: .medium)
+    static let exerciseValue = Font.system(size: 15, weight: .bold, design: .rounded)
+    static let exerciseUnit = Font.system(size: 11, weight: .medium, design: .rounded)
 
     // Labels
-    static let setIndex = Font.system(size: 12, weight: .medium)
+    static let setIndex = Font.system(size: 12, weight: .medium, design: .rounded)
     static let dateLabel = Font.system(size: 12, weight: .medium)
     static let recordHeader = Font.system(size: 13, weight: .semibold)
     static let deleteLabel = Font.system(size: 10, weight: .medium)
 
     // Stats
-    static let statValue = Font.system(size: 16, weight: .bold)
+    static let statValue = Font.system(size: 16, weight: .bold, design: .rounded)
     static let statLabel = Font.system(size: 11, weight: .medium)
 
     // Settings

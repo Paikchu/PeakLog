@@ -47,7 +47,7 @@ struct StatCardView: View {
 
 #Preview {
     HStack(spacing: 8) {
-        StatCardView(icon: "trophy.fill", iconColor: .accentPurple, value: "47", label: "Workouts")
+        StatCardView(icon: "trophy.fill", iconColor: .accentPrimary, value: "47", label: "Workouts")
         StatCardView(icon: "flame.fill", iconColor: .orange, value: "12d", label: "Streak")
         StatCardView(icon: "chart.line.uptrend.xyaxis", iconColor: .green, value: "24t", label: "Volume")
         StatCardView(icon: "star.fill", iconColor: .yellow, value: "8", label: "PRs")

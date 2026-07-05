@@ -5,13 +5,11 @@ struct ProfileScreen: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
     @Environment(\.openURL) private var openURL
-    var onBack: (() -> Void)?
 
-    init(onBack: (() -> Void)? = nil) {
+    init() {
         _viewModel = StateObject(
             wrappedValue: ProfileViewModel()
         )
-        self.onBack = onBack
     }
 
     var body: some View {
@@ -66,7 +64,7 @@ struct ProfileScreen: View {
 
                         Text("\(formatPRWeight(pr.maxWeight)) \(pr.weightUnit.display)")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(Color(hex: "#F59E0B"))
+                            .foregroundColor(Color.accentValue)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -84,14 +82,7 @@ struct ProfileScreen: View {
     // MARK: - Header
     private var header: some View {
         HStack {
-            Button {
-                onBack?()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.textPrimary)
-                    .frame(width: 38, height: 38)
-            }
+            Color.clear.frame(width: 38, height: 38)
 
             Spacer()
 
@@ -164,7 +155,7 @@ struct ProfileScreen: View {
         HStack(spacing: 8) {
             StatCardView(
                 icon: "trophy.fill",
-                iconColor: .accentPurple,
+                iconColor: .accentPrimary,
                 value: "\(viewModel.profile?.stats.workoutsCount ?? 0)",
                 label: "profile.stats.workouts"
             )
@@ -182,7 +173,7 @@ struct ProfileScreen: View {
             )
             StatCardView(
                 icon: "star.fill",
-                iconColor: Color(hex: "#F59E0B"),
+                iconColor: Color.accentValue,
                 value: "\(viewModel.profile?.stats.prCount ?? 0)",
                 label: "profile.stats.prs"
             )

@@ -4,35 +4,29 @@ import UIKit
 #endif
 
 struct TodayWorkoutScreen: View {
-    @StateObject private var viewModel: TodayWorkoutViewModel
+    // Owned by ContentView so the dock can surface the start-training action.
+    @ObservedObject var viewModel: TodayWorkoutViewModel
     @State private var isPresentingDailyRecord = false
     @State private var isPresentingAddPlanExercise = false
     @Environment(\.locale) private var locale
 
-    init() {
-        _viewModel = StateObject(wrappedValue: TodayWorkoutViewModel())
-    }
-
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                header
-                ScrollView {
-                    VStack(spacing: 18) {
-                        if viewModel.isLoading {
-                            ProgressView().padding(.top, 40)
-                        } else {
-                            summaryCard
-                            plannedSection
-                            recordedSection
-                        }
+            ScrollView {
+                VStack(spacing: 18) {
+                    if viewModel.isLoading {
+                        ProgressView().padding(.top, 40)
+                    } else {
+                        summaryCard
+                        plannedSection
+                        recordedSection
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 104)
                 }
-                .dismissKeyboardOnTap()
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 104)
             }
+            .dismissKeyboardOnTap()
 
             addRecordButton
                 .padding(.trailing, 20)
@@ -50,15 +44,8 @@ struct TodayWorkoutScreen: View {
             }
         }
         .sheet(isPresented: $isPresentingAddPlanExercise) {
-            AddPlanExerciseSheet { draft in
-                await viewModel.addPlanExercise(
-                    name: draft.exerciseName,
-                    loadType: draft.loadType,
-                    targetWeight: draft.targetWeight,
-                    targetWeightUnit: draft.targetWeightUnit,
-                    targetReps: draft.targetReps,
-                    setsCount: draft.setsCount
-                )
+            AddPlanExerciseSheet { drafts in
+                await viewModel.addPlanExercises(drafts)
             }
         }
         .fullScreenCover(isPresented: Binding(
@@ -75,20 +62,6 @@ struct TodayWorkoutScreen: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("today.header.title")
-                .font(.headerTitle)
-                .foregroundColor(.textPrimary)
-                .tracking(-0.4)
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
     }
 
     private var addRecordButton: some View {
@@ -121,22 +94,18 @@ struct TodayWorkoutScreen: View {
     private var addRecordButtonBackground: some View {
         if #available(iOS 26, *) {
             Circle()
-                .fill(Color.accentPurple.opacity(0.32))
-                .glassEffect(.regular.tint(Color.accentPurple.opacity(0.25)).interactive(), in: .rect(cornerRadius: 29))
-                .shadow(color: Color.accentPurple.opacity(0.24), radius: 18, x: 0, y: 10)
+                .fill(Color.accentPrimary.opacity(0.32))
+                .glassEffect(.regular.tint(Color.accentPrimary.opacity(0.25)).interactive(), in: .rect(cornerRadius: 29))
+                .shadow(color: Color.accentPrimary.opacity(0.24), radius: 18, x: 0, y: 10)
         } else {
             LinearGradient.accentGradient
                 .clipShape(Circle())
-                .shadow(color: Color.accentPurple.opacity(0.28), radius: 18, x: 0, y: 10)
+                .shadow(color: Color.accentPrimary.opacity(0.28), radius: 18, x: 0, y: 10)
         }
     }
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Today")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.textMuted)
-
             if let plan = viewModel.todayPlan {
                 Text(plan.title)
                     .font(.system(size: 30, weight: .bold))
@@ -166,8 +135,6 @@ struct TodayWorkoutScreen: View {
                         .foregroundColor(.textSecondary)
                         .padding(.top, 2)
                 }
-
-                startPlanButton
             } else if viewModel.todayRecord != nil {
                 Text("today.summary.free_record_day.title")
                     .font(.system(size: 30, weight: .bold))
@@ -212,37 +179,17 @@ struct TodayWorkoutScreen: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .glassPanel(cornerRadius: AppRadius.xxl)
-    }
-
-    @ViewBuilder
-    private var startPlanButton: some View {
-        if (viewModel.todayPlan?.totalSetsCount ?? 0) > 0 {
-            Button {
-                viewModel.startPlanLiveWorkout()
-            } label: {
-                Label("开始训练", systemImage: "play.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(.white)
-            .glassActionBackground(cornerRadius: AppRadius.xl, tint: Color.accentPurple.opacity(0.42))
-            .disabled(viewModel.isSending || viewModel.activeLiveWorkout != nil)
-            .accessibilityIdentifier("today.startPlan")
-            .padding(.top, 8)
-        }
+        .padding(.horizontal, 4)
+        .padding(.top, 8)
     }
 
     @ViewBuilder
     private var plannedSection: some View {
         if let plan = viewModel.todayPlan {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 sectionHeader(
                     title: String(localized: "today.section.plan.title"),
-                    subtitle: String(localized: "today.section.plan.subtitle")
+                    subtitle: nil
                 )
 
                 ForEach(plan.exercises) { exercise in
@@ -357,7 +304,7 @@ private struct TodayPlannedExerciseCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: AppRadius.full)
-                    .fill(Color.accentPurple)
+                    .fill(Color.accentPrimary)
                     .frame(width: 5, height: 22)
 
                 Text(exercise.exerciseName)
@@ -383,25 +330,16 @@ private struct TodayPlannedExerciseCard: View {
                 Button(action: onAddSet) {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.accentPurple)
+                        .foregroundColor(.accentPrimary)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 10)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.xxl)
-                    .fill(Color.workoutPanel.opacity(0.5))
-            )
-
             if let suggestion = exercise.aiSuggestion, !suggestion.isEmpty {
                 Text(suggestion)
                     .font(.system(size: 12))
-                    .foregroundColor(.accentPurple.opacity(0.92))
-                    .padding(.horizontal, 14)
+                    .foregroundColor(.accentPrimary.opacity(0.92))
             }
 
-            VStack(spacing: 6) {
+            VStack(spacing: 0) {
                 ForEach(exercise.sets) { set in
                     TodayPlannedSetRow(
                         set: set,
@@ -413,17 +351,16 @@ private struct TodayPlannedExerciseCard: View {
                             onCompleteSet(set.id, rpe)
                         }
                     )
+
+                    if set.id != exercise.sets.last?.id {
+                        Rectangle()
+                            .fill(Color.appSeparator)
+                            .frame(height: 0.5)
+                    }
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.bottom, 6)
         }
-        .padding(8)
-        .glassPanel(cornerRadius: AppRadius.xl)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(Color.accentPurple.opacity(0.14), lineWidth: 1)
-        )
+        .padding(.horizontal, 4)
     }
 }
 
@@ -519,12 +456,7 @@ private struct TodayPlannedSetRow: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.xxl)
-                .fill(Color.workoutShell)
-        )
+        .padding(.vertical, 8)
         .sheet(isPresented: $editingWeight) {
             ValueEditSheet(
                 title: String(localized: "chat.exercise.weight"),
@@ -575,16 +507,11 @@ struct PlanProgressBar: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.appSeparator)
                 Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.accentPurple, Color.green.opacity(0.85)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .fill(LinearGradient.accentGradient)
                     .frame(width: max(proxy.size.width * progress, progress > 0 ? 18 : 0))
+                    .animation(.spring(response: 0.45, dampingFraction: 0.85), value: progress)
             }
         }
         .frame(height: 8)
@@ -633,5 +560,5 @@ extension View {
 }
 
 #Preview {
-    TodayWorkoutScreen()
+    TodayWorkoutScreen(viewModel: TodayWorkoutViewModel())
 }

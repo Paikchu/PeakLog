@@ -19,8 +19,8 @@ precondition(
     "Expected root shell to own a selected HomeTab"
 )
 precondition(
-    contentViewSource.contains("HomeDockBar(selectedTab: $selectedTab)"),
-    "Expected root shell to render the bottom dock"
+    contentViewSource.contains("HomeDockBar(selectedTab: $selectedTab, planAction: planDockAction)"),
+    "Expected root shell to render the bottom dock with the start-training slot"
 )
 precondition(
     dockSource.contains("case calendar") && dockSource.contains("case plan") && dockSource.contains("case settings"),

@@ -66,7 +66,7 @@ struct ChatInputBar: View {
                         Circle()
                             .fill(canSend
                                   ? LinearGradient.accentGradient
-                                  : LinearGradient(colors: [Color.accentPurple.opacity(0.45)],
+                                  : LinearGradient(colors: [Color.accentPrimary.opacity(0.45)],
                                                    startPoint: .leading, endPoint: .trailing))
                             .frame(width: 32, height: 32)
                         Image(systemName: "arrow.up")
