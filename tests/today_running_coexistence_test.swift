@@ -121,6 +121,17 @@ private struct TodayRunningCoexistenceTrainingPlanService: TrainingPlanServicePr
     }
 
     func deletePlannedSet(planSetId: String) async throws {}
+
+    func addPlannedExercise(
+        exerciseName: String,
+        exerciseLoadType: ExerciseLoadType,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int,
+        setsCount: Int
+    ) async throws -> TrainingPlanDay {
+        (try await fetchTodayPlan())!
+    }
 }
 
 private struct TodayRunningCoexistenceWorkoutService: WorkoutServiceProtocol {

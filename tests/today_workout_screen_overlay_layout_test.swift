@@ -16,15 +16,31 @@ precondition(
 )
 precondition(
     source.contains("DailyRecordSheet"),
-    "Expected today screen to present the daily record sheet"
+    "Expected floating plus to present the manual daily record sheet"
 )
 precondition(
-    source.contains("today.addDailyRecord"),
-    "Expected today screen to expose a floating add daily record button"
+    !source.contains("PlanComposerSheet"),
+    "Expected floating plus to stop presenting the free-form plan composer"
 )
 precondition(
-    viewModelSource.contains("func addDailyRecord"),
-    "Expected today view model to support direct daily records"
+    source.contains("today.addDailyRecord") && source.contains("today.addPlanExercise"),
+    "Expected floating plus to expose both manual daily record and manual plan exercise semantics"
+)
+precondition(
+    source.contains("\"开始训练\"") && source.contains("today.startPlan"),
+    "Expected existing plans to keep the Start Plan action"
+)
+precondition(
+    source.contains("TrainingSessionScreen"),
+    "Expected Start Plan to present the full-plan training session screen"
+)
+precondition(
+    viewModelSource.contains("liveActivityManager.start") && viewModelSource.contains("liveActivityManager.update"),
+    "Expected starting a plan to bridge the app session into ActivityKit"
+)
+precondition(
+    viewModelSource.contains("func toggleLiveSet") && viewModelSource.contains("func addPlanExercise"),
+    "Expected the view model to support toggling any set and manually adding plan exercises"
 )
 
 print("today_workout_screen_overlay_layout_test passed")

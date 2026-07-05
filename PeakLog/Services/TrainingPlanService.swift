@@ -22,6 +22,14 @@ protocol TrainingPlanServiceProtocol {
         targetReps: Int
     ) async throws -> TrainingPlanSet
     func deletePlannedSet(planSetId: String) async throws
+    func addPlannedExercise(
+        exerciseName: String,
+        exerciseLoadType: ExerciseLoadType,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int,
+        setsCount: Int
+    ) async throws -> TrainingPlanDay
 }
 
 final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
@@ -84,6 +92,24 @@ final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
     func deletePlannedSet(planSetId: String) async throws {
         try await database.deletePlannedSet(planSetId: planSetId)
     }
+
+    func addPlannedExercise(
+        exerciseName: String,
+        exerciseLoadType: ExerciseLoadType,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int,
+        setsCount: Int
+    ) async throws -> TrainingPlanDay {
+        try await database.addPlannedExercise(
+            exerciseName: exerciseName,
+            exerciseLoadType: exerciseLoadType,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps,
+            setsCount: setsCount
+        )
+    }
 }
 
 final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
@@ -141,6 +167,24 @@ final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
 
     func deletePlannedSet(planSetId: String) async throws {
         try await local.deletePlannedSet(planSetId: planSetId)
+    }
+
+    func addPlannedExercise(
+        exerciseName: String,
+        exerciseLoadType: ExerciseLoadType,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int,
+        setsCount: Int
+    ) async throws -> TrainingPlanDay {
+        try await local.addPlannedExercise(
+            exerciseName: exerciseName,
+            exerciseLoadType: exerciseLoadType,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps,
+            setsCount: setsCount
+        )
     }
 }
 

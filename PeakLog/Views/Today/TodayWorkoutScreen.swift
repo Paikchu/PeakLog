@@ -6,6 +6,7 @@ import UIKit
 struct TodayWorkoutScreen: View {
     @StateObject private var viewModel: TodayWorkoutViewModel
     @State private var isPresentingDailyRecord = false
+    @State private var isPresentingAddPlanExercise = false
     @Environment(\.locale) private var locale
 
     init() {
@@ -40,10 +41,31 @@ struct TodayWorkoutScreen: View {
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
         .task { await viewModel.onAppear() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            viewModel.syncLiveActivityCompletions()
+        }
         .sheet(isPresented: $isPresentingDailyRecord) {
             DailyRecordSheet { draft in
                 await viewModel.addDailyRecord(draft)
             }
+        }
+        .sheet(isPresented: $isPresentingAddPlanExercise) {
+            AddPlanExerciseSheet { draft in
+                await viewModel.addPlanExercise(
+                    name: draft.exerciseName,
+                    loadType: draft.loadType,
+                    targetWeight: draft.targetWeight,
+                    targetWeightUnit: draft.targetWeightUnit,
+                    targetReps: draft.targetReps,
+                    setsCount: draft.setsCount
+                )
+            }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { viewModel.activeLiveWorkout != nil },
+            set: { if !$0 { viewModel.cancelPlanLiveWorkout() } }
+        )) {
+            TrainingSessionScreen(viewModel: viewModel)
         }
         .alert("common.error_title", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
@@ -70,19 +92,43 @@ struct TodayWorkoutScreen: View {
     }
 
     private var addRecordButton: some View {
-        Button {
-            isPresentingDailyRecord = true
+        Menu {
+            Button {
+                isPresentingAddPlanExercise = true
+            } label: {
+                Label(String(localized: "today.add_menu.plan_exercise"), systemImage: "calendar.badge.plus")
+            }
+            .accessibilityIdentifier("today.addPlanExercise")
+
+            Button {
+                isPresentingDailyRecord = true
+            } label: {
+                Label(String(localized: "today.add_menu.daily_record"), systemImage: "square.and.pencil")
+            }
+            .accessibilityIdentifier("today.addDailyRecord")
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 21, weight: .bold))
                 .foregroundColor(.white)
                 .frame(width: 58, height: 58)
-                .background(LinearGradient.accentGradient)
+                .background(addRecordButtonBackground)
+        }
+        .accessibilityLabel("Add daily record")
+        .accessibilityIdentifier("today.addRecordMenu")
+    }
+
+    @ViewBuilder
+    private var addRecordButtonBackground: some View {
+        if #available(iOS 26, *) {
+            Circle()
+                .fill(Color.accentPurple.opacity(0.32))
+                .glassEffect(.regular.tint(Color.accentPurple.opacity(0.25)).interactive(), in: .rect(cornerRadius: 29))
+                .shadow(color: Color.accentPurple.opacity(0.24), radius: 18, x: 0, y: 10)
+        } else {
+            LinearGradient.accentGradient
                 .clipShape(Circle())
                 .shadow(color: Color.accentPurple.opacity(0.28), radius: 18, x: 0, y: 10)
         }
-        .accessibilityLabel("Add daily record")
-        .accessibilityIdentifier("today.addDailyRecord")
     }
 
     private var summaryCard: some View {
@@ -106,7 +152,7 @@ struct TodayWorkoutScreen: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.textMuted)
 
-                progressBar(progress: plan.totalSetsCount == 0 ? 0 : Double(plan.completedSetsCount) / Double(plan.totalSetsCount))
+                PlanProgressBar(progress: plan.totalSetsCount == 0 ? 0 : Double(plan.completedSetsCount) / Double(plan.totalSetsCount))
                 if !viewModel.runningRecords.isEmpty {
                     Text(
                         LocalizedPlanText.todayRunningSummary(
@@ -120,6 +166,8 @@ struct TodayWorkoutScreen: View {
                         .foregroundColor(.textSecondary)
                         .padding(.top, 2)
                 }
+
+                startPlanButton
             } else if viewModel.todayRecord != nil {
                 Text("today.summary.free_record_day.title")
                     .font(.system(size: 30, weight: .bold))
@@ -165,8 +213,27 @@ struct TodayWorkoutScreen: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xxl)
+        .glassPanel(cornerRadius: AppRadius.xxl)
+    }
+
+    @ViewBuilder
+    private var startPlanButton: some View {
+        if (viewModel.todayPlan?.totalSetsCount ?? 0) > 0 {
+            Button {
+                viewModel.startPlanLiveWorkout()
+            } label: {
+                Label("开始训练", systemImage: "play.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.white)
+            .glassActionBackground(cornerRadius: AppRadius.xl, tint: Color.accentPurple.opacity(0.42))
+            .disabled(viewModel.isSending || viewModel.activeLiveWorkout != nil)
+            .accessibilityIdentifier("today.startPlan")
+            .padding(.top, 8)
+        }
     }
 
     @ViewBuilder
@@ -350,8 +417,7 @@ private struct TodayPlannedExerciseCard: View {
             .padding(.bottom, 6)
         }
         .padding(8)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
+        .glassPanel(cornerRadius: AppRadius.xl)
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.xl)
                 .strokeBorder(Color.accentPurple.opacity(0.14), lineWidth: 1)
@@ -500,8 +566,10 @@ private struct TodayPlannedSetRow: View {
     }
 }
 
-private extension TodayWorkoutScreen {
-    func progressBar(progress: Double) -> some View {
+struct PlanProgressBar: View {
+    let progress: Double
+
+    var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
@@ -518,6 +586,47 @@ private extension TodayWorkoutScreen {
             }
         }
         .frame(height: 8)
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func glassPanel(cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26, *) {
+            self
+                .background(Color.appSurface.opacity(0.18))
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    func glassChip(cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26, *) {
+            self
+                .background(Color.workoutPanel.opacity(0.18))
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self
+                .background(Color.workoutPanel, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    func glassActionBackground(cornerRadius: CGFloat, tint: Color) -> some View {
+        if #available(iOS 26, *) {
+            self
+                .background(tint)
+                .glassEffect(.regular.tint(tint).interactive(), in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(tint)
+                )
+        }
     }
 }
 

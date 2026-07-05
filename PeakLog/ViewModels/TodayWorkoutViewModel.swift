@@ -10,11 +10,65 @@ enum TodayAIOverlayPhase: Equatable {
     case failed
 }
 
+struct PlanLiveWorkoutSet: Identifiable, Equatable {
+    let id: String
+    let setIndex: Int
+    let targetWeight: Double?
+    let targetWeightUnit: WeightUnit
+    let targetReps: Int
+    let isAlreadyCompleted: Bool
+}
+
+struct PlanLiveWorkoutExercise: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let loadType: ExerciseLoadType
+    let sets: [PlanLiveWorkoutSet]
+}
+
+struct PlanLiveWorkoutSession: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let focus: String?
+    var exercises: [PlanLiveWorkoutExercise]
+    var currentExerciseIndex: Int
+    var currentSetIndex: Int
+    var completedSetIds: Set<String>
+
+    var currentExercise: PlanLiveWorkoutExercise? {
+        guard exercises.indices.contains(currentExerciseIndex) else { return nil }
+        return exercises[currentExerciseIndex]
+    }
+
+    var currentSet: PlanLiveWorkoutSet? {
+        guard let currentExercise, currentExercise.sets.indices.contains(currentSetIndex) else { return nil }
+        return currentExercise.sets[currentSetIndex]
+    }
+
+    var completedSetsCount: Int {
+        completedSetIds.count
+    }
+
+    var totalSetsCount: Int {
+        exercises.reduce(0) { $0 + $1.sets.count }
+    }
+
+    var progress: Double {
+        guard totalSetsCount > 0 else { return 0 }
+        return Double(completedSetsCount) / Double(totalSetsCount)
+    }
+
+    var isComplete: Bool {
+        completedSetsCount >= totalSetsCount
+    }
+}
+
 @MainActor
 final class TodayWorkoutViewModel: ObservableObject {
     @Published var runningRecords: [RunningWorkoutRecord] = []
     @Published var todayPlan: TrainingPlanDay?
     @Published var todayRecord: WorkoutRecord?
+    @Published var activeLiveWorkout: PlanLiveWorkoutSession?
     @Published var quickActions: [AIWorkoutQuickAction] = []
     @Published var inputText = ""
     @Published var isLoading = false
@@ -33,23 +87,27 @@ final class TodayWorkoutViewModel: ObservableObject {
     private let chatService: ChatServiceProtocol
     private let conversationService: ConversationServiceProtocol
     private let speechRecognitionService: SpeechRecognitionServicing
+    private let liveActivityManager: PlanLiveActivityManaging
 
     private var inputTextBeforeVoiceRecording = ""
     private var shouldRefreshAfterStreamingCompletion = false
     private var persistenceFallbackTask: Task<Void, Never>?
+    private var liveActivityObservationTask: Task<Void, Never>?
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
         workoutService: WorkoutServiceProtocol,
         chatService: ChatServiceProtocol,
         conversationService: ConversationServiceProtocol,
-        speechRecognitionService: SpeechRecognitionServicing
+        speechRecognitionService: SpeechRecognitionServicing,
+        liveActivityManager: PlanLiveActivityManaging = NoOpPlanLiveActivityManager()
     ) {
         self.trainingPlanService = trainingPlanService
         self.workoutService = workoutService
         self.chatService = chatService
         self.conversationService = conversationService
         self.speechRecognitionService = speechRecognitionService
+        self.liveActivityManager = liveActivityManager
     }
 
     #if !TESTING
@@ -59,7 +117,8 @@ final class TodayWorkoutViewModel: ObservableObject {
             workoutService: AppServices.workoutService,
             chatService: AppServices.chatService,
             conversationService: AppServices.conversationService,
-            speechRecognitionService: SpeechRecognitionService()
+            speechRecognitionService: SpeechRecognitionService(),
+            liveActivityManager: PlanLiveActivityManagerFactory.make()
         )
     }
     #endif
@@ -113,7 +172,7 @@ final class TodayWorkoutViewModel: ObservableObject {
         } catch {
             persistenceFallbackTask?.cancel()
             persistenceFallbackTask = nil
-            errorMessage = error.localizedDescription
+            errorMessage = userFacingErrorMessage(from: error)
             inputText = text
             markOverlayFailed()
         }
@@ -124,6 +183,142 @@ final class TodayWorkoutViewModel: ObservableObject {
 
     func dismissOverlay() {
         isOverlayVisible = false
+    }
+
+    func startPlanLiveWorkout() {
+        guard let plan = todayPlan else { return }
+        let exercises = plan.exercises
+            .filter { !$0.sets.isEmpty }
+            .map { exercise in
+                PlanLiveWorkoutExercise(
+                    id: exercise.id,
+                    name: exercise.exerciseName,
+                    loadType: exercise.exerciseLoadType,
+                    sets: exercise.sets.map { set in
+                        PlanLiveWorkoutSet(
+                            id: set.id,
+                            setIndex: set.setIndex,
+                            targetWeight: set.targetWeight,
+                            targetWeightUnit: set.targetWeightUnit,
+                            targetReps: set.targetReps,
+                            isAlreadyCompleted: set.isCompleted
+                        )
+                    }
+                )
+            }
+
+        guard !exercises.isEmpty else { return }
+        var session = PlanLiveWorkoutSession(
+            id: UUID().uuidString,
+            title: plan.title,
+            focus: plan.focus,
+            exercises: exercises,
+            currentExerciseIndex: 0,
+            currentSetIndex: 0,
+            completedSetIds: Set(exercises.flatMap(\.sets).filter(\.isAlreadyCompleted).map(\.id))
+        )
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.start(session: session) }
+        observeLiveActivityCompletions(sessionId: session.id)
+    }
+
+    private func observeLiveActivityCompletions(sessionId: String) {
+        liveActivityObservationTask?.cancel()
+        liveActivityObservationTask = Task { [weak self] in
+            guard let self else { return }
+            for await completedSetIds in self.liveActivityManager.completedSetIdUpdates(sessionId: sessionId) {
+                self.mergeLiveActivityCompletions(completedSetIds, sessionId: sessionId)
+            }
+        }
+    }
+
+    private func mergeLiveActivityCompletions(_ completedSetIds: Set<String>, sessionId: String) {
+        guard var session = activeLiveWorkout, session.id == sessionId else { return }
+        guard !completedSetIds.isSubset(of: session.completedSetIds) else { return }
+
+        session.completedSetIds.formUnion(completedSetIds)
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+    }
+
+    func completeCurrentLiveSet() {
+        guard var session = activeLiveWorkout, let set = session.currentSet else { return }
+        session.completedSetIds.insert(set.id)
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.update(session: session) }
+    }
+
+    func toggleLiveSet(setId: String) {
+        guard var session = activeLiveWorkout else { return }
+        if session.completedSetIds.contains(setId) {
+            session.completedSetIds.remove(setId)
+        } else {
+            session.completedSetIds.insert(setId)
+        }
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.update(session: session) }
+    }
+
+    func cancelPlanLiveWorkout() {
+        liveActivityObservationTask?.cancel()
+        liveActivityObservationTask = nil
+        activeLiveWorkout = nil
+        Task { await liveActivityManager.end() }
+    }
+
+    func syncLiveActivityCompletions() {
+        guard var session = activeLiveWorkout else { return }
+        let completedSetIds = liveActivityManager.consumeCompletedSetIds(sessionId: session.id)
+        guard !completedSetIds.isEmpty else { return }
+
+        session.completedSetIds.formUnion(completedSetIds)
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+    }
+
+    func confirmPlanLiveWorkout() async {
+        syncLiveActivityCompletions()
+        guard let session = activeLiveWorkout else { return }
+        let pendingSets = session.exercises
+            .flatMap { exercise in
+                exercise.sets.map { (exercise, $0) }
+            }
+            .filter {
+                session.completedSetIds.contains($0.1.id)
+                    && !$0.1.isAlreadyCompleted
+                    && !isPlanSetCompletedInTodayPlan($0.1.id)
+            }
+
+        do {
+            for (_, set) in pendingSets {
+                let updated = try await trainingPlanService.completePlannedSet(
+                    planSetId: set.id,
+                    actualWeight: set.targetWeight,
+                    actualWeightUnit: set.targetWeightUnit,
+                    actualReps: set.targetReps
+                )
+                updatePlanSetInPlace(planSetId: set.id) { current in
+                    current.completedAt = updated.completedAt
+                    current.linkedExerciseSetId = updated.linkedExerciseSetId
+                }
+            }
+
+            todayRecord = optimisticWorkoutRecord(from: session)
+            liveActivityObservationTask?.cancel()
+            liveActivityObservationTask = nil
+            activeLiveWorkout = nil
+            await liveActivityManager.end()
+            await refreshTodayRecordOnly()
+            if todayRecord == nil {
+                todayRecord = optimisticWorkoutRecord(from: session)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            await refresh()
+        }
     }
 
     func completePlannedSet(planSetId: String, rpe: Double? = nil) async {
@@ -146,6 +341,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             if let linkedSetId = updated.linkedExerciseSetId, let rpe {
                 _ = try await workoutService.updateSetRPE(setId: linkedSetId, rpe: rpe)
             }
+            markLiveSetCompleted(planSetId: planSetId)
             await refreshTodayRecordOnly()
         } catch {
             errorMessage = error.localizedDescription
@@ -205,6 +401,29 @@ final class TodayWorkoutViewModel: ObservableObject {
                 targetReps: template.targetReps
             )
             appendPlannedSet(inserted, to: planExerciseId)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func addPlanExercise(
+        name: String,
+        loadType: ExerciseLoadType,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int,
+        setsCount: Int
+    ) async {
+        do {
+            let updatedDay = try await trainingPlanService.addPlannedExercise(
+                exerciseName: name,
+                exerciseLoadType: loadType,
+                targetWeight: targetWeight,
+                targetWeightUnit: targetWeightUnit,
+                targetReps: targetReps,
+                setsCount: setsCount
+            )
+            todayPlan = updatedDay
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -379,6 +598,59 @@ final class TodayWorkoutViewModel: ObservableObject {
         return WorkoutRecord(id: sessions.first?.id ?? "today-record", exercises: exercises)
     }
 
+    private func moveLiveWorkoutCursor(toNextIncompleteSetIn session: inout PlanLiveWorkoutSession) {
+        for exerciseIndex in session.exercises.indices {
+            for setIndex in session.exercises[exerciseIndex].sets.indices {
+                let setId = session.exercises[exerciseIndex].sets[setIndex].id
+                guard !session.completedSetIds.contains(setId) else { continue }
+                session.currentExerciseIndex = exerciseIndex
+                session.currentSetIndex = setIndex
+                return
+            }
+        }
+
+        session.currentExerciseIndex = max(session.exercises.count - 1, 0)
+        session.currentSetIndex = max(session.exercises.last?.sets.count ?? 1, 1) - 1
+    }
+
+    private func markLiveSetCompleted(planSetId: String) {
+        guard var session = activeLiveWorkout else { return }
+        session.completedSetIds.insert(planSetId)
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.update(session: session) }
+    }
+
+    private func isPlanSetCompletedInTodayPlan(_ planSetId: String) -> Bool {
+        todayPlan?.exercises
+            .flatMap(\.sets)
+            .first { $0.id == planSetId }?
+            .isCompleted == true
+    }
+
+    private func optimisticWorkoutRecord(from session: PlanLiveWorkoutSession) -> WorkoutRecord? {
+        let exercises = session.exercises.compactMap { exercise -> Exercise? in
+            let sets = exercise.sets
+                .filter { session.completedSetIds.contains($0.id) }
+                .enumerated()
+                .map { index, set in
+                    ExerciseSet(
+                        id: set.id,
+                        setIndex: index + 1,
+                        weight: set.targetWeight,
+                        weightUnit: set.targetWeightUnit,
+                        reps: set.targetReps,
+                        rpe: nil
+                    )
+                }
+            guard !sets.isEmpty else { return nil }
+            return Exercise(id: exercise.id, name: exercise.name, sets: sets)
+        }
+
+        guard !exercises.isEmpty else { return nil }
+        return WorkoutRecord(id: "live-\(session.id)", exercises: exercises)
+    }
+
     private func applyExerciseInsights(_ insights: [AIWorkoutExerciseInsight]) {
         guard var plan = todayPlan, !insights.isEmpty else { return }
         let insightsByName = Dictionary(uniqueKeysWithValues: insights.map {
@@ -448,7 +720,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             }
             schedulePersistenceFallback(refreshScope: .fullRefresh)
         case .error(let message):
-            errorMessage = message
+            errorMessage = userFacingErrorMessage(from: message)
             markOverlayFailed()
         case .done:
             if overlayPhase != .failed {
@@ -464,6 +736,20 @@ final class TodayWorkoutViewModel: ObservableObject {
         persistenceFallbackTask = nil
         overlayPhase = .failed
         isOverlayVisible = true
+    }
+
+    private func userFacingErrorMessage(from error: Error) -> String {
+        userFacingErrorMessage(from: error.localizedDescription)
+    }
+
+    private func userFacingErrorMessage(from message: String) -> String {
+        let lowercased = message.lowercased()
+        if lowercased.contains("foundationmodels")
+            || lowercased.contains("languagemodelsession")
+            || lowercased.contains("generationerror") {
+            return "计划生成失败。请稍后重试。"
+        }
+        return message
     }
 
     private func applyStreamingWorkoutPreview(_ block: WorkoutRecordBlock) {

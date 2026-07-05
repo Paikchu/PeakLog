@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		7A1E10042FC10000004159EF /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7A1E10032FC10000004159EF /* XCTest.framework */; };
+		9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -18,13 +19,45 @@
 			remoteGlobalIDString = 50F962222F6ADDB9004159EF;
 			remoteInfo = PeakLog;
 		};
+		9A10000D2FC20000004159EF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 50F9621B2F6ADDB9004159EF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9A1000072FC20000004159EF;
+			remoteInfo = PeakLogLiveActivityExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		9A10000B2FC20000004159EF /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		50F962232F6ADDB9004159EF /* PeakLog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PeakLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A1E10022FC10000004159EF /* PeakLogTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PeakLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A1E10032FC10000004159EF /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
+		9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PeakLogLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9A10000F2FC20000004159EF /* Exceptions for "PeakLogLiveActivityExtension" folder in "PeakLogLiveActivityExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 9A1000072FC20000004159EF /* PeakLogLiveActivityExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		50F962252F6ADDB9004159EF /* PeakLog */ = {
@@ -35,6 +68,19 @@
 		7A1E10052FC10000004159EF /* PeakLogTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PeakLogTests;
+			sourceTree = "<group>";
+		};
+		9A1000012FC20000004159EF /* PeakLogShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PeakLogShared;
+			sourceTree = "<group>";
+		};
+		9A1000022FC20000004159EF /* PeakLogLiveActivityExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9A10000F2FC20000004159EF /* Exceptions for "PeakLogLiveActivityExtension" folder in "PeakLogLiveActivityExtension" target */,
+			);
+			path = PeakLogLiveActivityExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -55,6 +101,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9A1000042FC20000004159EF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -70,6 +123,8 @@
 			isa = PBXGroup;
 			children = (
 				50F962252F6ADDB9004159EF /* PeakLog */,
+				9A1000012FC20000004159EF /* PeakLogShared */,
+				9A1000022FC20000004159EF /* PeakLogLiveActivityExtension */,
 				7A1E10052FC10000004159EF /* PeakLogTests */,
 				50F962242F6ADDB9004159EF /* Products */,
 				501804042F80CD2200132EFD /* Recovered References */,
@@ -80,6 +135,7 @@
 			isa = PBXGroup;
 			children = (
 				50F962232F6ADDB9004159EF /* PeakLog.app */,
+				9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */,
 				7A1E10022FC10000004159EF /* PeakLogTests.xctest */,
 			);
 			name = Products;
@@ -95,13 +151,16 @@
 				50F9621F2F6ADDB9004159EF /* Sources */,
 				50F962202F6ADDB9004159EF /* Frameworks */,
 				50F962212F6ADDB9004159EF /* Resources */,
+				9A10000B2FC20000004159EF /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				9A10000E2FC20000004159EF /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				50F962252F6ADDB9004159EF /* PeakLog */,
+				9A1000012FC20000004159EF /* PeakLogShared */,
 			);
 			name = PeakLog;
 			packageProductDependencies = (
@@ -131,6 +190,29 @@
 			productReference = 7A1E10022FC10000004159EF /* PeakLogTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		9A1000072FC20000004159EF /* PeakLogLiveActivityExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A1000082FC20000004159EF /* Build configuration list for PBXNativeTarget "PeakLogLiveActivityExtension" */;
+			buildPhases = (
+				9A1000052FC20000004159EF /* Sources */,
+				9A1000042FC20000004159EF /* Frameworks */,
+				9A1000062FC20000004159EF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				9A1000012FC20000004159EF /* PeakLogShared */,
+				9A1000022FC20000004159EF /* PeakLogLiveActivityExtension */,
+			);
+			name = PeakLogLiveActivityExtension;
+			packageProductDependencies = (
+			);
+			productName = PeakLogLiveActivityExtension;
+			productReference = 9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -147,6 +229,9 @@
 					7A1E10062FC10000004159EF = {
 						CreatedOnToolsVersion = 26.4;
 						TestTargetID = 50F962222F6ADDB9004159EF;
+					};
+					9A1000072FC20000004159EF = {
+						CreatedOnToolsVersion = 26.4;
 					};
 				};
 			};
@@ -167,6 +252,7 @@
 			projectRoot = "";
 			targets = (
 				50F962222F6ADDB9004159EF /* PeakLog */,
+				9A1000072FC20000004159EF /* PeakLogLiveActivityExtension */,
 				7A1E10062FC10000004159EF /* PeakLogTests */,
 			);
 		};
@@ -181,6 +267,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7A1E10092FC10000004159EF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9A1000062FC20000004159EF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -204,6 +297,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9A1000052FC20000004159EF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -211,6 +311,11 @@
 			isa = PBXTargetDependency;
 			target = 50F962222F6ADDB9004159EF /* PeakLog */;
 			targetProxy = 7A1E100A2FC10000004159EF /* PBXContainerItemProxy */;
+		};
+		9A10000E2FC20000004159EF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9A1000072FC20000004159EF /* PeakLogLiveActivityExtension */;
+			targetProxy = 9A10000D2FC20000004159EF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -343,6 +448,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PeakLog/PeakLog.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FB4M276Q93;
@@ -351,6 +457,7 @@
 				INFOPLIST_KEY_NSAppTransportSecurity.NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "PeakLog uses the microphone to capture your workout notes by voice.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "PeakLog uses speech recognition to turn your workout voice notes into text.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -378,6 +485,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PeakLog/PeakLog.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FB4M276Q93;
@@ -386,6 +494,7 @@
 				INFOPLIST_KEY_NSAppTransportSecurity.NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "PeakLog uses the microphone to capture your workout notes by voice.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "PeakLog uses speech recognition to turn your workout voice notes into text.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -459,6 +568,66 @@
 			};
 			name = Release;
 		};
+		9A1000092FC20000004159EF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PeakLogLiveActivityExtension/PeakLogLiveActivityExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FB4M276Q93;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PeakLogLiveActivityExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.max.PeakLog.LiveActivityExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9A10000A2FC20000004159EF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PeakLogLiveActivityExtension/PeakLogLiveActivityExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FB4M276Q93;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PeakLogLiveActivityExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.max.PeakLog.LiveActivityExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -485,6 +654,15 @@
 			buildConfigurations = (
 				7A1E100E2FC10000004159EF /* Debug */,
 				7A1E100F2FC10000004159EF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9A1000082FC20000004159EF /* Build configuration list for PBXNativeTarget "PeakLogLiveActivityExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A1000092FC20000004159EF /* Debug */,
+				9A10000A2FC20000004159EF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

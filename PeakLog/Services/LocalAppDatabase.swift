@@ -468,6 +468,87 @@ actor LocalAppDatabase {
         try persist()
     }
 
+    func addPlannedExercise(
+        exerciseName: String,
+        exerciseLoadType: ExerciseLoadType,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int,
+        setsCount: Int
+    ) throws -> TrainingPlanDay {
+        let trimmedName = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { throw LocalAppDatabaseError.invalidPlanExerciseName }
+
+        let todayDateString = Self.planDateString(from: Date())
+        let sets = (1...max(setsCount, 1)).map { index in
+            TrainingPlanSet(
+                id: UUID().uuidString,
+                setIndex: index,
+                targetWeight: targetWeight,
+                targetWeightUnit: targetWeightUnit,
+                targetReps: targetReps,
+                completedAt: nil,
+                linkedExerciseSetId: nil
+            )
+        }
+
+        if let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) {
+            var day = state.activePlan.days[dayIndex]
+            let wasEmpty = day.exercises.isEmpty
+            let exercise = TrainingPlanExercise(
+                id: UUID().uuidString,
+                orderIndex: day.exercises.count,
+                exerciseName: trimmedName,
+                exerciseLoadType: exerciseLoadType,
+                progressionMode: "manual",
+                notes: nil,
+                previousPerformanceSummary: nil,
+                aiSuggestion: nil,
+                sets: sets
+            )
+            day.exercises.append(exercise)
+            if wasEmpty {
+                day = TrainingPlanDay(
+                    id: day.id,
+                    planDate: day.planDate,
+                    dayIndex: day.dayIndex,
+                    title: String(localized: "today.plan.manual_day_title"),
+                    focus: day.focus,
+                    status: "planned",
+                    exercises: day.exercises
+                )
+            }
+            state.activePlan.days[dayIndex] = day
+            try persist()
+            return day
+        }
+
+        let exercise = TrainingPlanExercise(
+            id: UUID().uuidString,
+            orderIndex: 0,
+            exerciseName: trimmedName,
+            exerciseLoadType: exerciseLoadType,
+            progressionMode: "manual",
+            notes: nil,
+            previousPerformanceSummary: nil,
+            aiSuggestion: nil,
+            sets: sets
+        )
+        let nextDayIndex = (state.activePlan.days.map(\.dayIndex).max() ?? 0) + 1
+        let day = TrainingPlanDay(
+            id: UUID().uuidString,
+            planDate: todayDateString,
+            dayIndex: nextDayIndex,
+            title: String(localized: "today.plan.manual_day_title"),
+            focus: nil,
+            status: "planned",
+            exercises: [exercise]
+        )
+        state.activePlan.days.append(day)
+        try persist()
+        return day
+    }
+
     func applyCoachActions(_ actions: LocalCoachActionBundle, conversationId: String, assistantMessageId: String) throws -> LocalCoachApplicationResult {
         let previousPRs = Dictionary(uniqueKeysWithValues: state.profile.exercisePRs.map { ($0.normalizedName, $0) })
         var appliedStrengthSession: WorkoutSession?
@@ -1138,6 +1219,7 @@ enum LocalAppDatabaseError: LocalizedError {
     case setNotFound
     case planExerciseNotFound
     case planSetNotFound
+    case invalidPlanExerciseName
 
     var errorDescription: String? {
         switch self {
@@ -1151,6 +1233,8 @@ enum LocalAppDatabaseError: LocalizedError {
             return "Planned exercise not found."
         case .planSetNotFound:
             return "Planned set not found."
+        case .invalidPlanExerciseName:
+            return "Exercise name cannot be empty."
         }
     }
 }
