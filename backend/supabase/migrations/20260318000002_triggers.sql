@@ -14,12 +14,18 @@ SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_conversation_id uuid;
+  v_display_name text;
 BEGIN
+  v_display_name := NULLIF(btrim(COALESCE(
+    NEW.raw_user_meta_data->>'full_name',
+    concat_ws(' ', NEW.raw_user_meta_data->>'given_name', NEW.raw_user_meta_data->>'family_name')
+  )), '');
+
   -- Create profile
   INSERT INTO public.profiles (id, display_name, timezone)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email, 'PeakLog User'),
+    COALESCE(v_display_name, 'PeakLog User'),
     'UTC'
   );
 

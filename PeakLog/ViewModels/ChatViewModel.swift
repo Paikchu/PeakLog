@@ -52,9 +52,9 @@ final class ChatViewModel: ObservableObject {
     convenience init(conversationId: String) {
         self.init(
             conversationId: conversationId,
-            chatService: SupabaseChatService(),
-            workoutService: SupabaseWorkoutService(),
-            trainingPlanService: SupabaseTrainingPlanService(),
+            chatService: AppServices.chatService,
+            workoutService: AppServices.workoutService,
+            trainingPlanService: AppServices.trainingPlanService,
             speechRecognitionService: SpeechRecognitionService()
         )
     }
@@ -248,7 +248,7 @@ final class ChatViewModel: ObservableObject {
         errorMessage = error.localizedDescription
     }
 
-    // MARK: - Exercise Editing (unchanged API, now hits Supabase directly)
+    // MARK: - Exercise Editing
 
     func updateExerciseName(messageId: String, workoutRecordId: String, exerciseId: String, newName: String) async {
         updateExerciseInPlace(messageId: messageId, exerciseId: exerciseId) { exercise in

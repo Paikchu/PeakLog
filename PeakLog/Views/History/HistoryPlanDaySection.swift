@@ -2,7 +2,6 @@ import SwiftUI
 
 struct HistoryPlanDaySection: View {
     let day: TrainingPlanDay
-    let onCompleteSet: (TrainingPlanSet) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,22 +26,9 @@ struct HistoryPlanDaySection: View {
                         .foregroundColor(.textPrimary)
 
                     ForEach(exercise.sets) { set in
-                        HStack {
-                            Text(setDisplayText(set, loadType: exercise.exerciseLoadType))
-                                .font(.system(size: 13))
-                                .foregroundColor(.textSecondary)
-
-                            Spacer()
-
-                            Button {
-                                onCompleteSet(set)
-                            } label: {
-                                Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(set.isCompleted ? .green : .textMuted)
-                            }
-                            .disabled(set.isCompleted)
-                        }
+                        Text(setDisplayText(set, loadType: exercise.exerciseLoadType))
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
                     }
                 }
                 .padding(.vertical, 4)

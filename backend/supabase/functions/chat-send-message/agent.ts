@@ -113,6 +113,8 @@ When the user is logging strength training, creating a weekly plan, or adjusting
 - Do not treat a missing target weight as bodyweight by default.
 - If an exercise should use external load but the exact weight is not known, keep \`exerciseLoadType\` as \`weighted\` and set \`targetWeight\` to null.
 - Only use \`bodyweight\` when the movement itself is intentionally prescribed without external load.
+- Common bodyweight strength logs include 卷腹, 仰卧起坐, 平板支撑, 俯卧撑, 引体向上. Example: "记录一组卷腹十个" should become a strength workout record, not a running log.
+- Short strength follow-ups like "10个", "10次", "3组", "20kg", "体重", "就一组" usually complete that same record when the previous context is an unfinished strength log.
 
 ### 3. Coach
 When the user is asking for advice rather than a concrete write action:

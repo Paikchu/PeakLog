@@ -327,8 +327,7 @@ struct TypingBubbleView: View {
 }
 
 #Preview {
-    // Preview with mock conversation ID — uses MockChatService fallback
-    // In production this comes from authState.defaultConversationId
+    // Preview with a local conversation ID.
     ChatScreen(conversationId: "preview-conversation-id")
         .preferredColorScheme(.dark)
 }

@@ -24,123 +24,19 @@ protocol TrainingPlanServiceProtocol {
     func deletePlannedSet(planSetId: String) async throws
 }
 
-final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
-    func fetchActiveWeeklyPlan() async throws -> TrainingPlan? { nil }
-    func fetchTodayPlan() async throws -> TrainingPlanDay? { nil }
-    func completePlannedSet(
-        planSetId: String,
-        actualWeight: Double?,
-        actualWeightUnit: WeightUnit,
-        actualReps: Int
-    ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
-            id: planSetId,
-            setIndex: 1,
-            targetWeight: actualWeight,
-            targetWeightUnit: actualWeightUnit,
-            targetReps: actualReps,
-            completedAt: Date(),
-            linkedExerciseSetId: nil
-        )
-    }
+final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
+    private let database: LocalAppDatabase
 
-    func updatePlannedSet(
-        planSetId: String,
-        targetWeight: Double?,
-        targetWeightUnit: WeightUnit,
-        targetReps: Int
-    ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
-            id: planSetId,
-            setIndex: 1,
-            targetWeight: targetWeight,
-            targetWeightUnit: targetWeightUnit,
-            targetReps: targetReps,
-            completedAt: nil,
-            linkedExerciseSetId: nil
-        )
-    }
-
-    func addPlannedSet(
-        planExerciseId: String,
-        targetWeight: Double?,
-        targetWeightUnit: WeightUnit,
-        targetReps: Int
-    ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
-            id: "\(planExerciseId)-new-set",
-            setIndex: 1,
-            targetWeight: targetWeight,
-            targetWeightUnit: targetWeightUnit,
-            targetReps: targetReps,
-            completedAt: nil,
-            linkedExerciseSetId: nil
-        )
-    }
-
-    func deletePlannedSet(planSetId: String) async throws {}
-}
-
-final class MockTrainingPlanService: TrainingPlanServiceProtocol {
-    private let samplePlan: TrainingPlan
-
-    init() {
-        samplePlan = TrainingPlan(
-            id: "plan-1",
-            weekStartDate: "2026-03-23",
-            goalSummary: "Build muscle with extra focus on upper body pressing strength.",
-            coachSummary: "4 training days this week. Push today, pull tomorrow.",
-            days: [
-                TrainingPlanDay(
-                    id: "day-1",
-                    planDate: "2026-03-24",
-                    dayIndex: 1,
-                    title: "Push Strength",
-                    focus: "Chest, shoulders, triceps",
-                    status: "planned",
-                    exercises: [
-                        TrainingPlanExercise(
-                            id: "exercise-1",
-                            orderIndex: 0,
-                            exerciseName: "Bench Press",
-                            exerciseLoadType: .weighted,
-                            progressionMode: "weight_first",
-                            notes: "Complete all sets before increasing load next week.",
-                            previousPerformanceSummary: nil,
-                            aiSuggestion: nil,
-                            sets: [
-                                TrainingPlanSet(
-                                    id: "set-1",
-                                    setIndex: 1,
-                                    targetWeight: 40,
-                                    targetWeightUnit: .kg,
-                                    targetReps: 8,
-                                    completedAt: nil,
-                                    linkedExerciseSetId: nil
-                                ),
-                                TrainingPlanSet(
-                                    id: "set-2",
-                                    setIndex: 2,
-                                    targetWeight: 40,
-                                    targetWeightUnit: .kg,
-                                    targetReps: 8,
-                                    completedAt: nil,
-                                    linkedExerciseSetId: nil
-                                ),
-                            ]
-                        ),
-                    ]
-                )
-            ]
-        )
+    init(database: LocalAppDatabase) {
+        self.database = database
     }
 
     func fetchActiveWeeklyPlan() async throws -> TrainingPlan? {
-        samplePlan
+        await database.activePlan()
     }
 
     func fetchTodayPlan() async throws -> TrainingPlanDay? {
-        samplePlan.days.first
+        await database.todayPlan()
     }
 
     func completePlannedSet(
@@ -149,14 +45,11 @@ final class MockTrainingPlanService: TrainingPlanServiceProtocol {
         actualWeightUnit: WeightUnit,
         actualReps: Int
     ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
-            id: planSetId,
-            setIndex: 1,
-            targetWeight: actualWeight,
-            targetWeightUnit: actualWeightUnit,
-            targetReps: actualReps,
-            completedAt: Date(),
-            linkedExerciseSetId: "exercise-set-\(planSetId)"
+        try await database.completePlannedSet(
+            planSetId: planSetId,
+            actualWeight: actualWeight,
+            actualWeightUnit: actualWeightUnit,
+            actualReps: actualReps
         )
     }
 
@@ -166,14 +59,11 @@ final class MockTrainingPlanService: TrainingPlanServiceProtocol {
         targetWeightUnit: WeightUnit,
         targetReps: Int
     ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
-            id: planSetId,
-            setIndex: 1,
+        try await database.updatePlannedSet(
+            planSetId: planSetId,
             targetWeight: targetWeight,
             targetWeightUnit: targetWeightUnit,
-            targetReps: targetReps,
-            completedAt: nil,
-            linkedExerciseSetId: nil
+            targetReps: targetReps
         )
     }
 
@@ -183,16 +73,75 @@ final class MockTrainingPlanService: TrainingPlanServiceProtocol {
         targetWeightUnit: WeightUnit,
         targetReps: Int
     ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
-            id: UUID().uuidString,
-            setIndex: 99,
+        try await database.addPlannedSet(
+            planExerciseId: planExerciseId,
             targetWeight: targetWeight,
             targetWeightUnit: targetWeightUnit,
-            targetReps: targetReps,
-            completedAt: nil,
-            linkedExerciseSetId: nil
+            targetReps: targetReps
         )
     }
 
-    func deletePlannedSet(planSetId: String) async throws {}
+    func deletePlannedSet(planSetId: String) async throws {
+        try await database.deletePlannedSet(planSetId: planSetId)
+    }
 }
+
+final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
+    private let local = LocalTrainingPlanService(database: .shared)
+
+    func fetchActiveWeeklyPlan() async throws -> TrainingPlan? {
+        try await local.fetchActiveWeeklyPlan()
+    }
+
+    func fetchTodayPlan() async throws -> TrainingPlanDay? {
+        try await local.fetchTodayPlan()
+    }
+
+    func completePlannedSet(
+        planSetId: String,
+        actualWeight: Double?,
+        actualWeightUnit: WeightUnit,
+        actualReps: Int
+    ) async throws -> TrainingPlanSet {
+        try await local.completePlannedSet(
+            planSetId: planSetId,
+            actualWeight: actualWeight,
+            actualWeightUnit: actualWeightUnit,
+            actualReps: actualReps
+        )
+    }
+
+    func updatePlannedSet(
+        planSetId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        try await local.updatePlannedSet(
+            planSetId: planSetId,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps
+        )
+    }
+
+    func addPlannedSet(
+        planExerciseId: String,
+        targetWeight: Double?,
+        targetWeightUnit: WeightUnit,
+        targetReps: Int
+    ) async throws -> TrainingPlanSet {
+        try await local.addPlannedSet(
+            planExerciseId: planExerciseId,
+            targetWeight: targetWeight,
+            targetWeightUnit: targetWeightUnit,
+            targetReps: targetReps
+        )
+    }
+
+    func deletePlannedSet(planSetId: String) async throws {
+        try await local.deletePlannedSet(planSetId: planSetId)
+    }
+}
+
+typealias MockTrainingPlanService = EmptyTrainingPlanService

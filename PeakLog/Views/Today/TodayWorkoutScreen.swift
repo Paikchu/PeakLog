@@ -5,24 +5,15 @@ import UIKit
 
 struct TodayWorkoutScreen: View {
     @StateObject private var viewModel: TodayWorkoutViewModel
-    @State private var isPresentingManualEntry = false
-    private let chatScrollKeyboardDismissBehavior = ChatScrollKeyboardDismissBehavior()
+    @State private var isPresentingDailyRecord = false
     @Environment(\.locale) private var locale
 
-    var onShowHistory: (() -> Void)?
-    var onShowProfile: (() -> Void)?
-
-    init(
-        onShowHistory: (() -> Void)? = nil,
-        onShowProfile: (() -> Void)? = nil
-    ) {
+    init() {
         _viewModel = StateObject(wrappedValue: TodayWorkoutViewModel())
-        self.onShowHistory = onShowHistory
-        self.onShowProfile = onShowProfile
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
                 header
                 ScrollView {
@@ -31,51 +22,27 @@ struct TodayWorkoutScreen: View {
                             ProgressView().padding(.top, 40)
                         } else {
                             summaryCard
-                            quickActionsSection
                             plannedSection
                             recordedSection
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 132)
                 }
                 .dismissKeyboardOnTap()
-                .chatScrollDismissesKeyboard(chatScrollKeyboardDismissBehavior)
-
-                ChatInputBar(
-                    text: $viewModel.inputText,
-                    isSending: viewModel.isSending,
-                    voiceState: viewModel.voiceInputState
-                ) {
-                    Task { await viewModel.sendAction() }
-                } onVoiceToggle: {
-                    Task { await viewModel.toggleVoiceInput() }
-                }
             }
 
-            if viewModel.isOverlayVisible {
-                TodayAIFloatingOverlay(
-                    phase: viewModel.overlayPhase,
-                    reply: viewModel.streamingReply,
-                    blocks: viewModel.overlayContentBlocks,
-                    didPersistPlan: viewModel.didPersistPlan,
-                    onClose: viewModel.dismissOverlay
-                )
-                .padding(.horizontal, 16)
-                .padding(.top, 22)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(10)
-            }
+            addRecordButton
+                .padding(.trailing, 20)
+                .padding(.bottom, 22)
         }
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
         .task { await viewModel.onAppear() }
-        .sheet(isPresented: $isPresentingManualEntry) {
-            ManualRunningEntrySheet { durationMinutes, distanceKm in
-                Task {
-                    await viewModel.addRunningRecord(durationMinutes: durationMinutes, distanceKm: distanceKm)
-                }
+        .sheet(isPresented: $isPresentingDailyRecord) {
+            DailyRecordSheet { draft in
+                await viewModel.addDailyRecord(draft)
             }
         }
         .alert("common.error_title", isPresented: Binding(
@@ -90,42 +57,32 @@ struct TodayWorkoutScreen: View {
 
     private var header: some View {
         HStack {
-            Button { onShowHistory?() } label: {
-                Image(systemName: "calendar")
-                    .font(.system(size: 20))
-                    .foregroundColor(.textPrimary)
-                    .frame(width: 38, height: 38)
-            }
-
-            Spacer()
-
             Text("today.header.title")
                 .font(.headerTitle)
                 .foregroundColor(.textPrimary)
                 .tracking(-0.4)
 
             Spacer()
-
-            HStack(spacing: 6) {
-                Button {
-                    isPresentingManualEntry = true
-                } label: {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(.textPrimary)
-                        .frame(width: 38, height: 38)
-                }
-
-                Button { onShowProfile?() } label: {
-                    Image(systemName: "person.circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(.textPrimary)
-                        .frame(width: 38, height: 38)
-                }
-            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
         .padding(.bottom, 8)
+    }
+
+    private var addRecordButton: some View {
+        Button {
+            isPresentingDailyRecord = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 21, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 58, height: 58)
+                .background(LinearGradient.accentGradient)
+                .clipShape(Circle())
+                .shadow(color: Color.accentPurple.opacity(0.28), radius: 18, x: 0, y: 10)
+        }
+        .accessibilityLabel("Add daily record")
+        .accessibilityIdentifier("today.addDailyRecord")
     }
 
     private var summaryCard: some View {
@@ -210,35 +167,6 @@ struct TodayWorkoutScreen: View {
         .padding(20)
         .background(Color.appSurface)
         .cornerRadius(AppRadius.xxl)
-    }
-
-    @ViewBuilder
-    private var quickActionsSection: some View {
-        if !viewModel.quickActions.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader(
-                    title: String(localized: "today.section.quick_actions.title"),
-                    subtitle: String(localized: "today.section.quick_actions.subtitle")
-                )
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(viewModel.quickActions) { action in
-                            Button {
-                                viewModel.inputText = action.prompt
-                            } label: {
-                                Text(action.title)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.textPrimary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .background(Color.workoutPanel)
-                                    .clipShape(Capsule())
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -346,247 +274,6 @@ struct TodayWorkoutScreen: View {
 private extension Double {
     var cleanDistance: String {
         truncatingRemainder(dividingBy: 1) == 0 ? String(Int(self)) : String(format: "%.1f", self)
-    }
-}
-
-private struct ManualRunningEntrySheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var durationText = ""
-    @State private var distanceText = ""
-
-    let onSave: (Int, Double) -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("today.manual_running.duration_section") {
-                    TextField(String(localized: "today.manual_running.duration_placeholder"), text: $durationText)
-                        .keyboardType(.numberPad)
-                }
-
-                Section("today.manual_running.distance_section") {
-                    TextField(String(localized: "today.manual_running.distance_placeholder"), text: $distanceText)
-                        .keyboardType(.decimalPad)
-                }
-            }
-            .navigationTitle("today.manual_running.title")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("today.manual_running.cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("today.manual_running.save") {
-                        guard let duration = Int(durationText), let distance = Double(distanceText) else { return }
-                        onSave(duration, distance)
-                        dismiss()
-                    }
-                    .disabled(Int(durationText) == nil || Double(distanceText) == nil)
-                }
-            }
-        }
-    }
-}
-
-private struct TodayAIFloatingOverlay: View {
-    let phase: TodayAIOverlayPhase
-    let reply: String
-    let blocks: [ContentBlock]
-    let didPersistPlan: Bool
-    let onClose: () -> Void
-    @Environment(\.locale) private var locale
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                Circle()
-                    .fill(statusColor.opacity(0.9))
-                    .frame(width: 10, height: 10)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(statusTitle)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-                    Text(statusSubtitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.78))
-                }
-
-                Spacer()
-
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.white.opacity(0.12)))
-                }
-            }
-
-            if !reply.isEmpty {
-                Text(reply)
-                    .font(.system(size: 15))
-                    .foregroundColor(.white.opacity(0.95))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.xl)
-                            .fill(Color.white.opacity(0.12))
-                    )
-            }
-
-            if !blocks.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                        switch block {
-                        case .weeklyPlan(let plan):
-                            overlayWeeklyPlanCard(plan)
-                        case .todayPlan(let plan):
-                            overlayTodayPlanCard(plan)
-                        case .planAdjustmentSummary(let summary):
-                            Text(summary.summaryText)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.white.opacity(0.86))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(12)
-                        default:
-                            EmptyView()
-                        }
-                    }
-                }
-            }
-
-            if didPersistPlan {
-                Text("today.overlay.plan_persisted")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.82))
-            }
-        }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.15, green: 0.34, blue: 0.78).opacity(0.88),
-                            Color(red: 0.09, green: 0.18, blue: 0.44).opacity(0.84),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 12)
-    }
-
-    private var statusColor: Color {
-        switch phase {
-        case .idle:
-            return .white
-        case .processing:
-            return Color(red: 0.50, green: 0.84, blue: 1.0)
-        case .applying:
-            return Color(red: 0.84, green: 0.92, blue: 1.0)
-        case .completed:
-            return Color.green.opacity(0.9)
-        case .failed:
-            return Color.red.opacity(0.9)
-        }
-    }
-
-    private var statusTitle: String {
-        let isPlanFlow = didPersistPlan || !blocks.isEmpty
-        switch phase {
-        case .idle:
-            return String(localized: "today.overlay.status.idle.title")
-        case .processing:
-            return String(localized: "today.overlay.status.processing.title")
-        case .applying:
-            return String(localized: isPlanFlow ? "today.overlay.status.applying_plan.title" : "today.overlay.status.applying_record.title")
-        case .completed:
-            return String(localized: isPlanFlow ? "today.overlay.status.completed_plan.title" : "today.overlay.status.completed_record.title")
-        case .failed:
-            return String(localized: "today.overlay.status.failed.title")
-        }
-    }
-
-    private var statusSubtitle: String {
-        let isPlanFlow = didPersistPlan || !blocks.isEmpty
-        switch phase {
-        case .idle:
-            return String(localized: "today.overlay.status.idle.subtitle")
-        case .processing:
-            return String(localized: "today.overlay.status.processing.subtitle")
-        case .applying:
-            return String(localized: isPlanFlow ? "today.overlay.status.applying_plan.subtitle" : "today.overlay.status.applying_record.subtitle")
-        case .completed:
-            return String(localized: isPlanFlow ? "today.overlay.status.completed_plan.subtitle" : "today.overlay.status.completed_record.subtitle")
-        case .failed:
-            return String(localized: "today.overlay.status.failed.subtitle")
-        }
-    }
-
-    private func overlayWeeklyPlanCard(_ plan: WeeklyPlanBlock) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("today.overlay.weekly_plan.title")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white.opacity(0.88))
-            Text(LocalizedPlanText.weekOf(plan.weekStartDate, locale: locale))
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-
-            ForEach(plan.days.prefix(7)) { day in
-                HStack(spacing: 10) {
-                    Text(LocalizedPlanText.weekdayLabel(dayIndex: day.dayIndex, locale: locale))
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white.opacity(0.72))
-                        .frame(width: 28, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(day.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.95))
-                        if let focus = day.focus, !focus.isEmpty {
-                            Text(focus)
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.72))
-                        }
-                    }
-                    Spacer()
-                }
-            }
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.10))
-        .cornerRadius(18)
-    }
-
-    private func overlayTodayPlanCard(_ plan: TodayPlanBlock) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("today.overlay.today_changes.title")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white.opacity(0.88))
-            Text(plan.day.title)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
-            if let focus = plan.day.focus, !focus.isEmpty {
-                Text(focus)
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.76))
-            }
-            if !plan.day.exercises.isEmpty {
-                Text(plan.day.exercises.map(\.exerciseName).joined(separator: " · "))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.82))
-            }
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.10))
-        .cornerRadius(18)
     }
 }
 

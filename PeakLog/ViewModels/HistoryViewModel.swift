@@ -22,11 +22,18 @@ final class HistoryViewModel: ObservableObject {
     private let trainingPlanService: TrainingPlanServiceProtocol
 
     init(
-        workoutService: WorkoutServiceProtocol = SupabaseWorkoutService(),
-        trainingPlanService: TrainingPlanServiceProtocol = SupabaseTrainingPlanService()
+        workoutService: WorkoutServiceProtocol,
+        trainingPlanService: TrainingPlanServiceProtocol
     ) {
         self.workoutService = workoutService
         self.trainingPlanService = trainingPlanService
+    }
+
+    convenience init() {
+        self.init(
+            workoutService: AppServices.workoutService,
+            trainingPlanService: AppServices.trainingPlanService
+        )
     }
 
     // MARK: - Load Calendar

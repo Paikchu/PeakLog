@@ -1,21 +1,30 @@
 import Foundation
 
-let sourceURL = URL(fileURLWithPath: "/Users/max/Developer/IOS/PeakLog/PeakLog/Views/Today/TodayWorkoutScreen.swift")
+let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+let sourceURL = rootURL.appendingPathComponent("PeakLog/Views/Today/TodayWorkoutScreen.swift")
 let source = try String(contentsOf: sourceURL, encoding: .utf8)
-let viewModelSourceURL = URL(fileURLWithPath: "/Users/max/Developer/IOS/PeakLog/PeakLog/ViewModels/TodayWorkoutViewModel.swift")
+let viewModelSourceURL = rootURL.appendingPathComponent("PeakLog/ViewModels/TodayWorkoutViewModel.swift")
 let viewModelSource = try String(contentsOf: viewModelSourceURL, encoding: .utf8)
 
 precondition(
-    source.contains("TodayAIFloatingOverlay("),
-    "Expected today screen to render the floating AI overlay"
+    !source.contains("ChatInputBar("),
+    "Expected today screen to stop rendering the fixed chat input bar"
 )
 precondition(
-    !source.contains("assistantReplyCard"),
-    "Expected today screen to stop rendering the old fixed AI result card"
+    !source.contains("TodayAIFloatingOverlay"),
+    "Expected today screen to remove the AI conversation overlay"
 )
 precondition(
-    !viewModelSource.contains("scheduleOverlayAutoDismissIfNeeded"),
-    "Expected floating overlay to remain until the user dismisses it"
+    source.contains("DailyRecordSheet"),
+    "Expected today screen to present the daily record sheet"
+)
+precondition(
+    source.contains("today.addDailyRecord"),
+    "Expected today screen to expose a floating add daily record button"
+)
+precondition(
+    viewModelSource.contains("func addDailyRecord"),
+    "Expected today view model to support direct daily records"
 )
 
 print("today_workout_screen_overlay_layout_test passed")

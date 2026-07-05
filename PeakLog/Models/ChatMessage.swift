@@ -421,7 +421,7 @@ struct ChatMessage: Identifiable, Codable, Equatable {
         }
     }
 
-    // MARK: Codable mapping from Supabase column names
+    // MARK: Codable mapping retained for local persisted payload compatibility
 
     enum CodingKeys: String, CodingKey {
         case id

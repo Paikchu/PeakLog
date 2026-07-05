@@ -8,12 +8,14 @@ final class ProfileViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var isSaving: Bool = false
     @Published var errorMessage: String?
-    @Published var isSignedOut: Bool = false
-
     private let profileService: ProfileServiceProtocol
 
-    init(profileService: ProfileServiceProtocol = MockProfileService()) {
+    init(profileService: ProfileServiceProtocol) {
         self.profileService = profileService
+    }
+
+    convenience init() {
+        self.init(profileService: AppServices.profileService)
     }
 
     // MARK: - Load
@@ -82,19 +84,6 @@ final class ProfileViewModel: ObservableObject {
         }
         isSaving = false
     }
-
-    // MARK: - Sign Out
-    func signOut() async {
-        isSaving = true
-        do {
-            try await profileService.signOut()
-            isSignedOut = true
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isSaving = false
-    }
-
     // MARK: - Display Helpers
     var volumeDisplay: String {
         guard let stats = profile?.stats else { return "—" }

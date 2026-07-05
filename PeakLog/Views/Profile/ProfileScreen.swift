@@ -6,14 +6,12 @@ struct ProfileScreen: View {
     @EnvironmentObject private var localizationManager: LocalizationManager
     @Environment(\.openURL) private var openURL
     var onBack: (() -> Void)?
-    var onSignOut: (() -> Void)?
 
-    init(onBack: (() -> Void)? = nil, onSignOut: (() -> Void)? = nil) {
+    init(onBack: (() -> Void)? = nil) {
         _viewModel = StateObject(
-            wrappedValue: ProfileViewModel(profileService: SupabaseProfileService())
+            wrappedValue: ProfileViewModel()
         )
         self.onBack = onBack
-        self.onSignOut = onSignOut
     }
 
     var body: some View {
@@ -27,7 +25,6 @@ struct ProfileScreen: View {
                     prSection
                     preferencesSection
                     supportSection
-                    signOutButton
                 }
                 .padding(.bottom, 40)
             }
@@ -257,33 +254,6 @@ struct ProfileScreen: View {
         }
     }
 
-    // MARK: - Sign Out
-    private var signOutButton: some View {
-        Button {
-            Task {
-                await viewModel.signOut()
-                onSignOut?()
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 15))
-                Text("profile.sign_out")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundColor(.accentRed)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.appSurface)
-            .cornerRadius(AppRadius.xl)
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.xl)
-                    .strokeBorder(Color.accentRed.opacity(0.3), lineWidth: 1)
-            )
-        }
-        .padding(.horizontal, 16)
-    }
-
     private func openAppSettings() {
         guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
         openURL(settingsURL)
@@ -300,10 +270,11 @@ struct ProfileScreen: View {
 #Preview("Dark") {
     ProfileScreen()
         .environmentObject(ThemeManager())
-        .environmentObject(AuthStateManager())
+        .environmentObject(LocalizationManager())
 }
 
 #Preview("Light") {
     ProfileScreen()
         .environmentObject({ let t = ThemeManager(); t.isDarkMode = false; return t }())
+        .environmentObject(LocalizationManager())
 }

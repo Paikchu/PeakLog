@@ -55,10 +55,10 @@ final class TodayWorkoutViewModel: ObservableObject {
     #if !TESTING
     convenience init() {
         self.init(
-            trainingPlanService: SupabaseTrainingPlanService(),
-            workoutService: SupabaseWorkoutService(),
-            chatService: SupabaseChatService(),
-            conversationService: SupabaseConversationService(),
+            trainingPlanService: AppServices.trainingPlanService,
+            workoutService: AppServices.workoutService,
+            chatService: AppServices.chatService,
+            conversationService: AppServices.conversationService,
             speechRecognitionService: SpeechRecognitionService()
         )
     }
@@ -355,6 +355,24 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
+    func addDailyRecord(_ draft: DailyRecordDraft) async {
+        switch draft {
+        case .strength(let strengthDraft):
+            await addStrengthRecord(strengthDraft)
+        case .cardio(let durationMinutes, let distanceKm):
+            await addRunningRecord(durationMinutes: durationMinutes, distanceKm: distanceKm)
+        }
+        await refreshTodayRecordOnly()
+    }
+
+    private func addStrengthRecord(_ draft: StrengthSessionDraft) async {
+        do {
+            _ = try await workoutService.createStrengthSession(draft)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func mergeSessionsIntoRecord(_ sessions: [WorkoutSession]) -> WorkoutRecord? {
         let exercises = sessions.flatMap(\.exercises)
         guard !exercises.isEmpty else { return nil }
@@ -546,7 +564,7 @@ final class TodayWorkoutViewModel: ObservableObject {
         case .todayPlan(let plan):
             todayPlan = TrainingPlanDay(block: plan.day)
         case .weeklyPlan(let plan):
-            let todayString = ISO8601DateFormatter.planDateFormatter.string(from: Date())
+            let todayString = Self.currentPlanDateString()
             if let matchingDay = plan.days.first(where: { $0.planDate == todayString }) {
                 todayPlan = TrainingPlanDay(block: matchingDay)
             }
@@ -624,12 +642,11 @@ final class TodayWorkoutViewModel: ObservableObject {
             return
         }
     }
-}
 
-private extension ISO8601DateFormatter {
-    static let planDateFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate]
-        return formatter
-    }()
+    static func currentPlanDateString(
+        now: Date = Date(),
+        formatter: WorkoutDateFormatter = WorkoutDateFormatter()
+    ) -> String {
+        formatter.string(from: now)
+    }
 }

@@ -16,6 +16,24 @@ struct RunningWorkoutRecord: Identifiable, Codable, Equatable {
     var updatedAt: Date
 }
 
+struct StrengthSessionDraft: Equatable, Sendable {
+    struct ExerciseDraft: Equatable, Sendable {
+        struct SetDraft: Equatable, Sendable {
+            var weight: Double?
+            var weightUnit: WeightUnit
+            var reps: Int
+            var rpe: Double?
+        }
+
+        var name: String
+        var sets: [SetDraft]
+    }
+
+    var title: String?
+    var workoutDate: Date
+    var exercises: [ExerciseDraft]
+}
+
 // MARK: - Weight Unit
 enum WeightUnit: String, Codable, CaseIterable {
     case kg
