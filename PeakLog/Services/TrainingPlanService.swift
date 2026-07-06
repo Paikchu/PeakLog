@@ -152,5 +152,3 @@ final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
         try await local.addPlannedExercises(drafts)
     }
 }
-
-typealias MockTrainingPlanService = EmptyTrainingPlanService

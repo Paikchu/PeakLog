@@ -33,19 +33,3 @@ final class LocalProfileService: ProfileServiceProtocol {
         try await database.updateFitnessGoalSummary(summary)
     }
 }
-
-final class MockProfileService: ProfileServiceProtocol {
-    private let local = LocalProfileService(database: .shared)
-
-    func fetchProfile() async throws -> UserProfile {
-        try await local.fetchProfile()
-    }
-
-    func updatePreferences(_ prefs: UpdatePreferencesRequest) async throws -> UserPreferences {
-        try await local.updatePreferences(prefs)
-    }
-
-    func updateFitnessGoalSummary(_ summary: String) async throws -> String {
-        try await local.updateFitnessGoalSummary(summary)
-    }
-}
