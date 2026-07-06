@@ -1,0 +1,8 @@
+- 需求：优化 `CalendarGridView` 中日期文本生成，避免 SwiftUI `body` 相关路径反复创建 `DateFormatter`。
+- 范围：weekday header、month title、day number。
+- 保留现有显示语义：weekday 使用当前 locale 的 short standalone symbols；月份标题仍为 `MMMM yyyy`；日期数字仍为 `d`。
+- 不修改历史日历切换、选中态、训练记录指示点、展开折叠交互。
+- 风险：formatter 缓存必须按 locale 隔离，否则切换语言后会显示旧语言。
+- 验收：`CalendarGridView.swift` 中不再在 `weekdays`、`displayedMonthTitle`、`DayCell.dayNumber` 里直接创建 formatter。
+- 验收：历史日历相关 Swift 编译测试通过。
+- 验收：PeakLog scheme 在 iPhone 17 Pro Max 模拟器构建通过。

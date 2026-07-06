@@ -1,0 +1,8 @@
+- 需求：减少 `CalendarGridView` 渲染路径上的 `DateFormatter` 重复创建。
+- 代码：新增 `CalendarDateText`，按 locale 缓存 weekday、month title、day number formatter。
+- 保留行为：weekday、月份标题、日期数字格式未变。
+- 边界：未改历史日历导航、选中日期刷新、训练记录指示逻辑。
+- 文档：`docs/requirements/2026-07-06-calendar-formatter-cache.md`
+- 文档：`docs/plans/2026-07-06-calendar-formatter-cache-plan.md`
+- 验收：历史日历 Swift 编译测试。
+- 验收：PeakLog iOS 模拟器构建。
