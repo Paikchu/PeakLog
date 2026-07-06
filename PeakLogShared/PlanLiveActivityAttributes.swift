@@ -3,21 +3,21 @@ import Foundation
 #if canImport(ActivityKit)
 import ActivityKit
 
-struct PlanLiveActivitySetSnapshot: Codable, Hashable {
+nonisolated struct PlanLiveActivitySetSnapshot: Codable, Hashable, Sendable {
     let id: String
     let setIndex: Int
     let targetLoadText: String
     let targetReps: Int
 }
 
-struct PlanLiveActivityExerciseSnapshot: Codable, Hashable {
+nonisolated struct PlanLiveActivityExerciseSnapshot: Codable, Hashable, Sendable {
     let id: String
     let name: String
     let sets: [PlanLiveActivitySetSnapshot]
 }
 
-struct PlanLiveActivityAttributes: ActivityAttributes {
-    struct ContentState: Codable, Hashable {
+nonisolated struct PlanLiveActivityAttributes: ActivityAttributes, Sendable {
+    nonisolated struct ContentState: Codable, Hashable, Sendable {
         let currentExerciseName: String
         let currentPlanSetID: String?
         let currentSetIndex: Int
@@ -94,7 +94,7 @@ struct PlanLiveActivityAttributes: ActivityAttributes {
     }
 }
 
-enum PlanLiveActivitySharedStore {
+nonisolated enum PlanLiveActivitySharedStore {
     static let appGroupIdentifier = "group.com.max.PeakLog"
 
     private static var defaults: UserDefaults {

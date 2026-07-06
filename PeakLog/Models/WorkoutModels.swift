@@ -1,6 +1,6 @@
 import Foundation
 
-enum RunningWorkoutSource: String, Codable, Equatable {
+nonisolated enum RunningWorkoutSource: String, Codable, Equatable, Sendable {
     case agent
     case manual
 
@@ -18,7 +18,7 @@ enum RunningWorkoutSource: String, Codable, Equatable {
     }
 }
 
-struct RunningWorkoutRecord: Identifiable, Codable, Equatable {
+nonisolated struct RunningWorkoutRecord: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let userId: String
     var workoutDate: Date
@@ -29,9 +29,9 @@ struct RunningWorkoutRecord: Identifiable, Codable, Equatable {
     var updatedAt: Date
 }
 
-struct StrengthSessionDraft: Equatable, Sendable {
-    struct ExerciseDraft: Equatable, Sendable {
-        struct SetDraft: Equatable, Sendable {
+nonisolated struct StrengthSessionDraft: Equatable, Sendable {
+    nonisolated struct ExerciseDraft: Equatable, Sendable {
+        nonisolated struct SetDraft: Equatable, Sendable {
             var weight: Double?
             var weightUnit: WeightUnit
             var reps: Int
@@ -48,7 +48,7 @@ struct StrengthSessionDraft: Equatable, Sendable {
 }
 
 // MARK: - Weight Unit
-enum WeightUnit: String, Codable, CaseIterable {
+nonisolated enum WeightUnit: String, Codable, CaseIterable, Sendable {
     case kg
     case lbs
 
@@ -56,7 +56,7 @@ enum WeightUnit: String, Codable, CaseIterable {
 }
 
 // MARK: - Exercise Set
-struct ExerciseSet: Identifiable, Codable, Equatable {
+nonisolated struct ExerciseSet: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var setIndex: Int        // 1-based display index
     var weight: Double?
@@ -70,14 +70,14 @@ struct ExerciseSet: Identifiable, Codable, Equatable {
 }
 
 // MARK: - Exercise
-struct Exercise: Identifiable, Codable, Equatable {
+nonisolated struct Exercise: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var name: String
     var sets: [ExerciseSet]
 }
 
 // MARK: - Workout Session
-struct WorkoutSession: Identifiable, Codable {
+nonisolated struct WorkoutSession: Identifiable, Codable, Sendable {
     let id: String
     let userId: String
     var date: Date
@@ -88,13 +88,13 @@ struct WorkoutSession: Identifiable, Codable {
     var updatedAt: Date
 }
 
-struct WorkoutRecord: Identifiable, Codable, Equatable {
+nonisolated struct WorkoutRecord: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var exercises: [Exercise]
 }
 
 // MARK: - Session Summary (used in HistoryScreen list)
-struct SessionSummary: Identifiable, Codable {
+nonisolated struct SessionSummary: Identifiable, Codable, Sendable {
     let id: String
     let date: Date
     let label: String?

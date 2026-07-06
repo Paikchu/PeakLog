@@ -11,8 +11,8 @@ import AppIntents
 /// 它被放在 `PeakLogShared/` 目录下正是为了让两个 target 都包含它——
 /// 若只属于扩展 target，主 App 二进制里找不到此类型，点击会静默失败。
 struct CompletePlanSetIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "完成动作"
-    static var openAppWhenRun: Bool = false
+    static let title: LocalizedStringResource = "完成动作"
+    static let openAppWhenRun = false
 
     @Parameter(title: "Activity ID")
     var activityID: String

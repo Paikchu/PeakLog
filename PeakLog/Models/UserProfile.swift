@@ -1,14 +1,14 @@
 import Foundation
 
 // MARK: - User Stats
-struct UserStats: Codable {
+nonisolated struct UserStats: Codable, Sendable {
     var workoutsCount: Int
     var streakDays: Int
     var totalVolumeKg: Double   // converted to display unit by ViewModel
     var prCount: Int
 }
 
-struct ExercisePR: Codable, Equatable, Identifiable {
+nonisolated struct ExercisePR: Codable, Equatable, Identifiable, Sendable {
     var id: String { normalizedName }
     let normalizedName: String
     let displayName: String
@@ -18,7 +18,7 @@ struct ExercisePR: Codable, Equatable, Identifiable {
 }
 
 // MARK: - User Preferences
-struct UserPreferences: Codable {
+nonisolated struct UserPreferences: Codable, Sendable {
     var notificationsEnabled: Bool
     var darkModeEnabled: Bool
     var weightUnit: WeightUnit
@@ -27,7 +27,7 @@ struct UserPreferences: Codable {
 }
 
 // MARK: - Membership Level
-enum MembershipLevel: String, Codable {
+nonisolated enum MembershipLevel: String, Codable, Sendable {
     case free
     case premium
     case pro
@@ -66,7 +66,7 @@ enum MembershipLevel: String, Codable {
 }
 
 // MARK: - User Profile
-struct UserProfile: Identifiable, Codable {
+nonisolated struct UserProfile: Identifiable, Codable, Sendable {
     let id: String
     var displayName: String
     var avatarURL: URL?

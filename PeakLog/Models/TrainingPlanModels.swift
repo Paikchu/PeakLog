@@ -1,6 +1,6 @@
 import Foundation
 
-enum ExerciseLoadType: String, Codable, Equatable {
+nonisolated enum ExerciseLoadType: String, Codable, Equatable, Sendable {
     case bodyweight
     case weighted
     case unknown
@@ -17,7 +17,7 @@ enum ExerciseLoadType: String, Codable, Equatable {
     }
 }
 
-struct TrainingPlanSet: Identifiable, Codable, Equatable {
+nonisolated struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var setIndex: Int
     var targetWeight: Double?
@@ -31,7 +31,7 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable {
     }
 }
 
-struct TrainingPlanExercise: Identifiable, Codable, Equatable {
+nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let orderIndex: Int
     let exerciseName: String
@@ -43,7 +43,7 @@ struct TrainingPlanExercise: Identifiable, Codable, Equatable {
     var sets: [TrainingPlanSet]
 }
 
-struct TrainingPlanDay: Identifiable, Codable, Equatable {
+nonisolated struct TrainingPlanDay: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let planDate: String
     let dayIndex: Int
@@ -61,7 +61,7 @@ struct TrainingPlanDay: Identifiable, Codable, Equatable {
     }
 }
 
-struct TrainingPlan: Identifiable, Codable, Equatable {
+nonisolated struct TrainingPlan: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let weekStartDate: String
     let goalSummary: String?
