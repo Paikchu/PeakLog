@@ -10,9 +10,6 @@ final class TodayWorkoutLiveSessionTests: XCTestCase {
         let viewModel = TodayWorkoutViewModel(
             trainingPlanService: trainingPlanService,
             workoutService: workoutService,
-            chatService: LiveSessionChatService(),
-            conversationService: LiveSessionConversationService(),
-            speechRecognitionService: LiveSessionSpeechService(),
             liveActivityManager: liveActivityManager
         )
 
@@ -37,9 +34,6 @@ final class TodayWorkoutLiveSessionTests: XCTestCase {
         let viewModel = TodayWorkoutViewModel(
             trainingPlanService: trainingPlanService,
             workoutService: workoutService,
-            chatService: LiveSessionChatService(),
-            conversationService: LiveSessionConversationService(),
-            speechRecognitionService: LiveSessionSpeechService(),
             liveActivityManager: liveActivityManager
         )
 
@@ -270,41 +264,4 @@ private final class LiveSessionWorkoutService: WorkoutServiceProtocol {
             updatedAt: workoutDate
         )
     }
-}
-
-private struct LiveSessionChatService: ChatServiceProtocol {
-    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
-        SendMessageServiceResponse(userMessageId: "user", assistantMessageId: "assistant", conversationId: sessionId)
-    }
-
-    func fetchMessages(sessionId: String) async throws -> [ChatMessage] { [] }
-
-    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] { [] }
-
-    func subscribeToMessages(
-        conversationId: String,
-        onInsert: @escaping (ChatMessage) -> Void,
-        onUpdate: @escaping (ChatMessage) -> Void
-    ) async {}
-
-    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {}
-
-    func unsubscribe() async {}
-
-    func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
-        workoutRecord
-    }
-}
-
-private struct LiveSessionConversationService: ConversationServiceProtocol {
-    func fetchOrCreateDefaultConversationId() async throws -> String { "conversation-1" }
-}
-
-private struct LiveSessionSpeechService: SpeechRecognitionServicing {
-    func startRecognition(
-        onLevelUpdate: @escaping (CGFloat) -> Void,
-        onTranscriptUpdate: @escaping (String) -> Void
-    ) async throws {}
-
-    func stopRecognition() async throws -> String { "" }
 }

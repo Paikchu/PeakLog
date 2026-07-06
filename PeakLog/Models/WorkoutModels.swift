@@ -1,8 +1,21 @@
 import Foundation
 
 enum RunningWorkoutSource: String, Codable, Equatable {
-    case chat
+    case agent
     case manual
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        switch rawValue {
+        case "agent", "chat":
+            self = .agent
+        case "manual":
+            self = .manual
+        default:
+            self = .manual
+        }
+    }
 }
 
 struct RunningWorkoutRecord: Identifiable, Codable, Equatable {
@@ -73,6 +86,11 @@ struct WorkoutSession: Identifiable, Codable {
     var exercises: [Exercise]
     var createdAt: Date
     var updatedAt: Date
+}
+
+struct WorkoutRecord: Identifiable, Codable, Equatable {
+    let id: String
+    var exercises: [Exercise]
 }
 
 // MARK: - Session Summary (used in HistoryScreen list)

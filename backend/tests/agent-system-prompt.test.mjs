@@ -6,12 +6,7 @@ import path from "node:path";
 const repoRoot = path.resolve(import.meta.dirname, "..");
 
 const agentSource = fs.readFileSync(
-  path.join(repoRoot, "supabase/functions/chat-send-message/agent.ts"),
-  "utf8",
-);
-
-const indexSource = fs.readFileSync(
-  path.join(repoRoot, "supabase/functions/chat-send-message/index.ts"),
+  path.join(repoRoot, "supabase/functions/_shared/agent.ts"),
   "utf8",
 );
 
@@ -38,13 +33,5 @@ test("agent prompt prioritizes merging short follow-up context into the previous
     agentSource,
     /complete that same record/,
     "Expected prompt to favor completing the prior workout record",
-  );
-});
-
-test("conversation context window is widened for follow-up workout supplements", () => {
-  assert.match(
-    indexSource,
-    /const recentMessageLimit = 16;/,
-    "Expected conversation context window to expand beyond the old 10-message limit",
   );
 });

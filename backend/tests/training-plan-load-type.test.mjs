@@ -1,14 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+
+const repoRoot = path.resolve(import.meta.dirname, "..");
 
 const schemaSource = fs.readFileSync(
-  "/Users/max/Developer/IOS/PeakLog/backend/supabase/functions/chat-send-message/schema.ts",
+  path.join(repoRoot, "supabase/functions/_shared/schema.ts"),
   "utf8",
 );
 
 const agentSource = fs.readFileSync(
-  "/Users/max/Developer/IOS/PeakLog/backend/supabase/functions/chat-send-message/agent.ts",
+  path.join(repoRoot, "supabase/functions/_shared/agent.ts"),
   "utf8",
 );
 

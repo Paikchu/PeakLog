@@ -160,6 +160,15 @@ struct ValueEditSheet: View {
                     .multilineTextAlignment(.center)
                     .focused($focused)
                     .frame(width: 120)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button(String(localized: "common.done")) {
+                                focused = false
+                                onDone()
+                            }
+                        }
+                    }
 
                 if let unit {
                     Text(unit)

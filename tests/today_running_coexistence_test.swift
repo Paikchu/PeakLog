@@ -17,10 +17,7 @@ struct TodayRunningCoexistenceTestRunner {
         let workoutService = TodayRunningCoexistenceWorkoutService(today: today)
         let viewModel = TodayWorkoutViewModel(
             trainingPlanService: trainingPlanService,
-            workoutService: workoutService,
-            chatService: IdleChatService(),
-            conversationService: MockConversationService(conversationId: "conversation-1"),
-            speechRecognitionService: TestSpeechRecognitionService()
+            workoutService: workoutService
         )
 
         await viewModel.refresh()
@@ -220,20 +217,5 @@ private struct TodayRunningCoexistenceWorkoutService: WorkoutServiceProtocol {
             createdAt: workoutDate,
             updatedAt: workoutDate
         )
-    }
-}
-
-private struct IdleChatService: ChatServiceProtocol {
-    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
-        _ = (text, sessionId)
-        return SendMessageServiceResponse(
-            userMessageId: "user-message",
-            assistantMessageId: "assistant-message",
-            conversationId: sessionId
-        )
-    }
-
-    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {
-        _ = handler
     }
 }

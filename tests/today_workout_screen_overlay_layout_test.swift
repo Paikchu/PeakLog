@@ -15,6 +15,14 @@ precondition(
     "Expected today screen to stop rendering the fixed chat input bar"
 )
 precondition(
+    !source.contains("TextEditor("),
+    "Expected today screen to have no free-form natural-language editor"
+)
+precondition(
+    !source.contains("TextField(") || !source.contains("viewModel.inputText"),
+    "Expected today screen to have no natural-language input bound to the view model"
+)
+precondition(
     !source.contains("TodayAIFloatingOverlay"),
     "Expected today screen to remove the AI conversation overlay"
 )

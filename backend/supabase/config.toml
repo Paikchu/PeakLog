@@ -361,9 +361,6 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-[functions.chat-send-message]
-verify_jwt = false
-
 [functions.ai-workout-action]
 verify_jwt = false
 

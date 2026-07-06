@@ -337,7 +337,7 @@ struct HistoryCompletedCardioRecordCard: View {
 
     private var sourceLabel: String {
         switch record.source {
-        case .chat:
+        case .agent:
             return String(localized: "history.completed.source.ai")
         case .manual:
             return String(localized: "history.completed.source.manual")
