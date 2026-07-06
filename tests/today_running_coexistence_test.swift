@@ -177,8 +177,6 @@ private struct TodayRunningCoexistenceWorkoutService: WorkoutServiceProtocol {
         ]
     }
 
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] { [today] }
-
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
         [
             RunningWorkoutRecord(

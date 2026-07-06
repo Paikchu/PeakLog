@@ -7,7 +7,6 @@ protocol WorkoutServiceProtocol {
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord]
     func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession
     func createRunningRecord(
@@ -16,12 +15,6 @@ protocol WorkoutServiceProtocol {
         distanceKm: Double,
         source: RunningWorkoutSource
     ) async throws -> RunningWorkoutRecord
-}
-
-extension WorkoutServiceProtocol {
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
-        try await activeDaysInMonth(year: year, month: month)
-    }
 }
 
 final class LocalWorkoutService: WorkoutServiceProtocol {
@@ -66,10 +59,6 @@ final class LocalWorkoutService: WorkoutServiceProtocol {
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] {
         await database.sessionsForDay(date)
-    }
-
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
-        await database.activeDaysInMonth(year: year, month: month)
     }
 
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {

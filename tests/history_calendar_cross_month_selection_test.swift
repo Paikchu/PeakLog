@@ -7,7 +7,6 @@ protocol WorkoutServiceProtocol {
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord]
     func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession
     func createRunningRecord(
@@ -47,6 +46,7 @@ struct HistoryCalendarCrossMonthSelectionTestRunner {
     static func main() async {
         validatesCrossMonthCalendarDayInteractionRules()
         await selectsCrossMonthDateAndUpdatesDisplayedMonth()
+        await loadCalendarUsesMergedActiveDaysOnce()
         await weekNavigationRefreshesSelectedDayRecords()
         print("history_calendar_cross_month_selection_test passed")
     }
@@ -111,6 +111,30 @@ struct HistoryCalendarCrossMonthSelectionTestRunner {
     }
 
     @MainActor
+    private static func loadCalendarUsesMergedActiveDaysOnce() async {
+        let formatter = WorkoutDateFormatter(timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+        let workoutService = CountingMergedActiveDaysWorkoutService(
+            activeDays: [formatter.date(from: "2026-08-04")!]
+        )
+        let viewModel = HistoryViewModel(
+            workoutService: workoutService,
+            trainingPlanService: HistoryCalendarSelectionTrainingPlanService()
+        )
+
+        viewModel.displayedMonth = formatter.date(from: "2026-08-01")!
+        await viewModel.loadCalendar()
+
+        precondition(
+            workoutService.calendarRequestCount == 1,
+            "Expected loadCalendar to use the merged active day query once"
+        )
+        precondition(
+            viewModel.activeDates == ["2026-08-04"],
+            "Expected merged active day results to populate calendar markers"
+        )
+    }
+
+    @MainActor
     private static func weekNavigationRefreshesSelectedDayRecords() async {
         let formatter = WorkoutDateFormatter(timeZone: TimeZone(identifier: "Asia/Shanghai")!)
         let today = formatter.date(from: "2026-08-09")!
@@ -169,6 +193,80 @@ struct HistoryCalendarCrossMonthSelectionTestRunner {
     }
 }
 
+private final class CountingMergedActiveDaysWorkoutService: WorkoutServiceProtocol {
+    private let lock = NSLock()
+    private let activeDays: [Date]
+    private var requestCount = 0
+
+    var calendarRequestCount: Int {
+        lock.withLock { requestCount }
+    }
+
+    init(activeDays: [Date]) {
+        self.activeDays = activeDays
+    }
+
+    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
+        Exercise(id: exerciseId, name: name, sets: [])
+    }
+
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
+        ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
+    }
+
+    func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
+        ExerciseSet(id: "new-set", setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
+    }
+
+    func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {}
+
+    func deleteExercise(sessionId: String, exerciseId: String) async throws {}
+
+    func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
+        ExerciseSet(id: setId, setIndex: 1, weight: nil, weightUnit: .kg, reps: 0, rpe: rpe)
+    }
+
+    func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] {
+        lock.withLock { requestCount += 1 }
+        return activeDays
+    }
+
+    func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] { [] }
+
+    func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] { [] }
+
+    func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession {
+        WorkoutSession(
+            id: "created-session",
+            userId: "user-1",
+            date: draft.workoutDate,
+            durationMinutes: nil,
+            label: draft.title,
+            exercises: [],
+            createdAt: draft.workoutDate,
+            updatedAt: draft.workoutDate
+        )
+    }
+
+    func createRunningRecord(
+        workoutDate: Date,
+        durationMinutes: Int,
+        distanceKm: Double,
+        source: RunningWorkoutSource
+    ) async throws -> RunningWorkoutRecord {
+        RunningWorkoutRecord(
+            id: "created-run",
+            userId: "user-1",
+            workoutDate: workoutDate,
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            source: source,
+            createdAt: workoutDate,
+            updatedAt: workoutDate
+        )
+    }
+}
+
 enum AppServices {
     static let workoutService: WorkoutServiceProtocol = HistoryCalendarSelectionWorkoutService()
     static let trainingPlanService: TrainingPlanServiceProtocol = HistoryCalendarSelectionTrainingPlanService()
@@ -196,10 +294,6 @@ private struct HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] {
         sessionsByDay[formatter.string(from: date)] ?? []
-    }
-
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
-        []
     }
 
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
@@ -255,8 +349,6 @@ actor SupabaseWorkoutService: WorkoutServiceProtocol {
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] { [] }
-
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
 
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] { [] }
 

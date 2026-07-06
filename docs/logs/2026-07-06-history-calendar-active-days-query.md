@@ -1,0 +1,6 @@
+- 需求：`HistoryViewModel.loadCalendar()` 不再同时请求 strength / running active day。
+- 根因：`LocalAppDatabase.activeDaysInMonth` 已合并 `strengthSessions.date` 和 `runningRecords.workoutDate`，`activeRunningDaysInMonth` 只是重复读取同一份结果。
+- 实现：`loadCalendar()` 只调用 `workoutService.activeDaysInMonth(year:month:)`，直接写入 `activeDates`。
+- 接口：移除 `WorkoutServiceProtocol.activeRunningDaysInMonth`、默认实现、`LocalWorkoutService` 实现，以及测试替身里的旧方法。
+- 回归：`history_calendar_cross_month_selection_test` 新增断言，确认日历加载只发起一次合并活跃日查询，且结果仍能生成日历标记。
+- 验证：`swiftc -parse-as-library PeakLog/Models/WorkoutModels.swift PeakLog/Models/TrainingPlanModels.swift PeakLog/Models/HistoryCompletedModels.swift PeakLog/Models/WorkoutHistoryAggregator.swift PeakLog/Support/WorkoutDateFormatter.swift PeakLog/ViewModels/HistoryViewModel.swift tests/history_calendar_cross_month_selection_test.swift -o /tmp/history_calendar_cross_month_selection_test && /tmp/history_calendar_cross_month_selection_test`

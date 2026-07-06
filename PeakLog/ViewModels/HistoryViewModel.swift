@@ -46,10 +46,8 @@ final class HistoryViewModel: ObservableObject {
         isLoadingCalendar = true
         errorMessage = nil
         do {
-            async let strengthDates = workoutService.activeDaysInMonth(year: year, month: month)
-            async let runningDates = workoutService.activeRunningDaysInMonth(year: year, month: month)
-            let combinedDates = try await strengthDates + runningDates
-            activeDates = Set(combinedDates.map { workoutDateFormatter.string(from: $0) })
+            let activeDays = try await workoutService.activeDaysInMonth(year: year, month: month)
+            activeDates = Set(activeDays.map { workoutDateFormatter.string(from: $0) })
         } catch {
             errorMessage = error.localizedDescription
         }
