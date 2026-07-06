@@ -205,41 +205,13 @@ struct ValueEditSheet: View {
 
 struct ExerciseCardView: View {
     @Binding var exercise: Exercise
-    var messageId: String
     var isEditable: Bool = true
-    var onDeleteExercise: () -> Void
     var onSetChanged: (ExerciseSet) -> Void
     var onAddSet: (() -> Void)? = nil
     var onDeleteLastSet: (() -> Void)? = nil
 
-    @State private var offset: CGFloat = 0
-    private let deleteWidth: CGFloat = 72
-    private let swipeCoordinator = ExerciseCardSwipeGestureCoordinator()
-
     var body: some View {
-        ZStack(alignment: .trailing) {
-            Button {
-                guard isEditable else { return }
-                withAnimation(.spring()) { offset = 0 }
-                onDeleteExercise()
-            } label: {
-                VStack(spacing: 2) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.white)
-                    Text("common.delete")
-                        .font(.deleteLabel)
-                        .foregroundColor(.white)
-                }
-                .frame(width: deleteWidth)
-                .frame(maxHeight: .infinity)
-                .background(Color.accentRed)
-                .cornerRadius(AppRadius.xxl, corners: [.topRight, .bottomRight])
-            }
-
-            cardContent
-        }
-        .clipped()
+        cardContent
     }
 
     @ViewBuilder
@@ -304,37 +276,8 @@ struct ExerciseCardView: View {
                 .fill(Color.appSurface)
         )
         .cornerRadius(AppRadius.xxl)
-        .offset(x: offset)
         .contentShape(Rectangle())
         .allowsHitTesting(isEditable)
-        #if canImport(UIKit)
-        .background {
-            if isEditable {
-                ExerciseCardPanGesture(
-                    swipeCoordinator: swipeCoordinator,
-                    onChanged: { translation in
-                        let decision = swipeCoordinator.decision(
-                            translation: translation,
-                            currentOffset: offset,
-                            deleteWidth: deleteWidth
-                        )
-                        offset = decision.nextOffset
-                    },
-                    onEnded: { translation in
-                        withAnimation(.spring(response: 0.3)) {
-                            offset = swipeCoordinator.finalOffset(
-                                translation: translation,
-                                currentOffset: offset,
-                                deleteWidth: deleteWidth,
-                                lockedAxis: .horizontal
-                            )
-                        }
-                    }
-                )
-                .allowsHitTesting(false)
-            }
-        }
-        #endif
 
         content
     }
@@ -351,33 +294,13 @@ private extension SetRowView {
     }
 }
 
-// MARK: - Corner Radius Helper
-
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
-
-private struct RoundedCorner: Shape {
-    var radius: CGFloat = 0
-    var corners: UIRectCorner = .allCorners
-
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
-        return Path(path.cgPath)
-    }
-}
-
 // MARK: - Preview
 
 #Preview {
     @Previewable @State var exercise = MockData.benchPress
     ExerciseCardView(
         exercise: $exercise,
-        messageId: "m-1",
         isEditable: true,
-        onDeleteExercise: {},
         onSetChanged: { _ in }
     )
     .padding()

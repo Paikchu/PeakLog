@@ -1,10 +1,8 @@
 import SwiftUI
 
 struct WorkoutRecordCard: View {
-    let messageId: String
     @Binding var record: WorkoutRecord
     var isEditable: Bool = true
-    var onDeleteExercise: (String) -> Void
     var onSetChanged: (String, ExerciseSet) -> Void
     var onAddSet: ((String) -> Void)? = nil
     var onDeleteLastSet: ((String) -> Void)? = nil
@@ -14,11 +12,7 @@ struct WorkoutRecordCard: View {
             ForEach(Array(record.exercises.enumerated()), id: \.element.id) { index, _ in
                 ExerciseCardView(
                     exercise: $record.exercises[index],
-                    messageId: messageId,
                     isEditable: isEditable,
-                    onDeleteExercise: {
-                        onDeleteExercise(record.exercises[index].id)
-                    },
                     onSetChanged: { updatedSet in
                         onSetChanged(record.exercises[index].id, updatedSet)
                     },
@@ -45,10 +39,8 @@ struct WorkoutRecordCard: View {
 #Preview {
     @Previewable @State var record = WorkoutRecord(id: "wr-1", exercises: MockData.sampleExercises)
     WorkoutRecordCard(
-        messageId: "m-1",
         record: $record,
         isEditable: true,
-        onDeleteExercise: { _ in },
         onSetChanged: { _, _ in }
     )
     .padding()

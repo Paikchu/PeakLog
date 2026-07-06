@@ -598,13 +598,11 @@ struct TodayWorkoutScreen: View {
                 )
 
                 WorkoutRecordCard(
-                    messageId: "today-record",
                     record: Binding(
                         get: { viewModel.todayRecord ?? record },
                         set: { viewModel.todayRecord = $0 }
                     ),
                     isEditable: true,
-                    onDeleteExercise: { _ in },
                     onSetChanged: { exerciseId, updatedSet in
                         Task { await viewModel.updateLoggedSet(exerciseId: exerciseId, updatedSet: updatedSet) }
                     },

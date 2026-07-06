@@ -44,7 +44,6 @@ extension Color {
     static let accentBorder = Color(uiColor: UIColor(dynamicProvider: { tc in
         tc.userInterfaceStyle == .dark ? UIColor(appHex: "#8A8A93") : UIColor(appHex: "#A8A29E")
     }))
-    static let accentRed = Color(hex: "#EF4444")
     static let accentValue = Color(uiColor: UIColor(dynamicProvider: { tc in
         tc.userInterfaceStyle == .dark ? UIColor(appHex: "#FBBF24") : UIColor(appHex: "#B45309")
     }))
@@ -134,7 +133,6 @@ extension Font {
     static let setIndex = Font.system(size: 12, weight: .medium, design: .rounded)
     static let dateLabel = Font.system(size: 12, weight: .medium)
     static let recordHeader = Font.system(size: 13, weight: .semibold)
-    static let deleteLabel = Font.system(size: 10, weight: .medium)
 
     // Stats
     static let statValue = Font.system(size: 16, weight: .bold, design: .rounded)
