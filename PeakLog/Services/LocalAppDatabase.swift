@@ -5,6 +5,31 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     var activePlan: TrainingPlan
     var strengthSessions: [WorkoutSession]
     var runningRecords: [RunningWorkoutRecord]
+    var customExercises: [ExerciseDefinition]
+
+    init(
+        profile: UserProfile,
+        activePlan: TrainingPlan,
+        strengthSessions: [WorkoutSession],
+        runningRecords: [RunningWorkoutRecord],
+        customExercises: [ExerciseDefinition] = []
+    ) {
+        self.profile = profile
+        self.activePlan = activePlan
+        self.strengthSessions = strengthSessions
+        self.runningRecords = runningRecords
+        self.customExercises = customExercises
+    }
+
+    // Custom decode keeps state files written before the exercise library existed loadable.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try container.decode(UserProfile.self, forKey: .profile)
+        activePlan = try container.decode(TrainingPlan.self, forKey: .activePlan)
+        strengthSessions = try container.decode([WorkoutSession].self, forKey: .strengthSessions)
+        runningRecords = try container.decode([RunningWorkoutRecord].self, forKey: .runningRecords)
+        customExercises = try container.decodeIfPresent([ExerciseDefinition].self, forKey: .customExercises) ?? []
+    }
 }
 
 actor LocalAppDatabase {
@@ -78,6 +103,43 @@ actor LocalAppDatabase {
         return summary
     }
 
+    func customExercises() -> [ExerciseDefinition] {
+        state.customExercises
+    }
+
+    func addCustomExercise(
+        name: String,
+        muscleGroup: MuscleGroup,
+        loadType: ExerciseLoadType
+    ) throws -> ExerciseDefinition {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw LocalAppDatabaseError.invalidCustomExerciseName
+        }
+
+        if let existing = state.customExercises.first(where: {
+            ExerciseDefinition.normalize($0.nameEN) == ExerciseDefinition.normalize(trimmed)
+                || ExerciseDefinition.normalize($0.nameZH) == ExerciseDefinition.normalize(trimmed)
+        }) {
+            return existing
+        }
+
+        let definition = ExerciseDefinition(
+            id: "custom-\(UUID().uuidString.lowercased())",
+            nameEN: trimmed,
+            nameZH: trimmed,
+            aliases: [],
+            muscleGroup: muscleGroup,
+            equipment: loadType == .bodyweight ? .bodyweight : .other,
+            loadType: loadType,
+            popularity: 0,
+            isCustom: true
+        )
+        state.customExercises.append(definition)
+        try persist()
+        return definition
+    }
+
     func activePlan() -> TrainingPlan? {
         state.activePlan
     }
@@ -92,6 +154,10 @@ actor LocalAppDatabase {
         return Array(Set(days.map { calendar.startOfDay(for: $0) })).filter {
             calendar.component(.year, from: $0) == year && calendar.component(.month, from: $0) == month
         }
+    }
+
+    func allStrengthSessions() -> [WorkoutSession] {
+        state.strengthSessions
     }
 
     func sessionsForDay(_ date: Date) -> [WorkoutSession] {
@@ -143,6 +209,7 @@ actor LocalAppDatabase {
                 Exercise(
                     id: UUID().uuidString,
                     name: exercise.name,
+                    exerciseId: exercise.exerciseId,
                     sets: exercise.sets.enumerated().map { setOffset, set in
                         ExerciseSet(
                             id: UUID().uuidString,
@@ -382,6 +449,7 @@ actor LocalAppDatabase {
             id: UUID().uuidString,
             orderIndex: orderIndex,
             exerciseName: draft.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines),
+            exerciseId: draft.exerciseId,
             exerciseLoadType: draft.isBodyweight ? .bodyweight : .weighted,
             progressionMode: "manual",
             notes: nil,
@@ -764,6 +832,7 @@ enum LocalAppDatabaseError: LocalizedError {
     case planExerciseNotFound
     case planSetNotFound
     case invalidPlanExerciseName
+    case invalidCustomExerciseName
 
     var errorDescription: String? {
         switch self {
@@ -779,6 +848,8 @@ enum LocalAppDatabaseError: LocalizedError {
             return "Planned set not found."
         case .invalidPlanExerciseName:
             return "Exercise name cannot be empty."
+        case .invalidCustomExerciseName:
+            return "Custom exercise name cannot be empty."
         }
     }
 }
@@ -832,6 +903,7 @@ enum AppServices {
     static let profileService: ProfileServiceProtocol = LocalProfileService(database: database)
     static let workoutService: WorkoutServiceProtocol = LocalWorkoutService(database: database)
     static let trainingPlanService: TrainingPlanServiceProtocol = LocalTrainingPlanService(database: database)
+    static let exerciseLibraryService: ExerciseLibraryServiceProtocol = LocalExerciseLibraryService(database: database)
 }
 
 private extension Array {

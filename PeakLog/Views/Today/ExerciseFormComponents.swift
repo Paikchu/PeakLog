@@ -42,9 +42,13 @@ struct ExerciseFormCard: View {
                 .fill(Color.accentPrimary)
                 .frame(width: 5, height: 22)
 
-            TextField(String(localized: "daily_record.exercise_name"), text: $exercise.name)
+            // Names come from the exercise library picker, so the header is read-only.
+            Text(exercise.name)
                 .font(.exerciseName)
                 .foregroundColor(.textPrimary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
 
             loadTypeToggle
 

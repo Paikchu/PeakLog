@@ -23,17 +23,28 @@ private enum DailyRecordMode: String, CaseIterable, Identifiable {
 
 struct DailyRecordSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var localizationManager: LocalizationManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum Route: Hashable {
+        case picker
+    }
 
     @State private var mode: DailyRecordMode = .strength
     @State private var title = ""
-    @State private var exercises: [DailyRecordExerciseInput] = [DailyRecordExerciseInput()]
+    @State private var exercises: [DailyRecordExerciseInput] = []
     @State private var durationMinutes = ""
     @State private var distanceKm = ""
+    @State private var path: [Route] = []
 
     let onSave: (DailyRecordDraft) async -> Void
 
+    private var formSpring: Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 14) {
                     modePicker
@@ -64,7 +75,24 @@ struct DailyRecordSheet: View {
                         .disabled(recordDraft == nil)
                 }
             }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .picker:
+                    ExercisePickerScreen(
+                        alreadyAddedIds: Set(exercises.compactMap(\.sourceExerciseId)),
+                        onConfirm: appendPicked
+                    )
+                }
+            }
         }
+    }
+
+    private func appendPicked(_ picked: [ExerciseDefinition]) {
+        let language = localizationManager.appLanguage
+        withAnimation(formSpring) {
+            exercises.append(contentsOf: picked.map { DailyRecordExerciseInput(definition: $0, language: language) })
+        }
+        path.removeLast(path.count)
     }
 
     // MARK: - Mode Picker
@@ -113,19 +141,18 @@ struct DailyRecordSheet: View {
             ForEach($exercises) { $exercise in
                 ExerciseFormCard(
                     exercise: $exercise,
-                    canDelete: exercises.count > 1,
+                    canDelete: true,
                     onDelete: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        withAnimation(formSpring) {
                             exercises.removeAll { $0.id == exercise.id }
                         }
                     }
                 )
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             AddExerciseDashedButton {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                    exercises.append(DailyRecordExerciseInput())
-                }
+                path.append(.picker)
             }
         }
     }
@@ -210,4 +237,5 @@ struct DailyRecordSheet: View {
 
 #Preview {
     DailyRecordSheet { _ in }
+        .environmentObject(LocalizationManager())
 }

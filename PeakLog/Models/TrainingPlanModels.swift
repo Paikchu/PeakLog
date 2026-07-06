@@ -35,12 +35,38 @@ nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Senda
     let id: String
     let orderIndex: Int
     let exerciseName: String
+    /// Stable library slug; nil for legacy free-text entries.
+    var exerciseId: String?
     let exerciseLoadType: ExerciseLoadType
     let progressionMode: String
     let notes: String?
     var previousPerformanceSummary: String?
     var aiSuggestion: String?
     var sets: [TrainingPlanSet]
+
+    init(
+        id: String,
+        orderIndex: Int,
+        exerciseName: String,
+        exerciseId: String? = nil,
+        exerciseLoadType: ExerciseLoadType,
+        progressionMode: String,
+        notes: String?,
+        previousPerformanceSummary: String?,
+        aiSuggestion: String?,
+        sets: [TrainingPlanSet]
+    ) {
+        self.id = id
+        self.orderIndex = orderIndex
+        self.exerciseName = exerciseName
+        self.exerciseId = exerciseId
+        self.exerciseLoadType = exerciseLoadType
+        self.progressionMode = progressionMode
+        self.notes = notes
+        self.previousPerformanceSummary = previousPerformanceSummary
+        self.aiSuggestion = aiSuggestion
+        self.sets = sets
+    }
 }
 
 nonisolated struct TrainingPlanDay: Identifiable, Codable, Equatable, Sendable {

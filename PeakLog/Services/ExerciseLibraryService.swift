@@ -1,0 +1,209 @@
+import Foundation
+
+// MARK: - Recent Exercise Entry
+// A library exercise enriched with the user's actual training history,
+// shown in the picker's "recent" section.
+
+nonisolated struct RecentExerciseEntry: Identifiable, Equatable, Sendable {
+    let definition: ExerciseDefinition
+    let lastPerformedAt: Date
+    let timesPerformed: Int
+    let lastWeight: Double?
+    let lastWeightUnit: WeightUnit
+    let lastReps: Int?
+
+    // Prefixed so a recent row and its library row can coexist in one list
+    // without colliding on SwiftUI identity.
+    var id: String { "recent-\(definition.id)" }
+}
+
+// MARK: - Library Engine
+// Pure functions over in-memory data so the search/recent rules can be
+// exercised by tests/ scripts without a bundle or database.
+
+nonisolated enum ExerciseLibraryEngine {
+    static func merged(seed: [ExerciseDefinition], custom: [ExerciseDefinition]) -> [ExerciseDefinition] {
+        seed + custom.filter { customDefinition in
+            !seed.contains { $0.id == customDefinition.id }
+        }
+    }
+
+    static func filter(
+        _ exercises: [ExerciseDefinition],
+        query: String = "",
+        muscleGroup: MuscleGroup? = nil,
+        equipment: Equipment? = nil
+    ) -> [ExerciseDefinition] {
+        exercises.filter { exercise in
+            if let muscleGroup, exercise.muscleGroup != muscleGroup { return false }
+            if let equipment, exercise.equipment != equipment { return false }
+            return exercise.matches(query: query)
+        }
+    }
+
+    /// Groups follow MuscleGroup.allCases order; exercises within a group are
+    /// sorted by popularity so common movements surface first.
+    static func groupedByMuscle(_ exercises: [ExerciseDefinition]) -> [(group: MuscleGroup, exercises: [ExerciseDefinition])] {
+        MuscleGroup.allCases.compactMap { group in
+            let matching = exercises
+                .filter { $0.muscleGroup == group }
+                .sorted { lhs, rhs in
+                    if lhs.popularity != rhs.popularity { return lhs.popularity > rhs.popularity }
+                    return lhs.nameEN < rhs.nameEN
+                }
+            return matching.isEmpty ? nil : (group, matching)
+        }
+    }
+
+    /// Resolves a logged exercise back to a library definition — by stable id
+    /// first, then by exact normalized name/alias match for legacy entries.
+    static func resolveDefinition(
+        name: String,
+        exerciseId: String?,
+        in library: [ExerciseDefinition]
+    ) -> ExerciseDefinition? {
+        if let exerciseId, let byId = library.first(where: { $0.id == exerciseId }) {
+            return byId
+        }
+        let normalized = ExerciseDefinition.normalize(name)
+        guard !normalized.isEmpty else { return nil }
+        return library.first { definition in
+            ExerciseDefinition.normalize(definition.nameEN) == normalized
+                || ExerciseDefinition.normalize(definition.nameZH) == normalized
+                || definition.aliases.contains { ExerciseDefinition.normalize($0) == normalized }
+        }
+    }
+
+    static func exactNameMatch(_ query: String, in library: [ExerciseDefinition]) -> ExerciseDefinition? {
+        resolveDefinition(name: query, exerciseId: nil, in: library)
+    }
+
+    /// Derives the "recent" section from actual training history: most recent
+    /// session date first, ties broken by how often the exercise was performed.
+    static func recentEntries(
+        sessions: [WorkoutSession],
+        library: [ExerciseDefinition],
+        limit: Int = 10
+    ) -> [RecentExerciseEntry] {
+        struct Accumulator {
+            var definition: ExerciseDefinition
+            var lastPerformedAt: Date
+            var timesPerformed: Int
+            var lastTopSet: ExerciseSet?
+        }
+
+        var byDefinitionId: [String: Accumulator] = [:]
+
+        for session in sessions {
+            for exercise in session.exercises {
+                guard let definition = resolveDefinition(
+                    name: exercise.name,
+                    exerciseId: exercise.exerciseId,
+                    in: library
+                ) else { continue }
+
+                let topSet = exercise.sets.max { lhs, rhs in
+                    (lhs.weight ?? 0, lhs.reps) < (rhs.weight ?? 0, rhs.reps)
+                }
+
+                if var existing = byDefinitionId[definition.id] {
+                    existing.timesPerformed += 1
+                    if session.date > existing.lastPerformedAt {
+                        existing.lastPerformedAt = session.date
+                        existing.lastTopSet = topSet
+                    }
+                    byDefinitionId[definition.id] = existing
+                } else {
+                    byDefinitionId[definition.id] = Accumulator(
+                        definition: definition,
+                        lastPerformedAt: session.date,
+                        timesPerformed: 1,
+                        lastTopSet: topSet
+                    )
+                }
+            }
+        }
+
+        return byDefinitionId.values
+            .sorted { lhs, rhs in
+                if lhs.lastPerformedAt != rhs.lastPerformedAt { return lhs.lastPerformedAt > rhs.lastPerformedAt }
+                if lhs.timesPerformed != rhs.timesPerformed { return lhs.timesPerformed > rhs.timesPerformed }
+                return lhs.definition.nameEN < rhs.definition.nameEN
+            }
+            .prefix(limit)
+            .map { accumulator in
+                RecentExerciseEntry(
+                    definition: accumulator.definition,
+                    lastPerformedAt: accumulator.lastPerformedAt,
+                    timesPerformed: accumulator.timesPerformed,
+                    lastWeight: accumulator.lastTopSet?.weight,
+                    lastWeightUnit: accumulator.lastTopSet?.weightUnit ?? .kg,
+                    lastReps: accumulator.lastTopSet?.reps
+                )
+            }
+    }
+}
+
+// MARK: - Seed Library Loading
+
+nonisolated enum ExerciseSeedLibrary {
+    static func load(bundle: Bundle = .main) -> [ExerciseDefinition] {
+        guard let url = bundle.url(forResource: "exercise_library", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let file = try? JSONDecoder().decode(ExerciseLibraryFile.self, from: data) else {
+            return []
+        }
+        return file.exercises
+    }
+}
+
+// MARK: - Service
+
+protocol ExerciseLibraryServiceProtocol {
+    func fetchLibrary() async -> [ExerciseDefinition]
+    func fetchRecentEntries(limit: Int) async -> [RecentExerciseEntry]
+    func addCustomExercise(
+        name: String,
+        muscleGroup: MuscleGroup,
+        loadType: ExerciseLoadType
+    ) async throws -> ExerciseDefinition
+}
+
+final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
+    private let database: LocalAppDatabase
+    private let seed: [ExerciseDefinition]
+
+    init(database: LocalAppDatabase, seed: [ExerciseDefinition] = ExerciseSeedLibrary.load()) {
+        self.database = database
+        self.seed = seed
+    }
+
+    func fetchLibrary() async -> [ExerciseDefinition] {
+        ExerciseLibraryEngine.merged(seed: seed, custom: await database.customExercises())
+    }
+
+    func fetchRecentEntries(limit: Int = 10) async -> [RecentExerciseEntry] {
+        ExerciseLibraryEngine.recentEntries(
+            sessions: await database.allStrengthSessions(),
+            library: await fetchLibrary(),
+            limit: limit
+        )
+    }
+
+    func addCustomExercise(
+        name: String,
+        muscleGroup: MuscleGroup,
+        loadType: ExerciseLoadType
+    ) async throws -> ExerciseDefinition {
+        // Creating a name that already exists (seed or custom) selects the
+        // existing definition instead of minting a duplicate.
+        if let existing = ExerciseLibraryEngine.exactNameMatch(name, in: await fetchLibrary()) {
+            return existing
+        }
+        return try await database.addCustomExercise(
+            name: name,
+            muscleGroup: muscleGroup,
+            loadType: loadType
+        )
+    }
+}

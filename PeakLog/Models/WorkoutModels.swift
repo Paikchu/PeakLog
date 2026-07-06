@@ -39,6 +39,7 @@ nonisolated struct StrengthSessionDraft: Equatable, Sendable {
         }
 
         var name: String
+        var exerciseId: String? = nil
         var sets: [SetDraft]
     }
 
@@ -73,7 +74,16 @@ nonisolated struct ExerciseSet: Identifiable, Codable, Equatable, Sendable {
 nonisolated struct Exercise: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var name: String
+    /// Stable library slug; nil for legacy free-text entries.
+    var exerciseId: String?
     var sets: [ExerciseSet]
+
+    init(id: String, name: String, exerciseId: String? = nil, sets: [ExerciseSet]) {
+        self.id = id
+        self.name = name
+        self.exerciseId = exerciseId
+        self.sets = sets
+    }
 }
 
 // MARK: - Workout Session

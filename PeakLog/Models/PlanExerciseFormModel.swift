@@ -13,6 +13,7 @@ struct PlanExerciseDraft: Equatable, Sendable {
     }
 
     var exerciseName: String
+    var exerciseId: String? = nil
     var isBodyweight: Bool
     var sets: [SetDraft]
 }
@@ -38,7 +39,12 @@ enum PlanExerciseDraftBuilder {
                     setDrafts.append(.init(targetWeight: weight, targetWeightUnit: .kg, targetReps: set.reps))
                 }
             }
-            result.append(PlanExerciseDraft(exerciseName: name, isBodyweight: exercise.isBodyweight, sets: setDrafts))
+            result.append(PlanExerciseDraft(
+                exerciseName: name,
+                exerciseId: exercise.sourceExerciseId,
+                isBodyweight: exercise.isBodyweight,
+                sets: setDrafts
+            ))
         }
         return result
     }

@@ -19,19 +19,31 @@ struct DailyRecordSetInput: Identifiable, Equatable, Sendable {
 struct DailyRecordExerciseInput: Identifiable, Equatable, Sendable {
     let id: UUID
     var name: String
+    /// Library slug of the picked exercise; nil for legacy free-text entries.
+    var sourceExerciseId: String?
     var isBodyweight: Bool
     var sets: [DailyRecordSetInput]
 
     init(
         id: UUID = UUID(),
         name: String = "",
+        sourceExerciseId: String? = nil,
         isBodyweight: Bool = false,
         sets: [DailyRecordSetInput] = [DailyRecordSetInput()]
     ) {
         self.id = id
         self.name = name
+        self.sourceExerciseId = sourceExerciseId
         self.isBodyweight = isBodyweight
         self.sets = sets
+    }
+
+    init(definition: ExerciseDefinition, language: AppLanguage) {
+        self.init(
+            name: definition.displayName(for: language),
+            sourceExerciseId: definition.id,
+            isBodyweight: definition.loadType == .bodyweight
+        )
     }
 
     mutating func appendSetCopyingLast() {
@@ -72,7 +84,7 @@ enum DailyRecordDraftBuilder {
                     setDrafts.append(.init(weight: weight, weightUnit: .kg, reps: set.reps, rpe: nil))
                 }
             }
-            exerciseDrafts.append(.init(name: name, sets: setDrafts))
+            exerciseDrafts.append(.init(name: name, exerciseId: exercise.sourceExerciseId, sets: setDrafts))
         }
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
