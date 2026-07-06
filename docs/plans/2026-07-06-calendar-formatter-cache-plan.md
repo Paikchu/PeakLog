@@ -1,0 +1,8 @@
+- 修改点：`PeakLog/Views/History/CalendarGridView.swift`。
+- 新增 `CalendarDateText`，集中管理 weekday、month title、day number 文本。
+- 使用 `Locale.identifier` 作为缓存 key，避免语言切换污染。
+- 将缓存限制在 `@MainActor`，匹配 SwiftUI 渲染路径和 `DateFormatter` 使用方式。
+- 替换 `weekdays`、`displayedMonthTitle`、`DayCell.dayNumber` 中的即时 formatter 创建。
+- 不触碰 `HistoryViewModel.displayedMonthTitle`，本次目标只处理 `CalendarGridView` 的 body 相关路径。
+- 验证命令：历史日历 Swift 编译测试。
+- 验证命令：`xcodebuild` 构建 `PeakLog` scheme。
