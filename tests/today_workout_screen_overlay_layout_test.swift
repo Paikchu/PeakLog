@@ -27,16 +27,16 @@ precondition(
     "Expected today screen to remove the AI conversation overlay"
 )
 precondition(
-    source.contains("DailyRecordSheet"),
-    "Expected floating plus to present the manual daily record sheet"
+    !source.contains("DailyRecordSheet"),
+    "Expected the manual daily record entry point to be removed from the today screen"
 )
 precondition(
     !source.contains("PlanComposerSheet"),
     "Expected floating plus to stop presenting the free-form plan composer"
 )
 precondition(
-    source.contains("today.addDailyRecord") && source.contains("today.addPlanExercise"),
-    "Expected floating plus to expose both manual daily record and manual plan exercise semantics"
+    source.contains("today.addPlanExercise") && !source.contains("today.addRecordMenu"),
+    "Expected the inline add row to expose only the add-to-plan action, with no floating add menu"
 )
 precondition(
     !source.contains("today.startPlan"),

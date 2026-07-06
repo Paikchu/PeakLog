@@ -6,7 +6,6 @@ import UIKit
 struct TodayWorkoutScreen: View {
     // Owned by ContentView so the dock can surface the start-training action.
     @ObservedObject var viewModel: TodayWorkoutViewModel
-    @State private var isPresentingDailyRecord = false
     @State private var isPresentingAddPlanExercise = false
     @State private var isPresentingFinishDialog = false
     @State private var isPresentingCancelDialog = false
@@ -55,96 +54,91 @@ struct TodayWorkoutScreen: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(spacing: 18) {
-                    if viewModel.isLoading {
-                        ProgressView().padding(.top, 40)
-                    } else {
-                        if !isFocusMode {
-                            if let session = viewModel.activeLiveWorkout {
-                                TodayActiveSessionBanner(
-                                    session: session,
-                                    locale: locale,
-                                    flowAnimation: flowAnimation,
-                                    onResume: viewModel.resumeTrainingFocus
-                                )
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                            TodaySummarySection(state: summaryState, locale: locale)
-                                .transition(.opacity)
-                        }
-                        if let planState {
-                            TodayPlanExercisesSection(
-                                state: planState,
+        ScrollView {
+            VStack(spacing: 18) {
+                if viewModel.isLoading {
+                    ProgressView().padding(.top, 40)
+                } else {
+                    if !isFocusMode {
+                        if let session = viewModel.activeLiveWorkout {
+                            TodayActiveSessionBanner(
+                                session: session,
+                                locale: locale,
                                 flowAnimation: flowAnimation,
-                                onSetScrolled: { id in
-                                    scrolledExerciseId = id
-                                    displayedExerciseId = id
-                                },
-                                onUpdateSet: { setId, weight, unit, reps in
-                                    Task {
-                                        await viewModel.updatePlannedSet(
-                                            planSetId: setId,
-                                            targetWeight: weight,
-                                            targetWeightUnit: unit,
-                                            targetReps: reps
-                                        )
-                                    }
-                                },
-                                onCompleteSet: { setId, rpe in
-                                    Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
-                                },
-                                onAddSet: { exerciseId in
-                                    Task { await viewModel.addPlannedSet(planExerciseId: exerciseId) }
-                                },
-                                onDeleteLastSet: { exerciseId in
-                                    Task { await viewModel.deleteLastPlannedSet(planExerciseId: exerciseId) }
-                                },
-                                onToggleLiveSet: viewModel.toggleLiveSet,
-                                onSkipCurrentLiveExercise: {
-                                    withAnimation(flowAnimation) {
-                                        viewModel.skipCurrentLiveExercise()
-                                    }
-                                }
+                                onResume: viewModel.resumeTrainingFocus
                             )
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
-                        if !isFocusMode {
-                            TodayRecordsSection(
-                                state: recordsState,
-                                record: Binding(
-                                    get: { viewModel.todayRecord ?? recordsState.record },
-                                    set: { viewModel.todayRecord = $0 }
-                                ),
-                                onSetChanged: { exerciseId, updatedSet in
-                                    Task { await viewModel.updateLoggedSet(exerciseId: exerciseId, updatedSet: updatedSet) }
-                                },
-                                onAddSet: { exerciseId in
-                                    Task { await viewModel.addLoggedSet(exerciseId: exerciseId) }
-                                },
-                                onDeleteLastSet: { exerciseId in
-                                    Task { await viewModel.deleteLastLoggedSet(exerciseId: exerciseId) }
+                        TodaySummarySection(state: summaryState, locale: locale)
+                            .transition(.opacity)
+                    }
+                    if let planState {
+                        TodayPlanExercisesSection(
+                            state: planState,
+                            flowAnimation: flowAnimation,
+                            onSetScrolled: { id in
+                                scrolledExerciseId = id
+                                displayedExerciseId = id
+                            },
+                            onUpdateSet: { setId, weight, unit, reps in
+                                Task {
+                                    await viewModel.updatePlannedSet(
+                                        planSetId: setId,
+                                        targetWeight: weight,
+                                        targetWeightUnit: unit,
+                                        targetReps: reps
+                                    )
                                 }
-                            )
-                                .transition(.opacity)
-                        }
+                            },
+                            onCompleteSet: { setId, rpe in
+                                Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
+                            },
+                            onAddSet: { exerciseId in
+                                Task { await viewModel.addPlannedSet(planExerciseId: exerciseId) }
+                            },
+                            onDeleteLastSet: { exerciseId in
+                                Task { await viewModel.deleteLastPlannedSet(planExerciseId: exerciseId) }
+                            },
+                            onToggleLiveSet: viewModel.toggleLiveSet,
+                            onSkipCurrentLiveExercise: {
+                                withAnimation(flowAnimation) {
+                                    viewModel.skipCurrentLiveExercise()
+                                }
+                            }
+                        )
+                    }
+                    if !isFocusMode {
+                        TodayInlineAddRow(onAddPlanExercise: { isPresentingAddPlanExercise = true })
+                            .transition(.opacity)
+                    }
+                    if !isFocusMode {
+                        TodayRecordsSection(
+                            state: recordsState,
+                            record: Binding(
+                                get: { viewModel.todayRecord ?? recordsState.record },
+                                set: { viewModel.todayRecord = $0 }
+                            ),
+                            onSetChanged: { exerciseId, updatedSet in
+                                Task { await viewModel.updateLoggedSet(exerciseId: exerciseId, updatedSet: updatedSet) }
+                            },
+                            onAddSet: { exerciseId in
+                                Task { await viewModel.addLoggedSet(exerciseId: exerciseId) }
+                            },
+                            onDeleteLastSet: { exerciseId in
+                                Task { await viewModel.deleteLastLoggedSet(exerciseId: exerciseId) }
+                            }
+                        )
+                            .transition(.opacity)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                // 专注模式底部留白加大，让最后一个动作也能滚到屏幕中间。
-                .padding(.bottom, isFocusMode ? 320 : 104)
             }
-            .scrollPosition(id: $scrolledExerciseId, anchor: .center)
-            .dismissKeyboardOnTap()
-
-            if !isFocusMode {
-                addRecordButton
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 22)
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            // 专注模式底部留白加大，让最后一个动作也能滚到屏幕中间。
+            .padding(.bottom, isFocusMode ? 320 : 104)
         }
+        .scrollPosition(id: $scrolledExerciseId, anchor: .center)
+        .dismissKeyboardOnTap()
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
         .safeAreaInset(edge: .top) {
@@ -231,11 +225,6 @@ struct TodayWorkoutScreen: View {
             UIApplication.shared.isIdleTimerDisabled = false
 #endif
         }
-        .sheet(isPresented: $isPresentingDailyRecord) {
-            DailyRecordSheet { draft in
-                await viewModel.addDailyRecord(draft)
-            }
-        }
         .sheet(isPresented: $isPresentingAddPlanExercise) {
             AddPlanExerciseSheet { drafts in
                 await viewModel.addPlanExercises(drafts)
@@ -282,46 +271,6 @@ struct TodayWorkoutScreen: View {
     private var remainingSetsCount: Int {
         guard let session = viewModel.activeLiveWorkout else { return 0 }
         return session.totalSetsCount - session.completedSetsCount
-    }
-
-    private var addRecordButton: some View {
-        Menu {
-            Button {
-                isPresentingAddPlanExercise = true
-            } label: {
-                Label(String(localized: "today.add_menu.plan_exercise"), systemImage: "calendar.badge.plus")
-            }
-            .accessibilityIdentifier("today.addPlanExercise")
-
-            Button {
-                isPresentingDailyRecord = true
-            } label: {
-                Label(String(localized: "today.add_menu.daily_record"), systemImage: "square.and.pencil")
-            }
-            .accessibilityIdentifier("today.addDailyRecord")
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 21, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 58, height: 58)
-                .background(addRecordButtonBackground)
-        }
-        .accessibilityLabel("Add daily record")
-        .accessibilityIdentifier("today.addRecordMenu")
-    }
-
-    @ViewBuilder
-    private var addRecordButtonBackground: some View {
-        if #available(iOS 26, *) {
-            Circle()
-                .fill(Color.accentPrimary.opacity(0.32))
-                .glassEffect(.regular.tint(Color.accentPrimary.opacity(0.25)).interactive(), in: .rect(cornerRadius: 29))
-                .shadow(color: Color.accentPrimary.opacity(0.24), radius: 18, x: 0, y: 10)
-        } else {
-            LinearGradient.accentGradient
-                .clipShape(Circle())
-                .shadow(color: Color.accentPrimary.opacity(0.28), radius: 18, x: 0, y: 10)
-        }
     }
 
 }
@@ -631,24 +580,22 @@ private struct TodayPlanExercisesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: state.isFocusMode ? 10 : 16) {
-            VStack(alignment: .leading, spacing: state.isFocusMode ? 10 : 16) {
-                ForEach(state.plan.exercises) { exercise in
-                    exerciseCard(for: exercise)
-                        .id(exercise.id)
-                        .visualEffect { content, proxy in
-                            let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
-                            let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
-                            let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
-                            let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
-                            let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
-                            return content
-                                .scaleEffect(scale)
-                                .opacity(opacity)
-                        }
-                }
+            ForEach(state.plan.exercises) { exercise in
+                exerciseCard(for: exercise)
+                    .id(exercise.id)
+                    .visualEffect { content, proxy in
+                        let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
+                        let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
+                        let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
+                        let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
+                        let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
+                        return content
+                            .scaleEffect(scale)
+                            .opacity(opacity)
+                    }
             }
-            .scrollTargetLayout()
         }
+        .scrollTargetLayout()
     }
 
     @ViewBuilder
@@ -704,6 +651,35 @@ private struct TodayPlanExercisesSection: View {
                 )
             }
         )
+    }
+}
+
+private struct TodayInlineAddRow: View {
+    let onAddPlanExercise: () -> Void
+
+    var body: some View {
+        Button(action: onAddPlanExercise) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .bold))
+                Text("today.add_menu.plan_exercise")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundColor(.accentPrimary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+                    .strokeBorder(
+                        Color.accentPrimary.opacity(0.45),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+        .accessibilityIdentifier("today.addPlanExercise")
     }
 }
 
