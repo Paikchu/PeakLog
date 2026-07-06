@@ -36,3 +36,16 @@ PeakLog/Support/WorkoutDateFormatter.swift
 - `tests/local_state_decode_compat_test.swift`：无 `customExercises` 键的旧状态文件加载不丢数据；自定义动作创建/去重/空名拒绝/跨重开持久化。
 
 结果：3 个新测试 + 受影响的 `plan_exercise_draft_builder_test`、`daily_record_multi_exercise_draft_test` 全部通过；`xcodebuild test`（18 用例）通过；iPhone 17 Pro Max 模拟器手动验证完整流程（筛选/搜索/多选/自定义创建/保存进计划）。
+
+---
+
+# 二期：情境推荐（同日实现）
+
+需求：`docs/requirements/2026-07-06-exercise-picker-recommendations.md`
+方案：`docs/plans/2026-07-06-exercise-picker-recommendations-plan.md`
+
+- 新增 `PeakLog/Services/ExerciseRecommendationEngine.swift`：纯函数推荐引擎，单一入口 `recommend(context)`（未来换模型实现时调用方不动）。信号：肌群最近训练日、session 共现计数、个人频次+近度；硬排除：今日已选 + 恢复规避（大肌群 2 日、核心/全身 1 日，今日已练/已选肌群豁免）；打分分空态（需求分主导）与已选态（共现+肌群亲和主导，同肌群 ≥3 个后协同肌群上浮：胸→肩/臂、背→臂、肩→臂、腿/全身→核心）。
+- `ExerciseLibraryService` 协议新增 `fetchRecommendations(todaysSelections:limit:)`，内部合并今日计划动作与今日已记录动作。
+- Picker：「最近使用」区替换为「为你推荐」（键 `exercise_picker.suggested_section`，删除 `recent_section`）；`.task(id: recommendationKey)` 驱动勾选/表单变化时实时重排（自动取消过期任务）；推荐行身份加 `suggested-` 前缀避免与分组区冲突；上次数据摘要沿用 recents 查表装饰。
+- 新增 `tests/exercise_recommendation_test.swift`（六场景：恢复规避与回归、核心 1 日恢复、共现+同肌群排序、饱和递进、今日豁免、冷启动+limit），编译源码清单在原清单上追加 `ExerciseRecommendationEngine.swift`。
+- 验证：6 个 swiftc 逻辑测试全过、`xcodebuild test` 通过；模拟器实测——今日计划为肩（地雷管推举）时推荐区全为肩部动作、昨日练过的背被排除；连勾 3 个肩部动作后推荐区实时重排为臂部动作。

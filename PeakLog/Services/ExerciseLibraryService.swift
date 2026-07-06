@@ -162,6 +162,10 @@ nonisolated enum ExerciseSeedLibrary {
 protocol ExerciseLibraryServiceProtocol {
     func fetchLibrary() async -> [ExerciseDefinition]
     func fetchRecentEntries(limit: Int) async -> [RecentExerciseEntry]
+    func fetchRecommendations(
+        todaysSelections: [ExerciseDefinition],
+        limit: Int
+    ) async -> [ExerciseDefinition]
     func addCustomExercise(
         name: String,
         muscleGroup: MuscleGroup,
@@ -188,6 +192,66 @@ final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
             library: await fetchLibrary(),
             limit: limit
         )
+    }
+
+    /// Context-aware picks for the picker's suggested section. The caller
+    /// passes what is already chosen in the current flow; today's plan and
+    /// today's logged exercises are merged in here.
+    func fetchRecommendations(
+        todaysSelections: [ExerciseDefinition],
+        limit: Int = 8
+    ) async -> [ExerciseDefinition] {
+        let library = await fetchLibrary()
+        let sessions = await database.allStrengthSessions()
+        let today = Date()
+
+        var combined: [String: ExerciseDefinition] = [:]
+        for definition in todaysSelections {
+            combined[definition.id] = definition
+        }
+        for definition in await todaysTrainedDefinitions(library: library, today: today) {
+            combined[definition.id] = definition
+        }
+
+        return ExerciseRecommendationEngine.recommend(
+            RecommendationContext(
+                library: library,
+                sessions: sessions,
+                todaysSelections: Array(combined.values),
+                today: today,
+                limit: limit
+            )
+        )
+    }
+
+    private func todaysTrainedDefinitions(
+        library: [ExerciseDefinition],
+        today: Date
+    ) async -> [ExerciseDefinition] {
+        var definitions: [ExerciseDefinition] = []
+        if let planDay = await database.todayPlan() {
+            for exercise in planDay.exercises {
+                if let definition = ExerciseLibraryEngine.resolveDefinition(
+                    name: exercise.exerciseName,
+                    exerciseId: exercise.exerciseId,
+                    in: library
+                ) {
+                    definitions.append(definition)
+                }
+            }
+        }
+        for session in await database.sessionsForDay(today) {
+            for exercise in session.exercises {
+                if let definition = ExerciseLibraryEngine.resolveDefinition(
+                    name: exercise.name,
+                    exerciseId: exercise.exerciseId,
+                    in: library
+                ) {
+                    definitions.append(definition)
+                }
+            }
+        }
+        return definitions
     }
 
     func addCustomExercise(

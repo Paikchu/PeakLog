@@ -14,7 +14,8 @@ struct ExercisePickerScreen: View {
     let onConfirm: ([ExerciseDefinition]) -> Void
 
     @State private var library: [ExerciseDefinition] = []
-    @State private var recents: [RecentExerciseEntry] = []
+    @State private var recommendations: [ExerciseDefinition] = []
+    @State private var summariesById: [String: RecentExerciseEntry] = [:]
     @State private var query = ""
     @State private var muscleFilter: MuscleGroup?
     @State private var equipmentFilter: Equipment?
@@ -42,8 +43,13 @@ struct ExercisePickerScreen: View {
         ExerciseLibraryEngine.groupedByMuscle(filteredExercises)
     }
 
-    private var showsRecents: Bool {
-        trimmedQuery.isEmpty && muscleFilter == nil && equipmentFilter == nil && !recents.isEmpty
+    private var showsSuggestions: Bool {
+        trimmedQuery.isEmpty && muscleFilter == nil && equipmentFilter == nil && !recommendations.isEmpty
+    }
+
+    /// Selection and form-card changes re-key the recommendation task.
+    private var recommendationKey: String {
+        (selection.map(\.id) + alreadyAddedIds.sorted()).joined(separator: "|")
     }
 
     var body: some View {
@@ -62,10 +68,12 @@ struct ExercisePickerScreen: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                if showsRecents {
-                    sectionLabel("exercise_picker.recent_section")
-                    ForEach(recents) { entry in
-                        pickerRow(for: entry.definition, recentEntry: entry)
+                if showsSuggestions {
+                    sectionLabel("exercise_picker.suggested_section")
+                    // Prefixed row identity: the same exercise also appears in
+                    // its muscle-group section below.
+                    ForEach(recommendations, id: \.suggestedRowId) { definition in
+                        pickerRow(for: definition, recentEntry: summariesById[definition.id])
                     }
                 }
 
@@ -86,6 +94,7 @@ struct ExercisePickerScreen: View {
                     .padding(.bottom, 24)
             }
             .animation(pickerSpring, value: filteredExercises.map(\.id))
+            .animation(pickerSpring, value: recommendations.map(\.id))
             .animation(pickerSpring, value: muscleFilter)
         }
         .background(Color.appBackground.ignoresSafeArea())
@@ -95,6 +104,7 @@ struct ExercisePickerScreen: View {
         .safeAreaInset(edge: .bottom) { confirmBar }
         .sensoryFeedback(.selection, trigger: selection.count)
         .task { await loadLibrary() }
+        .task(id: recommendationKey) { await refreshRecommendations() }
         .sheet(isPresented: $showsCreateSheet) {
             CreateCustomExerciseSheet(initialName: trimmedQuery) { name, muscleGroup, loadType in
                 await createCustomExercise(name: name, muscleGroup: muscleGroup, loadType: loadType)
@@ -377,7 +387,23 @@ struct ExercisePickerScreen: View {
 
     private func loadLibrary() async {
         library = await AppServices.exerciseLibraryService.fetchLibrary()
-        recents = await AppServices.exerciseLibraryService.fetchRecentEntries(limit: 10)
+        let entries = await AppServices.exerciseLibraryService.fetchRecentEntries(limit: 100)
+        summariesById = Dictionary(
+            entries.map { ($0.definition.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    private func refreshRecommendations() async {
+        let currentLibrary = await AppServices.exerciseLibraryService.fetchLibrary()
+        let addedDefinitions = alreadyAddedIds.compactMap { id in
+            currentLibrary.first { $0.id == id }
+        }
+        let result = await AppServices.exerciseLibraryService.fetchRecommendations(
+            todaysSelections: selection + addedDefinitions,
+            limit: 8
+        )
+        withAnimation(pickerSpring) { recommendations = result }
     }
 
     private func createCustomExercise(
@@ -533,6 +559,10 @@ struct CreateCustomExerciseSheet: View {
         .background(Color.appCard)
         .dismissKeyboardOnTap()
     }
+}
+
+private extension ExerciseDefinition {
+    var suggestedRowId: String { "suggested-\(id)" }
 }
 
 #Preview {
