@@ -2,14 +2,6 @@ import Foundation
 import Combine
 import CoreGraphics
 
-enum TodayAIOverlayPhase: Equatable {
-    case idle
-    case processing
-    case applying
-    case completed
-    case failed
-}
-
 struct PlanLiveWorkoutSet: Identifiable, Equatable, Codable {
     let id: String
     let setIndex: Int
@@ -95,28 +87,13 @@ final class TodayWorkoutViewModel: ObservableObject {
     // 组间休息倒计时结束时间；nil 表示不在休息。
     @Published var restEndDate: Date?
     @Published var quickActions: [AIWorkoutQuickAction] = []
-    @Published var inputText = ""
     @Published var isLoading = false
-    @Published var isSending = false
     @Published var errorMessage: String?
-    @Published var latestAssistantReply: String?
-    @Published private(set) var isOverlayVisible = false
-    @Published private(set) var overlayPhase: TodayAIOverlayPhase = .idle
-    @Published private(set) var streamingReply = ""
-    @Published private(set) var overlayContentBlocks: [ContentBlock] = []
-    @Published private(set) var didPersistPlan = false
-    @Published private(set) var voiceInputState: VoiceInputState = .idle
 
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let workoutService: WorkoutServiceProtocol
-    private let chatService: ChatServiceProtocol
-    private let conversationService: ConversationServiceProtocol
-    private let speechRecognitionService: SpeechRecognitionServicing
     private let liveActivityManager: PlanLiveActivityManaging
 
-    private var inputTextBeforeVoiceRecording = ""
-    private var shouldRefreshAfterStreamingCompletion = false
-    private var persistenceFallbackTask: Task<Void, Never>?
     private var liveActivityObservationTask: Task<Void, Never>?
     private var restCountdownTask: Task<Void, Never>?
     private let sessionDefaults: UserDefaults
@@ -127,17 +104,11 @@ final class TodayWorkoutViewModel: ObservableObject {
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
         workoutService: WorkoutServiceProtocol,
-        chatService: ChatServiceProtocol,
-        conversationService: ConversationServiceProtocol,
-        speechRecognitionService: SpeechRecognitionServicing,
         liveActivityManager: PlanLiveActivityManaging = NoOpPlanLiveActivityManager(),
         sessionDefaults: UserDefaults = .standard
     ) {
         self.trainingPlanService = trainingPlanService
         self.workoutService = workoutService
-        self.chatService = chatService
-        self.conversationService = conversationService
-        self.speechRecognitionService = speechRecognitionService
         self.liveActivityManager = liveActivityManager
         self.sessionDefaults = sessionDefaults
     }
@@ -147,9 +118,6 @@ final class TodayWorkoutViewModel: ObservableObject {
         self.init(
             trainingPlanService: AppServices.trainingPlanService,
             workoutService: AppServices.workoutService,
-            chatService: AppServices.chatService,
-            conversationService: AppServices.conversationService,
-            speechRecognitionService: SpeechRecognitionService(),
             liveActivityManager: PlanLiveActivityManagerFactory.make()
         )
     }
@@ -176,46 +144,6 @@ final class TodayWorkoutViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    func sendAction() async {
-        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isSending, voiceInputState == .idle else { return }
-
-        errorMessage = nil
-        isSending = true
-        inputText = ""
-        beginStreamingOverlay()
-        chatService.setStreamEventHandler { [weak self] event in
-            guard let self else { return }
-            Task { @MainActor in
-                self.handleStreamEvent(event)
-            }
-        }
-
-        do {
-            let conversationId = try await conversationService.fetchOrCreateDefaultConversationId()
-            _ = try await chatService.sendMessage(text, sessionId: conversationId)
-            persistenceFallbackTask?.cancel()
-            persistenceFallbackTask = nil
-            latestAssistantReply = streamingReply.trimmingCharacters(in: .whitespacesAndNewlines)
-            if shouldRefreshAfterStreamingCompletion {
-                await refresh()
-            }
-        } catch {
-            persistenceFallbackTask?.cancel()
-            persistenceFallbackTask = nil
-            errorMessage = userFacingErrorMessage(from: error)
-            inputText = text
-            markOverlayFailed()
-        }
-
-        chatService.setStreamEventHandler(nil)
-        isSending = false
-    }
-
-    func dismissOverlay() {
-        isOverlayVisible = false
     }
 
     func startPlanLiveWorkout() {
@@ -590,58 +518,6 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
-    func toggleVoiceInput() async {
-        guard !isSending else { return }
-
-        switch voiceInputState {
-        case .idle:
-            await startVoiceRecording()
-        case .recording:
-            await stopVoiceRecordingAndTranscribe()
-        case .transcribing:
-            break
-        }
-    }
-
-    private func startVoiceRecording() async {
-        errorMessage = nil
-        inputTextBeforeVoiceRecording = inputText
-
-        do {
-            try await speechRecognitionService.startRecognition(
-                onLevelUpdate: { _ in },
-                onTranscriptUpdate: { [weak self] transcript in
-                    Task { @MainActor in
-                        self?.inputText = transcript
-                    }
-                }
-            )
-            voiceInputState = .recording
-        } catch {
-            handleVoiceFailure(error)
-        }
-    }
-
-    private func stopVoiceRecordingAndTranscribe() async {
-        voiceInputState = .transcribing
-
-        do {
-            let transcript = try await speechRecognitionService.stopRecognition()
-            inputText = transcript
-            inputTextBeforeVoiceRecording = ""
-            voiceInputState = .idle
-        } catch {
-            handleVoiceFailure(error)
-        }
-    }
-
-    private func handleVoiceFailure(_ error: Error) {
-        inputText = inputTextBeforeVoiceRecording
-        inputTextBeforeVoiceRecording = ""
-        voiceInputState = .idle
-        errorMessage = error.localizedDescription
-    }
-
     private func refreshTodayRecordOnly() async {
         do {
             async let sessions = workoutService.sessionsForDay(Date())
@@ -821,198 +697,6 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
 
         todayPlan = plan
-    }
-
-    private func beginStreamingOverlay() {
-        isOverlayVisible = true
-        overlayPhase = .processing
-        streamingReply = ""
-        overlayContentBlocks = []
-        didPersistPlan = false
-        shouldRefreshAfterStreamingCompletion = false
-        quickActions = []
-    }
-
-    private func handleStreamEvent(_ event: ChatServiceStreamEvent) {
-        switch event {
-        case .responseStarted:
-            isOverlayVisible = true
-        case .status(let status):
-            switch status {
-            case .processing:
-                overlayPhase = .processing
-            case .applying:
-                overlayPhase = .applying
-            case .completed:
-                overlayPhase = .completed
-            case .failed:
-                overlayPhase = .failed
-            }
-        case .textDelta(let delta):
-            guard !delta.isEmpty else { return }
-            streamingReply.append(delta)
-            latestAssistantReply = streamingReply
-        case .workoutPreview(let block):
-            applyStreamingWorkoutPreview(block)
-            shouldRefreshAfterStreamingCompletion = true
-            if overlayPhase == .processing {
-                overlayPhase = .applying
-            }
-            schedulePersistenceFallback(refreshScope: .recordOnly)
-        case .runningPreview(let block):
-            applyStreamingRunningPreview(block)
-            shouldRefreshAfterStreamingCompletion = true
-            if overlayPhase == .processing {
-                overlayPhase = .applying
-            }
-            schedulePersistenceFallback(refreshScope: .recordOnly)
-        case .planContentBlock(let block):
-            overlayContentBlocks = upsertOverlayBlock(block, into: overlayContentBlocks)
-            didPersistPlan = true
-            shouldRefreshAfterStreamingCompletion = true
-            applyImmediatePlanBlock(block)
-            if overlayPhase == .processing {
-                overlayPhase = .applying
-            }
-            schedulePersistenceFallback(refreshScope: .fullRefresh)
-        case .error(let message):
-            errorMessage = userFacingErrorMessage(from: message)
-            markOverlayFailed()
-        case .done:
-            if overlayPhase != .failed {
-                overlayPhase = .completed
-            }
-            persistenceFallbackTask?.cancel()
-            persistenceFallbackTask = nil
-        }
-    }
-
-    private func markOverlayFailed() {
-        persistenceFallbackTask?.cancel()
-        persistenceFallbackTask = nil
-        overlayPhase = .failed
-        isOverlayVisible = true
-    }
-
-    private func userFacingErrorMessage(from error: Error) -> String {
-        userFacingErrorMessage(from: error.localizedDescription)
-    }
-
-    private func userFacingErrorMessage(from message: String) -> String {
-        let lowercased = message.lowercased()
-        if lowercased.contains("foundationmodels")
-            || lowercased.contains("languagemodelsession")
-            || lowercased.contains("generationerror") {
-            return "计划生成失败。请稍后重试。"
-        }
-        return message
-    }
-
-    private func applyStreamingWorkoutPreview(_ block: WorkoutRecordBlock) {
-        todayRecord = WorkoutRecord(
-            id: block.workoutSessionId.isEmpty ? "today-record-preview" : block.workoutSessionId,
-            exercises: block.exercises.map { exercise in
-                Exercise(
-                    id: exercise.exerciseId.isEmpty ? "preview-\(exercise.orderIndex)-\(exercise.name)" : exercise.exerciseId,
-                    name: exercise.name,
-                    sets: exercise.sets.map { set in
-                        ExerciseSet(
-                            id: set.setId.isEmpty ? "preview-\(exercise.orderIndex)-set-\(set.setIndex)" : set.setId,
-                            setIndex: set.setIndex,
-                            weight: set.weight,
-                            weightUnit: WeightUnit(rawValue: set.weightUnit) ?? .kg,
-                            reps: set.reps ?? 0,
-                            rpe: nil
-                        )
-                    }
-                )
-            }
-        )
-    }
-
-    private func applyStreamingRunningPreview(_ block: RunningRecordBlock) {
-        let formatter = WorkoutDateFormatter()
-        let record = RunningWorkoutRecord(
-            id: block.runningWorkoutId.isEmpty ? UUID().uuidString : block.runningWorkoutId,
-            userId: "local",
-            workoutDate: formatter.date(from: block.workoutDate) ?? Date(),
-            durationMinutes: block.durationMinutes,
-            distanceKm: block.distanceKm,
-            source: RunningWorkoutSource(rawValue: block.source) ?? .chat,
-            createdAt: Date(),
-            updatedAt: Date()
-        )
-
-        runningRecords.removeAll { $0.id == record.id }
-        runningRecords.append(record)
-        runningRecords.sort { $0.createdAt < $1.createdAt }
-    }
-
-    private enum PersistenceRefreshScope {
-        case recordOnly
-        case fullRefresh
-    }
-
-    private func schedulePersistenceFallback(refreshScope: PersistenceRefreshScope) {
-        persistenceFallbackTask?.cancel()
-        persistenceFallbackTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard !Task.isCancelled else { return }
-
-            switch refreshScope {
-            case .recordOnly:
-                await self.refreshTodayRecordOnly()
-            case .fullRefresh:
-                await self.refresh()
-            }
-
-            if self.overlayPhase != .failed {
-                self.overlayPhase = .completed
-            }
-            self.isSending = false
-        }
-    }
-
-    private func upsertOverlayBlock(_ block: ContentBlock, into existing: [ContentBlock]) -> [ContentBlock] {
-        var blocks = existing
-
-        switch block {
-        case .weeklyPlan:
-            blocks.removeAll {
-                if case .weeklyPlan = $0 { return true }
-                return false
-            }
-        case .todayPlan:
-            blocks.removeAll {
-                if case .todayPlan = $0 { return true }
-                return false
-            }
-        case .planAdjustmentSummary:
-            blocks.removeAll {
-                if case .planAdjustmentSummary = $0 { return true }
-                return false
-            }
-        default:
-            break
-        }
-
-        blocks.append(block)
-        return blocks
-    }
-
-    private func applyImmediatePlanBlock(_ block: ContentBlock) {
-        switch block {
-        case .todayPlan(let plan):
-            todayPlan = TrainingPlanDay(block: plan.day)
-        case .weeklyPlan(let plan):
-            let todayString = Self.currentPlanDateString()
-            if let matchingDay = plan.days.first(where: { $0.planDate == todayString }) {
-                todayPlan = TrainingPlanDay(block: matchingDay)
-            }
-        default:
-            break
-        }
     }
 
     private func findPlanExercise(planExerciseId: String) -> TrainingPlanExercise? {

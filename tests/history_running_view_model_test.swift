@@ -18,7 +18,7 @@ struct HistoryRunningViewModelTestRunner {
                 workoutDate: targetDate,
                 durationMinutes: 30,
                 distanceKm: 5,
-                source: .chat,
+                source: .agent,
                 createdAt: targetDate.addingTimeInterval(3600),
                 updatedAt: targetDate.addingTimeInterval(3600)
             ),

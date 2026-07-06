@@ -63,12 +63,11 @@ PeakLog 是一个基于 SwiftUI 构建的 iOS 健身记录应用，核心思路�
 ```text
 PeakLog/
 ├── PeakLogApp.swift              # App 入口，认证态与主题注入
-├── ContentView.swift             # 主容器，协调 Chat / History / Profile
-├── Models/                       # 领域模型、聊天消息、历史聚合逻辑
+├── ContentView.swift             # 主容器，协调 Today / History / Profile
+├── Models/                       # 领域模型、训练计划、历史聚合逻辑
 ├── ViewModels/                   # 页面状态与业务编排
 ├── Views/
-│   ├── Auth/                     # 登录 / 注册
-│   ├── Chat/                     # AI 聊天记录页
+│   ├── Today/                    # 今日训练、计划执行、手动记录
 │   ├── History/                  # 日历与历史记录页
 │   └── Profile/                  # 个人资料与设置页
 ├── Services/                     # 协议、Supabase 实现、Mock 实现
@@ -92,8 +91,8 @@ PeakLog/
 flowchart LR
     A["SwiftUI Views"] --> B["ViewModels"]
     B --> C["Service Protocols"]
-    C --> D["Supabase Service Implementations"]
-    D --> E["Supabase Auth / Database / Realtime / Edge Functions"]
+    C --> D["Local / Edge-backed Services"]
+    D --> E["Local JSON Store / Supabase Edge Functions"]
 ```
 
 ### 主界面装配方式
@@ -101,45 +100,23 @@ flowchart LR
 应用入口位于 `PeakLogApp.swift`：
 
 - 创建 `ThemeManager`
-- 创建 `AuthStateManager`
-- 根据认证状态切换 `AuthView` 或 `ContentView`
+- 创建 `LocalizationManager`
+- 当前直接进入 `ContentView`
 
 其中 `ContentView` 作为主容器，负责在以下页面之间切换：
 
-- `ChatScreen`
+- `TodayWorkoutScreen`
 - `HistoryScreen`
 - `ProfileScreen`
 
-### 聊天模块的数据流
+### Today 模块的数据流
 
-聊天模块是最有代表性的业务链路：
+Today 模块由 `TodayWorkoutViewModel` 驱动：
 
-```mermaid
-sequenceDiagram
-    participant User as User
-    participant View as ChatScreen
-    participant VM as ChatViewModel
-    participant Service as SupabaseChatService
-    participant Edge as Edge Function
-    participant RT as Supabase Realtime
-
-    User->>View: 输入训练描述
-    View->>VM: sendMessage()
-    VM->>Service: sendMessage(text, conversationId)
-    Service->>Edge: invoke("chat-send-message")
-    Edge-->>Service: 返回 userMessageId / assistantMessageId
-    VM->>Service: fetchMessages()
-    Service->>RT: subscribeToMessages()
-    RT-->>VM: 占位消息 / 完整助手消息更新
-    VM-->>View: 更新 messageGroups
-```
-
-这条链路的关键点：
-
-- `ChatViewModel` 负责发送消息、拉取历史消息、监听 Realtime 更新
-- `SupabaseChatService` 负责消息查询、函数调用和消息订阅
-- `ChatMessage` 使用 `contentBlocks` 表达结构化 AI 内容
-- 助手处理中的消息会显示为 typing bubble，完成后替换为正式内容
+- `TrainingPlanServiceProtocol` 加载今天的计划、更新计划组、记录计划完成
+- `WorkoutServiceProtocol` 加载当天力量/跑步记录，并处理手动新增与编辑
+- `PlanLiveActivityManaging` 负责计划训练过程中的 Live Activity 同步
+- 页面没有自然语言输入入口，浮动加号只提供手动添加计划动作和每日记录
 
 ### 历史模块的数据流
 
@@ -169,19 +146,18 @@ sequenceDiagram
 
 例如：
 
-- `ChatViewModel` 依赖 `SupabaseChatService` 与 `WorkoutServiceProtocol`
-- `ProfileScreen` 初始化时注入 `SupabaseProfileService`
-- `MockChatService`、`MockWorkoutService`、`MockProfileService` 用于预览和开发辅助
+- `TodayWorkoutViewModel` 依赖 `TrainingPlanServiceProtocol`、`WorkoutServiceProtocol` 与 `PlanLiveActivityManaging`
+- `HistoryViewModel` 依赖 `WorkoutServiceProtocol` 与 `TrainingPlanServiceProtocol`
+- `ProfileViewModel` 依赖 `ProfileServiceProtocol`
 
 ## 核心数据模型
 
 项目中的核心领域模型主要包括：
 
-- `ChatMessage`: 聊天消息，包含角色、状态、文本和结构化内容块
-- `ContentBlock`: AI 返回内容块，目前支持文本和训练记录块
 - `WorkoutSession`: 某次训练 session
 - `Exercise`: 训练动作
 - `ExerciseSet`: 单组训练数据
+- `TrainingPlan`: 7 日训练计划
 - `UserProfile`: 用户资料、统计与偏好
 
 这些模型集中放在 `Models/` 目录，便于 UI、ViewModel 与 Service 共用。
@@ -190,10 +166,8 @@ sequenceDiagram
 
 项目已经直接接入 Supabase，主要涉及：
 
-- `Auth`: 登录、注册、会话读取、登出
-- `Database`: `messages`、`conversations`、`workout_sessions`、`profiles` 等表
-- `Realtime`: 监听消息插入与更新
-- `Edge Functions`: 调用 `chat-send-message` 处理 AI 消息发送与解析
+- `Local Store`: profile、active plan、strength sessions、running records
+- `Edge Functions`: `ai-workout-action` 处理今日训练动作与计划调整
 
 Supabase Client 在 `SupabaseManager` 中以单例形式维护，配置位于 `Supabase/Config.swift`。
 

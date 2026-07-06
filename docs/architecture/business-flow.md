@@ -2,109 +2,73 @@
 
 ## 1. 业务域总览
 
-PeakLog 当前主流程分为四个业务域：
+PeakLog 当前主流程：
 
-- 对话记录训练（聊天主链路）
 - 今日训练与计划执行
-- 历史回顾（力量 + 跑步）
+- 手动记录力量训练和跑步
+- 历史回顾
 - 目标与偏好管理
+- 结构化 agent action
 
-## 2. 对话记录训练（核心主流程）
-
-```mermaid
-sequenceDiagram
-    participant User as 用户
-    participant App as iOS Chat
-    participant Edge as chat-send-message
-    participant Agent as Workout Agent
-    participant DB as Supabase DB
-
-    User->>App: 输入训练描述
-    App->>Edge: POST /chat-send-message (SSE)
-    Edge->>DB: 写入 user message
-    Edge->>Agent: 组织上下文并流式推理
-    Agent-->>Edge: 文本增量 / tool-call
-    Edge->>DB: 按工具结果落库训练/计划
-    Edge-->>App: SSE事件(text/status/content-block)
-    Edge->>DB: 写入 assistant message(content_blocks)
-    App->>DB: 刷新消息历史并渲染卡片
-```
-
-### 关键业务规则
-
-- 用户消息先落库，确保会话完整性
-- assistant 消息在流结束后一次性持久化
-- 若触发 `commit_workout` / `commit_running_workout`，会生成结构化训练记录
-- 若触发计划工具，返回 `weekly_plan` / `today_plan` / `plan_adjustment_summary`
-
-## 3. 今日训练与计划执行流程
+## 2. 今日训练与计划执行流程
 
 ```mermaid
 flowchart TD
     A[打开 Today 页] --> B[读取 active weekly plan]
     B --> C{今天是否有 plan day}
-    C -- 否 --> D[展示空态/引导生成计划]
+    C -- 否 --> D[展示空态或当天记录]
     C -- 是 --> E[展示今天动作和目标组]
-    E --> F[用户完成某组并记录实际值]
+    E --> F[用户完成某组]
     F --> G[写入 exercise_sets]
     G --> H[回写 training_plan_sets.completed_at + linked_exercise_set_id]
     H --> I[刷新 today_plan 与历史数据]
 ```
 
-### 关键业务规则
+- 计划组可被执行映射为真实训练组
+- 同日力量记录和跑步记录可并存
+- Live Activity 完成状态在确认训练时合并回 Today
 
-- 计划组可被“执行映射”为真实训练组
-- 同一天若已存在 `workout_session` 则追加，不重复建 session
-- 计划完成状态与真实训练记录保持可追溯关联
+## 3. 手动记录流程
+
+```mermaid
+flowchart LR
+    A[点击 Today 浮动加号] --> B{选择类型}
+    B --> C[新增计划动作]
+    B --> D[新增每日记录]
+    D --> E[力量训练]
+    D --> F[跑步记录]
+    C --> G[刷新 Today 计划]
+    E --> H[刷新 Today 记录]
+    F --> H
+```
+
+- 手动新增计划动作直接进入当天计划
+- 手动力量记录写入 session/exercise/set
+- 手动跑步记录写入 running record，来源为 `manual`
 
 ## 4. 历史回顾流程
 
 ### 力量训练历史
 
-1. 按月查询活跃日期（`workout_sessions`）
+1. 按月查询活跃日期
 2. 按天查询 session + exercises + sets
-3. 在 ViewModel 聚合并转为可展示结构
+3. 在 ViewModel 聚合为历史卡片
 
 ### 跑步训练历史
 
-1. 按月查询活跃日期（`running_workouts`）
+1. 按月查询活跃日期
 2. 按天读取时长和距离记录
-3. 与力量记录并存展示（同日可同时出现）
+3. 与力量记录并存展示
 
-## 5. 计划生成与调整流程
+## 5. Agent Action 流程
 
 ```mermaid
 flowchart LR
-    U[用户目标/反馈] --> A[Agent判断需要规划]
-    A --> B[create_or_refresh_weekly_plan]
-    A --> C[adjust_current_or_next_week_plan]
-    B --> D[归档旧active计划]
-    C --> D
-    D --> E[写入新训练计划四张表]
-    E --> F[返回weekly_plan/today_plan块]
-    F --> G[iOS渲染计划卡片]
+    U[明确动作请求] --> A[ai-workout-action]
+    A --> B[Agent 选择工具]
+    B --> C[写入训练/计划/目标]
+    C --> D[返回结构化 JSON]
 ```
 
-### 关键业务规则
-
-- 每次刷新计划前会将现有 active 计划归档为 archived
-- 新计划按结构化 `days -> exercises -> sets` 全量重建
-- 计划调整必须给出 `adjustmentReason`，用于变更可解释性
-
-## 6. 目标与偏好管理流程
-
-- 用户在 Profile 更新目标，写入 `profiles.fitness_goal_summary`
-- 偏好写入 `user_preferences`（如单位、深色模式）
-- agent 在生成计划/建议时读取目标摘要参与 prompt 上下文
-
-## 7. 异常与降级流程
-
-- token 无效：返回 401，客户端触发鉴权流程
-- tool 调用失败：assistant 消息写为 failed，返回兜底文案
-- 仅文本回复（无工具）：仍可完成会话，但不写训练结构化记录
-
-## 8. 运维关注点
-
-- 关注 `messages`、`workout_sessions`、`training_plan_sets` 的写入成功率
-- 关注 SSE 链路时延与客户端超时重试
-- 对计划变更频率、计划执行率、PR 提升趋势建立指标看板
+- agent action 不再绑定聊天 UI
+- 结果通过结构化 JSON 驱动刷新，不保留消息历史

@@ -38,7 +38,7 @@ struct RunningRecordCard: View {
 
     private var sourceLabel: String {
         switch record.source {
-        case .chat:
+        case .agent:
             return "AI"
         case .manual:
             return "手动"

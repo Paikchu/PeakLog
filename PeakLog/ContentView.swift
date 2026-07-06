@@ -67,7 +67,7 @@ struct ContentView: View {
         guard let plan = todayViewModel.todayPlan, plan.totalSetsCount > 0 else { return nil }
         return DockPlanAction(
             title: String(localized: "today.start_training"),
-            isEnabled: !todayViewModel.isSending,
+            isEnabled: todayViewModel.activeLiveWorkout == nil,
             action: { todayViewModel.startPlanLiveWorkout() }
         )
     }

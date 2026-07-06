@@ -2,15 +2,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   createAgentSystemPrompt,
   createWorkoutAgent,
-} from "../chat-send-message/agent.ts";
-import { getSupabaseAdminClientKey, getSupabaseUserClientKey } from "../chat-send-message/env.ts";
+} from "../_shared/agent.ts";
+import { getSupabaseAdminClientKey, getSupabaseUserClientKey } from "../_shared/env.ts";
 import {
   buildPRSummary,
   buildPRSummaryBlock,
   type PRCandidateExercise,
   type PRSnapshot,
   type PRSummaryItem,
-} from "../chat-send-message/pr-summary.ts";
+} from "../_shared/pr-summary.ts";
 import {
   pickWorkoutSessionDate,
   type AdjustCurrentOrNextWeekPlanToolInput,
@@ -20,7 +20,7 @@ import {
   type RecentSavedRecordSummary,
   type TrainingPlanDayInput,
   type UpdateProfileGoalToolInput,
-} from "../chat-send-message/schema.ts";
+} from "../_shared/schema.ts";
 import {
   aiWorkoutActionRequestSchema,
   buildAIWorkoutActionResponse,

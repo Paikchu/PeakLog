@@ -1,85 +1,8 @@
 import Foundation
 
-struct LocalConversation: Codable, Equatable, Identifiable {
-    let id: String
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
-}
-
-struct LocalCoachStrengthSession: Sendable {
-    struct ExercisePayload: Sendable {
-        let name: String
-        let sets: [ExerciseSetPayload]
-    }
-
-    struct ExerciseSetPayload: Sendable {
-        let weight: Double?
-        let weightUnit: WeightUnit
-        let reps: Int
-        let rpe: Double?
-    }
-
-    let title: String?
-    let workoutDate: Date
-    let exercises: [ExercisePayload]
-}
-
-struct LocalCoachRunningSession: Sendable {
-    let workoutDate: Date
-    let durationMinutes: Int
-    let distanceKm: Double
-}
-
-struct LocalCoachPlanSet: Sendable {
-    let targetWeight: Double?
-    let targetWeightUnit: WeightUnit
-    let targetReps: Int
-}
-
-struct LocalCoachPlanExercise: Sendable {
-    let exerciseName: String
-    let exerciseLoadType: ExerciseLoadType
-    let progressionMode: String
-    let notes: String?
-    let sets: [LocalCoachPlanSet]
-}
-
-struct LocalCoachPlanDay: Sendable {
-    let dayIndex: Int
-    let title: String
-    let focus: String?
-    let status: String
-    let exercises: [LocalCoachPlanExercise]
-}
-
-struct LocalCoachWeeklyPlan: Sendable {
-    let goalSummary: String?
-    let coachSummary: String
-    let days: [LocalCoachPlanDay]
-}
-
-struct LocalCoachActionBundle: Sendable {
-    let reply: String
-    let strengthSession: LocalCoachStrengthSession?
-    let runningSession: LocalCoachRunningSession?
-    let weeklyPlan: LocalCoachWeeklyPlan?
-    let fitnessGoalSummary: String?
-}
-
-struct LocalCoachApplicationResult: Sendable {
-    let strengthSession: WorkoutSession?
-    let runningRecord: RunningWorkoutRecord?
-    let weeklyPlan: TrainingPlan?
-    let updatedFitnessGoalSummary: String?
-    let newPRs: [ExercisePR]
-}
-
 private struct LocalAppState: Codable {
     var profile: UserProfile
     var activePlan: TrainingPlan
-    var conversations: [LocalConversation]
-    var messagesByConversation: [String: [ChatMessage]]
     var strengthSessions: [WorkoutSession]
     var runningRecords: [RunningWorkoutRecord]
 }
@@ -155,50 +78,6 @@ actor LocalAppDatabase {
         return summary
     }
 
-    func fetchOrCreateDefaultConversationId() throws -> String {
-        if let conversation = state.conversations.first {
-            return conversation.id
-        }
-
-        let now = Date()
-        let conversation = LocalConversation(
-            id: "local-default-conversation",
-            title: "PeakLog Coach",
-            createdAt: now,
-            updatedAt: now
-        )
-        state.conversations = [conversation]
-        state.messagesByConversation[conversation.id] = []
-        try persist()
-        return conversation.id
-    }
-
-    func fetchMessages(conversationId: String, start: Date? = nil, end: Date? = nil) -> [ChatMessage] {
-        let messages = state.messagesByConversation[conversationId] ?? []
-        return messages.filter { message in
-            if let start, message.createdAt < start { return false }
-            if let end, message.createdAt >= end { return false }
-            return true
-        }
-    }
-
-    func saveMessages(_ messages: [ChatMessage], for conversationId: String) throws {
-        var existing = state.messagesByConversation[conversationId] ?? []
-        for message in messages {
-            if let index = existing.firstIndex(where: { $0.id == message.id }) {
-                existing[index] = message
-            } else {
-                existing.append(message)
-            }
-        }
-        existing.sort { $0.createdAt < $1.createdAt }
-        state.messagesByConversation[conversationId] = existing
-        if let index = state.conversations.firstIndex(where: { $0.id == conversationId }) {
-            state.conversations[index].updatedAt = Date()
-        }
-        try persist()
-    }
-
     func activePlan() -> TrainingPlan? {
         state.activePlan
     }
@@ -253,14 +132,21 @@ actor LocalAppDatabase {
     }
 
     func createStrengthSession(_ draft: StrengthSessionDraft) throws -> WorkoutSession {
-        let session = appendStrengthSession(from: LocalCoachStrengthSession(
-            title: draft.title,
-            workoutDate: draft.workoutDate,
-            exercises: draft.exercises.map { exercise in
-                LocalCoachStrengthSession.ExercisePayload(
+        let now = Date()
+        let session = WorkoutSession(
+            id: UUID().uuidString,
+            userId: state.profile.id,
+            date: draft.workoutDate,
+            durationMinutes: nil,
+            label: draft.title,
+            exercises: draft.exercises.enumerated().map { exerciseOffset, exercise in
+                Exercise(
+                    id: UUID().uuidString,
                     name: exercise.name,
-                    sets: exercise.sets.map { set in
-                        LocalCoachStrengthSession.ExerciseSetPayload(
+                    sets: exercise.sets.enumerated().map { setOffset, set in
+                        ExerciseSet(
+                            id: UUID().uuidString,
+                            setIndex: setOffset + 1,
                             weight: set.weight,
                             weightUnit: set.weightUnit,
                             reps: set.reps,
@@ -268,8 +154,11 @@ actor LocalAppDatabase {
                         )
                     }
                 )
-            }
-        ))
+            },
+            createdAt: now,
+            updatedAt: now
+        )
+        state.strengthSessions.append(session)
         recalculateDerivedProfile()
         try persist()
         return session
@@ -540,294 +429,6 @@ actor LocalAppDatabase {
         )
     }
 
-    func applyCoachActions(_ actions: LocalCoachActionBundle, conversationId: String, assistantMessageId: String) throws -> LocalCoachApplicationResult {
-        let previousPRs = Dictionary(uniqueKeysWithValues: state.profile.exercisePRs.map { ($0.normalizedName, $0) })
-        var appliedStrengthSession: WorkoutSession?
-        var appliedRunningRecord: RunningWorkoutRecord?
-        var appliedPlan: TrainingPlan?
-
-        if let strength = actions.strengthSession {
-            appliedStrengthSession = appendStrengthSession(from: strength)
-        }
-
-        if let running = actions.runningSession {
-            appliedRunningRecord = try createRunningRecord(
-                workoutDate: running.workoutDate,
-                durationMinutes: running.durationMinutes,
-                distanceKm: running.distanceKm,
-                source: .chat
-            )
-        }
-
-        if let weeklyPlan = actions.weeklyPlan {
-            state.activePlan = buildPlan(from: weeklyPlan, preservingWeekStartDate: state.activePlan.weekStartDate)
-            appliedPlan = state.activePlan
-        }
-
-        var updatedGoalSummary: String?
-        if let summary = actions.fitnessGoalSummary?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !summary.isEmpty {
-            state.profile.fitnessGoalSummary = summary
-            state.activePlan = rebuildPlan(
-                from: state.activePlan,
-                goalSummary: summary,
-                coachSummary: state.activePlan.coachSummary
-            )
-            updatedGoalSummary = summary
-            appliedPlan = state.activePlan
-        }
-
-        recalculateDerivedProfile()
-
-        let newPRs = state.profile.exercisePRs.filter { candidate in
-            guard let previous = previousPRs[candidate.normalizedName] else { return true }
-            return candidate.maxWeight > previous.maxWeight
-        }
-
-        let assistantMessage = makeAssistantMessage(
-            conversationId: conversationId,
-            messageId: assistantMessageId,
-            reply: actions.reply,
-            strengthSession: appliedStrengthSession,
-            runningRecord: appliedRunningRecord,
-            plan: appliedPlan,
-            updatedGoalSummary: updatedGoalSummary,
-            newPRs: newPRs
-        )
-
-        try saveMessages([assistantMessage], for: conversationId)
-
-        return LocalCoachApplicationResult(
-            strengthSession: appliedStrengthSession,
-            runningRecord: appliedRunningRecord,
-            weeklyPlan: appliedPlan,
-            updatedFitnessGoalSummary: updatedGoalSummary,
-            newPRs: newPRs
-        )
-    }
-
-    private func appendStrengthSession(from payload: LocalCoachStrengthSession) -> WorkoutSession {
-        let now = Date()
-        let session = WorkoutSession(
-            id: UUID().uuidString,
-            userId: state.profile.id,
-            date: payload.workoutDate,
-            durationMinutes: nil,
-            label: payload.title,
-            exercises: payload.exercises.enumerated().map { exerciseOffset, exercise in
-                Exercise(
-                    id: UUID().uuidString,
-                    name: exercise.name,
-                    sets: exercise.sets.enumerated().map { setOffset, set in
-                        ExerciseSet(
-                            id: UUID().uuidString,
-                            setIndex: setOffset + 1,
-                            weight: set.weight,
-                            weightUnit: set.weightUnit,
-                            reps: set.reps,
-                            rpe: set.rpe
-                        )
-                    }
-                )
-            },
-            createdAt: now,
-            updatedAt: now
-        )
-        state.strengthSessions.append(session)
-        return session
-    }
-
-    private func makeAssistantMessage(
-        conversationId: String,
-        messageId: String,
-        reply: String,
-        strengthSession: WorkoutSession?,
-        runningRecord: RunningWorkoutRecord?,
-        plan: TrainingPlan?,
-        updatedGoalSummary: String?,
-        newPRs: [ExercisePR]
-    ) -> ChatMessage {
-        var blocks: [ContentBlock] = [.text(reply)]
-
-        if let session = strengthSession {
-            blocks.append(.workoutRecord(makeWorkoutRecordBlock(from: session)))
-        }
-
-        if let runningRecord {
-            blocks.append(.runningRecord(makeRunningRecordBlock(from: runningRecord)))
-        }
-
-        if let plan {
-            blocks.append(.weeklyPlan(makeWeeklyPlanBlock(from: plan)))
-            if let today = plan.days.first(where: { $0.planDate == Self.planDateString(from: Date()) }) {
-                blocks.append(.todayPlan(makeTodayPlanBlock(from: today, planId: plan.id, goalSummary: plan.goalSummary)))
-            }
-        }
-
-        if let updatedGoalSummary, !updatedGoalSummary.isEmpty {
-            blocks.append(.planAdjustmentSummary(PlanAdjustmentSummaryBlock(summaryText: updatedGoalSummary)))
-        }
-
-        if !newPRs.isEmpty {
-            blocks.append(.prSummary(PRSummaryBlock(
-                summaryText: String(localized: "profile.stats.prs"),
-                items: newPRs.map {
-                    PRSummaryItem(
-                        normalizedName: $0.normalizedName,
-                        displayName: $0.displayName,
-                        previousWeight: nil,
-                        currentWeight: $0.maxWeight,
-                        weightUnit: $0.weightUnit.rawValue,
-                        isNewRecord: true
-                    )
-                }
-            )))
-        }
-
-        return ChatMessage(
-            id: messageId,
-            sessionId: conversationId,
-            role: .assistant,
-            text: reply,
-            createdAt: Date(),
-            contentBlocks: blocks,
-            status: .completed,
-            parseStatus: .completed
-        )
-    }
-
-    private func makeWorkoutRecordBlock(from session: WorkoutSession) -> WorkoutRecordBlock {
-        WorkoutRecordBlock(
-            workoutSessionId: session.id,
-            workoutDate: Self.planDateString(from: session.date),
-            title: session.label,
-            parseStatus: ParseStatus.completed.rawValue,
-            exercises: session.exercises.enumerated().map { index, exercise in
-                ContentBlockExercise(
-                    exerciseId: exercise.id,
-                    name: exercise.name,
-                    orderIndex: index,
-                    sets: exercise.sets.map { set in
-                        ContentBlockSet(
-                            setId: set.id,
-                            setIndex: set.setIndex,
-                            weight: set.weight,
-                            weightUnit: set.weightUnit.rawValue,
-                            reps: set.reps
-                        )
-                    }
-                )
-            }
-        )
-    }
-
-    private func makeRunningRecordBlock(from record: RunningWorkoutRecord) -> RunningRecordBlock {
-        RunningRecordBlock(
-            runningWorkoutId: record.id,
-            workoutDate: Self.planDateString(from: record.workoutDate),
-            durationMinutes: record.durationMinutes,
-            distanceKm: record.distanceKm,
-            source: record.source.rawValue
-        )
-    }
-
-    private func makeWeeklyPlanBlock(from plan: TrainingPlan) -> WeeklyPlanBlock {
-        WeeklyPlanBlock(
-            planId: plan.id,
-            weekStartDate: plan.weekStartDate,
-            goalSummary: plan.goalSummary,
-            coachSummary: plan.coachSummary,
-            days: plan.days.map(makePlanDayBlock)
-        )
-    }
-
-    private func makeTodayPlanBlock(from day: TrainingPlanDay, planId: String, goalSummary: String?) -> TodayPlanBlock {
-        TodayPlanBlock(
-            planId: planId,
-            goalSummary: goalSummary,
-            day: makePlanDayBlock(day)
-        )
-    }
-
-    private func makePlanDayBlock(_ day: TrainingPlanDay) -> PlanDayBlock {
-        PlanDayBlock(
-            planDayId: day.id,
-            planDate: day.planDate,
-            dayIndex: day.dayIndex,
-            title: day.title,
-            focus: day.focus,
-            status: day.status,
-            exercises: day.exercises.map { exercise in
-                PlanExerciseBlock(
-                    planExerciseId: exercise.id,
-                    orderIndex: exercise.orderIndex,
-                    exerciseName: exercise.exerciseName,
-                    exerciseLoadType: exercise.exerciseLoadType,
-                    progressionMode: exercise.progressionMode,
-                    notes: exercise.notes,
-                    sets: exercise.sets.map { set in
-                        PlanSetBlock(
-                            planSetId: set.id,
-                            setIndex: set.setIndex,
-                            targetWeight: set.targetWeight,
-                            targetWeightUnit: set.targetWeightUnit.rawValue,
-                            targetReps: set.targetReps,
-                            completedAt: set.completedAt.map(Self.timestampString(from:)),
-                            linkedExerciseSetId: set.linkedExerciseSetId
-                        )
-                    }
-                )
-            }
-        )
-    }
-
-    private func buildPlan(from weeklyPlan: LocalCoachWeeklyPlan, preservingWeekStartDate weekStartDate: String) -> TrainingPlan {
-        let calendar = Calendar.current
-        let baseDate = Self.date(from: weekStartDate) ?? calendar.startOfDay(for: Date())
-        let sortedDays = weeklyPlan.days.sorted { $0.dayIndex < $1.dayIndex }
-
-        return TrainingPlan(
-            id: state.activePlan.id,
-            weekStartDate: weekStartDate,
-            goalSummary: weeklyPlan.goalSummary ?? state.profile.fitnessGoalSummary,
-            coachSummary: weeklyPlan.coachSummary,
-            days: sortedDays.enumerated().map { index, day in
-                let date = calendar.date(byAdding: .day, value: index, to: baseDate) ?? baseDate
-                return TrainingPlanDay(
-                    id: state.activePlan.days[safe: index]?.id ?? UUID().uuidString,
-                    planDate: Self.planDateString(from: date),
-                    dayIndex: day.dayIndex,
-                    title: day.title,
-                    focus: day.focus,
-                    status: day.status,
-                    exercises: day.exercises.enumerated().map { exerciseIndex, exercise in
-                        TrainingPlanExercise(
-                            id: UUID().uuidString,
-                            orderIndex: exerciseIndex,
-                            exerciseName: exercise.exerciseName,
-                            exerciseLoadType: exercise.exerciseLoadType,
-                            progressionMode: exercise.progressionMode,
-                            notes: exercise.notes,
-                            previousPerformanceSummary: nil,
-                            aiSuggestion: nil,
-                            sets: exercise.sets.enumerated().map { setIndex, set in
-                                TrainingPlanSet(
-                                    id: UUID().uuidString,
-                                    setIndex: setIndex + 1,
-                                    targetWeight: set.targetWeight,
-                                    targetWeightUnit: set.targetWeightUnit,
-                                    targetReps: set.targetReps,
-                                    completedAt: nil,
-                                    linkedExerciseSetId: nil
-                                )
-                            }
-                        )
-                    }
-                )
-            }
-        )
-    }
-
     private func rebuildPlan(from plan: TrainingPlan, goalSummary: String?, coachSummary: String) -> TrainingPlan {
         TrainingPlan(
             id: plan.id,
@@ -1061,24 +662,6 @@ actor LocalAppDatabase {
             updatedAt: yesterday
         )
 
-        let conversation = LocalConversation(
-            id: "local-default-conversation",
-            title: "PeakLog Coach",
-            createdAt: now,
-            updatedAt: now
-        )
-
-        let welcome = ChatMessage(
-            id: "seed-welcome",
-            sessionId: conversation.id,
-            role: .assistant,
-            text: "Tell me what you trained today, or ask me to adjust this week's plan.",
-            createdAt: now.addingTimeInterval(-120),
-            contentBlocks: [.text("Tell me what you trained today, or ask me to adjust this week's plan.")],
-            status: .completed,
-            parseStatus: .completed
-        )
-
         var state = LocalAppState(
             profile: UserProfile(
                 id: "local-user",
@@ -1097,8 +680,6 @@ actor LocalAppDatabase {
                 exercisePRs: []
             ),
             activePlan: plan,
-            conversations: [conversation],
-            messagesByConversation: [conversation.id: [welcome]],
             strengthSessions: [yesterdaySession],
             runningRecords: [seedRun]
         )
@@ -1279,8 +860,6 @@ enum AppServices {
     static let profileService: ProfileServiceProtocol = LocalProfileService(database: database)
     static let workoutService: WorkoutServiceProtocol = LocalWorkoutService(database: database)
     static let trainingPlanService: TrainingPlanServiceProtocol = LocalTrainingPlanService(database: database)
-    static let conversationService: ConversationServiceProtocol = LocalConversationService(database: database)
-    static let chatService: ChatServiceProtocol = OnDeviceChatService(database: database)
 }
 
 private extension Array {

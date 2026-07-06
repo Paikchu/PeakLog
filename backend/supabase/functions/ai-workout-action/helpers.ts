@@ -1,4 +1,4 @@
-import { z } from "../chat-send-message/deps.ts";
+import { z } from "../_shared/deps.ts";
 
 export const aiWorkoutActionRequestSchema = z.object({
   text: z.string().trim().min(1),

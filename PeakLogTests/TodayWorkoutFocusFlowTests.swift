@@ -21,9 +21,6 @@ final class TodayWorkoutFocusFlowTests: XCTestCase {
         TodayWorkoutViewModel(
             trainingPlanService: FocusFlowTrainingPlanService(),
             workoutService: FocusFlowWorkoutService(),
-            chatService: FocusFlowChatService(),
-            conversationService: FocusFlowConversationService(),
-            speechRecognitionService: FocusFlowSpeechService(),
             liveActivityManager: NoOpPlanLiveActivityManager(),
             sessionDefaults: defaults
         )
@@ -305,39 +302,4 @@ private final class FocusFlowWorkoutService: WorkoutServiceProtocol {
             updatedAt: workoutDate
         )
     }
-}
-
-private struct FocusFlowChatService: ChatServiceProtocol {
-    func sendMessage(_ text: String, sessionId: String) async throws -> SendMessageServiceResponse {
-        SendMessageServiceResponse(userMessageId: "user", assistantMessageId: "assistant", conversationId: sessionId)
-    }
-
-    func fetchMessages(sessionId: String) async throws -> [ChatMessage] { [] }
-    func fetchMessages(sessionId: String, start: Date, end: Date) async throws -> [ChatMessage] { [] }
-
-    func subscribeToMessages(
-        conversationId: String,
-        onInsert: @escaping (ChatMessage) -> Void,
-        onUpdate: @escaping (ChatMessage) -> Void
-    ) async {}
-
-    func setStreamEventHandler(_ handler: ChatServiceStreamHandler?) {}
-    func unsubscribe() async {}
-
-    func confirmWorkoutRecord(messageId: String, workoutRecord: WorkoutRecord) async throws -> WorkoutRecord {
-        workoutRecord
-    }
-}
-
-private struct FocusFlowConversationService: ConversationServiceProtocol {
-    func fetchOrCreateDefaultConversationId() async throws -> String { "conversation-1" }
-}
-
-private struct FocusFlowSpeechService: SpeechRecognitionServicing {
-    func startRecognition(
-        onLevelUpdate: @escaping (CGFloat) -> Void,
-        onTranscriptUpdate: @escaping (String) -> Void
-    ) async throws {}
-
-    func stopRecognition() async throws -> String { "" }
 }

@@ -4,7 +4,7 @@ import {
 import {
   commitRunningWorkoutToolInputSchema,
   parseCommitRunningWorkoutToolInput,
-} from "../supabase/functions/chat-send-message/schema.ts";
+} from "../supabase/functions/_shared/schema.ts";
 
 Deno.test("commit running workout schema accepts complete running payload", () => {
   const parsed = commitRunningWorkoutToolInputSchema.safeParse({

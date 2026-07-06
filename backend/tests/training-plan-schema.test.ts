@@ -2,7 +2,7 @@ import {
   createOrRefreshWeeklyPlanToolInputSchema,
   parseCreateOrRefreshWeeklyPlanToolInput,
   updateProfileGoalToolInputSchema,
-} from "../supabase/functions/chat-send-message/schema.ts";
+} from "../supabase/functions/_shared/schema.ts";
 
 Deno.test("update_profile_goal schema accepts natural language goal summaries", () => {
   const parsed = updateProfileGoalToolInputSchema.safeParse({
