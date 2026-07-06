@@ -1,6 +1,6 @@
 import Foundation
 
-private struct LocalAppState: Codable {
+nonisolated private struct LocalAppState: Codable, Sendable {
     var profile: UserProfile
     var activePlan: TrainingPlan
     var strengthSessions: [WorkoutSession]
@@ -811,7 +811,7 @@ enum LocalAppDatabaseError: LocalizedError {
     }
 }
 
-private struct LocalAppDatabasePreviewDriver {
+nonisolated private struct LocalAppDatabasePreviewDriver: Sendable {
     let stats: UserStats
     let exercisePRs: [ExercisePR]
 
