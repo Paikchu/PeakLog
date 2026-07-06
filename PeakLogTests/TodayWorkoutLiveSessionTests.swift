@@ -239,7 +239,6 @@ private final class LiveSessionWorkoutService: WorkoutServiceProtocol {
         ].filter { !$0.exercises.first!.sets.isEmpty }
     }
 
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] { [] }
 
     func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession {

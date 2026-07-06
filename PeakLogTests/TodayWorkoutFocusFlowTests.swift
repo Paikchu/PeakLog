@@ -269,7 +269,6 @@ private final class FocusFlowWorkoutService: WorkoutServiceProtocol {
 
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] { [] }
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] { [] }
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] { [] }
 
     func createStrengthSession(_ draft: StrengthSessionDraft) async throws -> WorkoutSession {

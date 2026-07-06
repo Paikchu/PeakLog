@@ -74,10 +74,6 @@ private struct HistoryRunningWorkoutService: WorkoutServiceProtocol {
 
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession] { [] }
 
-    func activeRunningDaysInMonth(year: Int, month: Int) async throws -> [Date] {
-        records.map(\.workoutDate)
-    }
-
     func runningRecordsForDay(_ date: Date) async throws -> [RunningWorkoutRecord] {
         records
     }
