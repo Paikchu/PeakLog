@@ -49,11 +49,6 @@ struct HistoryRunningViewModelTestRunner {
 
 private struct HistoryRunningWorkoutService: WorkoutServiceProtocol {
     let records: [RunningWorkoutRecord]
-
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
-        Exercise(id: exerciseId, name: name, sets: [])
-    }
-
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
     }
@@ -63,7 +58,7 @@ private struct HistoryRunningWorkoutService: WorkoutServiceProtocol {
     }
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {}
-    func deleteExercise(sessionId: String, exerciseId: String) async throws {}
+
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: nil, weightUnit: .kg, reps: 0, rpe: rpe)
     }

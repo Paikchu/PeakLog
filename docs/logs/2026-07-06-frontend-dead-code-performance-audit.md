@@ -16,7 +16,7 @@
 - `CalendarGridView` 在 body 相关路径反复创建 `DateFormatter`；weekday、month title、day number 应缓存 formatter 或改用 `Date.FormatStyle`。
 - `HistoryViewModel.loadCalendar()` 同时调用 strength/running active day，但 `LocalAppDatabase.activeDaysInMonth` 已合并两类记录；保留一个入口，减少重复查询和状态更新。
 - `LocalAppDatabase` 构建时出现 Swift 6 并发隔离警告；`LocalAppState`、Live Activity shared model、formatter helper 应从 MainActor 依赖中拆出来。
-- `WorkoutServiceProtocol.updateExerciseName/deleteExercise` 没有前端入口；要么恢复完整删除/改名 UX，要么把 API 收缩到当前真实工作流。
+- 已处理：`WorkoutServiceProtocol.updateExerciseName/deleteExercise` 没有前端入口，已收缩到当前真实工作流。
 - README 仍描述邮箱登录、Realtime、Supabase Auth、旧聊天架构；代码已经本地化，应重写 README 当前架构段。
 - `MockProfileService`、`MockWorkoutService`、`MockTrainingPlanService` 当前无生产调用；更适合移动到测试/Preview 支撑层，避免服务层同时承担运行与假数据职责。
 

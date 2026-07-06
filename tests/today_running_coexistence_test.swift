@@ -126,11 +126,6 @@ private struct TodayRunningCoexistenceTrainingPlanService: TrainingPlanServicePr
 
 private struct TodayRunningCoexistenceWorkoutService: WorkoutServiceProtocol {
     let today: Date
-
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
-        Exercise(id: exerciseId, name: name, sets: [])
-    }
-
     func updateSet(
         sessionId: String,
         exerciseId: String,
@@ -153,8 +148,6 @@ private struct TodayRunningCoexistenceWorkoutService: WorkoutServiceProtocol {
     }
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {}
-    func deleteExercise(sessionId: String, exerciseId: String) async throws {}
-
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: 60, weightUnit: .kg, reps: 6, rpe: rpe)
     }

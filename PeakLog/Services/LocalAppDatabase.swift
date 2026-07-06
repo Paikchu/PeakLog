@@ -164,21 +164,6 @@ actor LocalAppDatabase {
         return session
     }
 
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) throws -> Exercise {
-        guard let sessionIndex = state.strengthSessions.firstIndex(where: { $0.id == sessionId }) else {
-            throw LocalAppDatabaseError.sessionNotFound
-        }
-        guard let exerciseIndex = state.strengthSessions[sessionIndex].exercises.firstIndex(where: { $0.id == exerciseId }) else {
-            throw LocalAppDatabaseError.exerciseNotFound
-        }
-
-        state.strengthSessions[sessionIndex].exercises[exerciseIndex].name = name
-        state.strengthSessions[sessionIndex].updatedAt = Date()
-        recalculateDerivedProfile()
-        try persist()
-        return state.strengthSessions[sessionIndex].exercises[exerciseIndex]
-    }
-
     func updateSet(
         sessionId: String,
         exerciseId: String,
@@ -237,19 +222,6 @@ actor LocalAppDatabase {
 
         state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.remove(at: setIndex)
         normalizeSetIndices(for: sessionIndex, exerciseIndex: exerciseIndex)
-        state.strengthSessions[sessionIndex].updatedAt = Date()
-        recalculateDerivedProfile()
-        try persist()
-    }
-
-    func deleteExercise(sessionId: String, exerciseId: String) throws {
-        guard let sessionIndex = state.strengthSessions.firstIndex(where: { $0.id == sessionId }) else {
-            throw LocalAppDatabaseError.sessionNotFound
-        }
-        guard let exerciseIndex = state.strengthSessions[sessionIndex].exercises.firstIndex(where: { $0.id == exerciseId }) else {
-            throw LocalAppDatabaseError.exerciseNotFound
-        }
-        state.strengthSessions[sessionIndex].exercises.remove(at: exerciseIndex)
         state.strengthSessions[sessionIndex].updatedAt = Date()
         recalculateDerivedProfile()
         try persist()

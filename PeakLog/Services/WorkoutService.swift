@@ -1,11 +1,9 @@
 import Foundation
 
 protocol WorkoutServiceProtocol {
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
-    func deleteExercise(sessionId: String, exerciseId: String) async throws
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
@@ -33,10 +31,6 @@ final class LocalWorkoutService: WorkoutServiceProtocol {
         self.database = database
     }
 
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
-        try await database.updateExerciseName(sessionId: sessionId, exerciseId: exerciseId, name: name)
-    }
-
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         try await database.updateSet(
             sessionId: sessionId,
@@ -60,10 +54,6 @@ final class LocalWorkoutService: WorkoutServiceProtocol {
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {
         try await database.deleteSet(sessionId: sessionId, exerciseId: exerciseId, setId: setId)
-    }
-
-    func deleteExercise(sessionId: String, exerciseId: String) async throws {
-        try await database.deleteExercise(sessionId: sessionId, exerciseId: exerciseId)
     }
 
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {

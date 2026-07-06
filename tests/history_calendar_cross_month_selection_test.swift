@@ -1,11 +1,9 @@
 import Foundation
 
 protocol WorkoutServiceProtocol {
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
-    func deleteExercise(sessionId: String, exerciseId: String) async throws
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet
     func activeDaysInMonth(year: Int, month: Int) async throws -> [Date]
     func sessionsForDay(_ date: Date) async throws -> [WorkoutSession]
@@ -179,11 +177,6 @@ enum AppServices {
 private struct HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
     var sessionsByDay: [String: [WorkoutSession]] = [:]
     private let formatter = WorkoutDateFormatter(timeZone: TimeZone(identifier: "Asia/Shanghai")!)
-
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
-        Exercise(id: exerciseId, name: name, sets: [])
-    }
-
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
     }
@@ -193,9 +186,6 @@ private struct HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
     }
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {}
-
-    func deleteExercise(sessionId: String, exerciseId: String) async throws {}
-
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: nil, weightUnit: .kg, reps: 0, rpe: rpe)
     }
@@ -249,10 +239,6 @@ private struct HistoryCalendarSelectionWorkoutService: WorkoutServiceProtocol {
 }
 
 actor SupabaseWorkoutService: WorkoutServiceProtocol {
-    func updateExerciseName(sessionId: String, exerciseId: String, name: String) async throws -> Exercise {
-        Exercise(id: exerciseId, name: name, sets: [])
-    }
-
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: weight, weightUnit: weightUnit, reps: reps)
     }
@@ -262,9 +248,6 @@ actor SupabaseWorkoutService: WorkoutServiceProtocol {
     }
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {}
-
-    func deleteExercise(sessionId: String, exerciseId: String) async throws {}
-
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: nil, weightUnit: .kg, reps: 0, rpe: rpe)
     }
