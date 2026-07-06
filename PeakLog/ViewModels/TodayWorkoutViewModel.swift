@@ -10,7 +10,7 @@ enum TodayAIOverlayPhase: Equatable {
     case failed
 }
 
-struct PlanLiveWorkoutSet: Identifiable, Equatable {
+struct PlanLiveWorkoutSet: Identifiable, Equatable, Codable {
     let id: String
     let setIndex: Int
     let targetWeight: Double?
@@ -19,14 +19,14 @@ struct PlanLiveWorkoutSet: Identifiable, Equatable {
     let isAlreadyCompleted: Bool
 }
 
-struct PlanLiveWorkoutExercise: Identifiable, Equatable {
+struct PlanLiveWorkoutExercise: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let loadType: ExerciseLoadType
     let sets: [PlanLiveWorkoutSet]
 }
 
-struct PlanLiveWorkoutSession: Identifiable, Equatable {
+struct PlanLiveWorkoutSession: Identifiable, Equatable, Codable {
     let id: String
     let title: String
     let focus: String?
@@ -34,6 +34,9 @@ struct PlanLiveWorkoutSession: Identifiable, Equatable {
     var currentExerciseIndex: Int
     var currentSetIndex: Int
     var completedSetIds: Set<String>
+    // 用户滑动锁定优先完成的动作；做完后清除，指针回到最早未完成动作。
+    var manualFocusExerciseId: String?
+    var skippedExerciseIds: Set<String> = []
 
     var currentExercise: PlanLiveWorkoutExercise? {
         guard exercises.indices.contains(currentExerciseIndex) else { return nil }
@@ -61,6 +64,22 @@ struct PlanLiveWorkoutSession: Identifiable, Equatable {
     var isComplete: Bool {
         completedSetsCount >= totalSetsCount
     }
+
+    func exercise(withId id: String) -> PlanLiveWorkoutExercise? {
+        exercises.first { $0.id == id }
+    }
+
+    func firstIncompleteSetIndex(in exercise: PlanLiveWorkoutExercise) -> Int? {
+        exercise.sets.firstIndex { !completedSetIds.contains($0.id) }
+    }
+
+    func completedSetsCount(in exercise: PlanLiveWorkoutExercise) -> Int {
+        exercise.sets.count { completedSetIds.contains($0.id) }
+    }
+
+    func isExerciseComplete(_ exercise: PlanLiveWorkoutExercise) -> Bool {
+        firstIncompleteSetIndex(in: exercise) == nil
+    }
 }
 
 @MainActor
@@ -68,7 +87,13 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var runningRecords: [RunningWorkoutRecord] = []
     @Published var todayPlan: TrainingPlanDay?
     @Published var todayRecord: WorkoutRecord?
-    @Published var activeLiveWorkout: PlanLiveWorkoutSession?
+    @Published var activeLiveWorkout: PlanLiveWorkoutSession? {
+        didSet { persistActiveLiveWorkout() }
+    }
+    // 专注模式开关：session 存在但该值为 false 时是“最小化”状态（浏览模式 + 顶部训练横幅）。
+    @Published var isTrainingFocusActive = false
+    // 组间休息倒计时结束时间；nil 表示不在休息。
+    @Published var restEndDate: Date?
     @Published var quickActions: [AIWorkoutQuickAction] = []
     @Published var inputText = ""
     @Published var isLoading = false
@@ -93,6 +118,11 @@ final class TodayWorkoutViewModel: ObservableObject {
     private var shouldRefreshAfterStreamingCompletion = false
     private var persistenceFallbackTask: Task<Void, Never>?
     private var liveActivityObservationTask: Task<Void, Never>?
+    private var restCountdownTask: Task<Void, Never>?
+    private let sessionDefaults: UserDefaults
+
+    static let restDurationSeconds: TimeInterval = 90
+    private static let persistedSessionKey = "today.live_workout_session.v1"
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
@@ -100,7 +130,8 @@ final class TodayWorkoutViewModel: ObservableObject {
         chatService: ChatServiceProtocol,
         conversationService: ConversationServiceProtocol,
         speechRecognitionService: SpeechRecognitionServicing,
-        liveActivityManager: PlanLiveActivityManaging = NoOpPlanLiveActivityManager()
+        liveActivityManager: PlanLiveActivityManaging = NoOpPlanLiveActivityManager(),
+        sessionDefaults: UserDefaults = .standard
     ) {
         self.trainingPlanService = trainingPlanService
         self.workoutService = workoutService
@@ -108,6 +139,7 @@ final class TodayWorkoutViewModel: ObservableObject {
         self.conversationService = conversationService
         self.speechRecognitionService = speechRecognitionService
         self.liveActivityManager = liveActivityManager
+        self.sessionDefaults = sessionDefaults
     }
 
     #if !TESTING
@@ -140,6 +172,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             runningRecords = loadedRecords
             todayPlan = loadedPlan
             todayRecord = mergeSessionsIntoRecord(loadedSessions)
+            restoreLiveWorkoutSessionIfNeeded()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -215,12 +248,74 @@ final class TodayWorkoutViewModel: ObservableObject {
             exercises: exercises,
             currentExerciseIndex: 0,
             currentSetIndex: 0,
-            completedSetIds: Set(exercises.flatMap(\.sets).filter(\.isAlreadyCompleted).map(\.id))
+            completedSetIds: Set(exercises.flatMap(\.sets).filter(\.isAlreadyCompleted).map(\.id)),
+            manualFocusExerciseId: nil,
+            skippedExerciseIds: []
         )
         moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
         activeLiveWorkout = session
+        isTrainingFocusActive = true
         Task { await liveActivityManager.start(session: session) }
         observeLiveActivityCompletions(sessionId: session.id)
+    }
+
+    /// 用户滑动停稳在另一个动作上：锁定该动作为当前动作，优先完成。
+    func focusLiveExercise(id: String) {
+        guard var session = activeLiveWorkout,
+              let exercise = session.exercise(withId: id),
+              session.firstIncompleteSetIndex(in: exercise) != nil,
+              session.currentExercise?.id != id
+        else { return }
+
+        session.manualFocusExerciseId = id
+        session.skippedExerciseIds.remove(id)
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.update(session: session) }
+    }
+
+    /// 跳过当前动作：沉到队尾，指针流转到下一个未跳过的未完成动作。
+    func skipCurrentLiveExercise() {
+        guard var session = activeLiveWorkout, let current = session.currentExercise else { return }
+        session.skippedExerciseIds.insert(current.id)
+        if session.manualFocusExerciseId == current.id {
+            session.manualFocusExerciseId = nil
+        }
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.update(session: session) }
+    }
+
+    func minimizeTrainingFocus() {
+        isTrainingFocusActive = false
+    }
+
+    func resumeTrainingFocus() {
+        guard activeLiveWorkout != nil else { return }
+        isTrainingFocusActive = true
+    }
+
+    func skipRest() {
+        restCountdownTask?.cancel()
+        restCountdownTask = nil
+        restEndDate = nil
+    }
+
+    private func startRestCountdownIfNeeded() {
+        guard isTrainingFocusActive, activeLiveWorkout?.isComplete == false else {
+            skipRest()
+            return
+        }
+
+        restCountdownTask?.cancel()
+        let endDate = Date().addingTimeInterval(Self.restDurationSeconds)
+        restEndDate = endDate
+        restCountdownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.restDurationSeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard let self, self.restEndDate == endDate else { return }
+            self.restEndDate = nil
+        }
     }
 
     private func observeLiveActivityCompletions(sessionId: String) {
@@ -243,22 +338,31 @@ final class TodayWorkoutViewModel: ObservableObject {
     }
 
     func completeCurrentLiveSet() {
-        guard var session = activeLiveWorkout, let set = session.currentSet else { return }
+        guard var session = activeLiveWorkout, let set = session.currentSet,
+              !session.completedSetIds.contains(set.id) else { return }
         session.completedSetIds.insert(set.id)
         moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
         activeLiveWorkout = session
+        startRestCountdownIfNeeded()
         Task { await liveActivityManager.update(session: session) }
     }
 
     func toggleLiveSet(setId: String) {
         guard var session = activeLiveWorkout else { return }
+        var didCompleteSet = false
         if session.completedSetIds.contains(setId) {
+            // 已落库的组不允许在 session 内撤销，否则 confirm 后界面与库不一致。
+            guard session.exercises.flatMap(\.sets).first(where: { $0.id == setId })?.isAlreadyCompleted != true else { return }
             session.completedSetIds.remove(setId)
         } else {
             session.completedSetIds.insert(setId)
+            didCompleteSet = true
         }
         moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
         activeLiveWorkout = session
+        if didCompleteSet {
+            startRestCountdownIfNeeded()
+        }
         Task { await liveActivityManager.update(session: session) }
     }
 
@@ -266,6 +370,8 @@ final class TodayWorkoutViewModel: ObservableObject {
         liveActivityObservationTask?.cancel()
         liveActivityObservationTask = nil
         activeLiveWorkout = nil
+        isTrainingFocusActive = false
+        skipRest()
         Task { await liveActivityManager.end() }
     }
 
@@ -310,6 +416,8 @@ final class TodayWorkoutViewModel: ObservableObject {
             liveActivityObservationTask?.cancel()
             liveActivityObservationTask = nil
             activeLiveWorkout = nil
+            isTrainingFocusActive = false
+            skipRest()
             await liveActivityManager.end()
             await refreshTodayRecordOnly()
             if todayRecord == nil {
@@ -586,10 +694,23 @@ final class TodayWorkoutViewModel: ObservableObject {
     }
 
     private func moveLiveWorkoutCursor(toNextIncompleteSetIn session: inout PlanLiveWorkoutSession) {
-        for exerciseIndex in session.exercises.indices {
-            for setIndex in session.exercises[exerciseIndex].sets.indices {
-                let setId = session.exercises[exerciseIndex].sets[setIndex].id
-                guard !session.completedSetIds.contains(setId) else { continue }
+        // 1. 手动锁定的动作优先；做完即释放锁，回到最早未完成动作。
+        if let manualId = session.manualFocusExerciseId {
+            if let exerciseIndex = session.exercises.firstIndex(where: { $0.id == manualId }),
+               let setIndex = session.firstIncompleteSetIndex(in: session.exercises[exerciseIndex]) {
+                session.currentExerciseIndex = exerciseIndex
+                session.currentSetIndex = setIndex
+                return
+            }
+            session.manualFocusExerciseId = nil
+        }
+
+        // 2. 按 plan 顺序第一个未跳过的未完成动作；3. 全被跳过时回落到含跳过的。
+        for allowSkipped in [false, true] {
+            for exerciseIndex in session.exercises.indices {
+                let exercise = session.exercises[exerciseIndex]
+                if !allowSkipped, session.skippedExerciseIds.contains(exercise.id) { continue }
+                guard let setIndex = session.firstIncompleteSetIndex(in: exercise) else { continue }
                 session.currentExerciseIndex = exerciseIndex
                 session.currentSetIndex = setIndex
                 return
@@ -598,6 +719,54 @@ final class TodayWorkoutViewModel: ObservableObject {
 
         session.currentExerciseIndex = max(session.exercises.count - 1, 0)
         session.currentSetIndex = max(session.exercises.last?.sets.count ?? 1, 1) - 1
+    }
+
+    private struct PersistedLiveWorkout: Codable {
+        let planDate: String
+        let session: PlanLiveWorkoutSession
+    }
+
+    /// Session 随每次变更写盘，App 被杀后同一天可恢复；confirm/cancel 置 nil 即清除。
+    private func persistActiveLiveWorkout() {
+        guard let session = activeLiveWorkout else {
+            sessionDefaults.removeObject(forKey: Self.persistedSessionKey)
+            return
+        }
+
+        let persisted = PersistedLiveWorkout(planDate: Self.currentPlanDateString(), session: session)
+        guard let data = try? JSONEncoder().encode(persisted) else { return }
+        sessionDefaults.set(data, forKey: Self.persistedSessionKey)
+    }
+
+    private func restoreLiveWorkoutSessionIfNeeded() {
+        guard activeLiveWorkout == nil,
+              let data = sessionDefaults.data(forKey: Self.persistedSessionKey),
+              let persisted = try? JSONDecoder().decode(PersistedLiveWorkout.self, from: data)
+        else { return }
+
+        guard persisted.planDate == Self.currentPlanDateString(), let plan = todayPlan else {
+            sessionDefaults.removeObject(forKey: Self.persistedSessionKey)
+            return
+        }
+
+        // 计划被改动（组被删除等）导致 session 内的组对不上时放弃恢复。
+        let planSetIds = Set(plan.exercises.flatMap(\.sets).map(\.id))
+        var session = persisted.session
+        let sessionSetIds = Set(session.exercises.flatMap(\.sets).map(\.id))
+        guard sessionSetIds.isSubset(of: planSetIds) else {
+            sessionDefaults.removeObject(forKey: Self.persistedSessionKey)
+            return
+        }
+
+        // 期间通过其他途径落库的组并入完成集合。
+        let planCompletedIds = Set(plan.exercises.flatMap(\.sets).filter(\.isCompleted).map(\.id))
+        session.completedSetIds.formUnion(planCompletedIds.intersection(sessionSetIds))
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        // 恢复为最小化状态：由用户从横幅/dock 主动回到专注模式。
+        isTrainingFocusActive = false
+        Task { await liveActivityManager.start(session: session) }
+        observeLiveActivityCompletions(sessionId: session.id)
     }
 
     private func markLiveSetCompleted(planSetId: String) {

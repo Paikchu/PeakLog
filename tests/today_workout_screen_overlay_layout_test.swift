@@ -43,8 +43,16 @@ precondition(
     "Expected ContentView to wire the dock Start Plan action to the live workout"
 )
 precondition(
-    source.contains("TrainingSessionScreen"),
-    "Expected Start Plan to present the full-plan training session screen"
+    !source.contains("TrainingSessionScreen") && !source.contains("fullScreenCover"),
+    "Expected the standalone training session screen to be merged into the today screen"
+)
+precondition(
+    source.contains("isTrainingFocusActive") && source.contains("FocusExerciseCard"),
+    "Expected the today screen to host the in-place focus training mode"
+)
+precondition(
+    source.contains("scrollPosition") && source.contains("scrollTargetLayout"),
+    "Expected focus mode to center the current exercise via scroll position"
 )
 precondition(
     viewModelSource.contains("liveActivityManager.start") && viewModelSource.contains("liveActivityManager.update"),

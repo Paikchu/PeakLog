@@ -8,13 +8,27 @@ struct ContentView: View {
     @State private var selectedTab: HomeTab = .plan
     @StateObject private var todayViewModel = TodayWorkoutViewModel()
 
+    // 专注训练时 dock 让位给底部确认栏。
+    private var isTrainingFocusVisible: Bool {
+        selectedTab == .plan && todayViewModel.isTrainingFocusActive && todayViewModel.activeLiveWorkout != nil
+    }
+
     var body: some View {
         ZStack {
             currentScreen
         }
         .safeAreaInset(edge: .bottom) {
-            HomeDockBar(selectedTab: $selectedTab, planAction: planDockAction)
-                .padding(.bottom, 8)
+            Group {
+                if isTrainingFocusVisible {
+                    TrainingFocusBar(viewModel: todayViewModel)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else {
+                    HomeDockBar(selectedTab: $selectedTab, planAction: planDockAction)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .padding(.bottom, 8)
+            .animation(HomeDockBar.dockSpring, value: isTrainingFocusVisible)
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         .onChange(of: scenePhase) { _, newPhase in
@@ -41,10 +55,19 @@ struct ContentView: View {
     }
 
     private var planDockAction: DockPlanAction? {
+        // 有最小化的活跃 session 时，槽位变成「继续训练」。
+        if todayViewModel.activeLiveWorkout != nil {
+            return DockPlanAction(
+                title: String(localized: "training_session.resume"),
+                isEnabled: true,
+                action: { todayViewModel.resumeTrainingFocus() }
+            )
+        }
+
         guard let plan = todayViewModel.todayPlan, plan.totalSetsCount > 0 else { return nil }
         return DockPlanAction(
             title: String(localized: "today.start_training"),
-            isEnabled: !todayViewModel.isSending && todayViewModel.activeLiveWorkout == nil,
+            isEnabled: !todayViewModel.isSending,
             action: { todayViewModel.startPlanLiveWorkout() }
         )
     }

@@ -8,7 +8,23 @@ struct TodayWorkoutScreen: View {
     @ObservedObject var viewModel: TodayWorkoutViewModel
     @State private var isPresentingDailyRecord = false
     @State private var isPresentingAddPlanExercise = false
+    @State private var isPresentingFinishDialog = false
+    @State private var isPresentingCancelDialog = false
+    // 专注模式滚动编排：scrolledExerciseId 追踪屏幕中心的卡片，displayedExerciseId 决定哪张卡展开。
+    @State private var scrolledExerciseId: String?
+    @State private var displayedExerciseId: String?
+    @State private var focusSettleTask: Task<Void, Never>?
+    @State private var flowAdvanceTask: Task<Void, Never>?
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isFocusMode: Bool {
+        viewModel.isTrainingFocusActive && viewModel.activeLiveWorkout != nil
+    }
+
+    private var flowAnimation: Animation? {
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.82)
+    }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -17,26 +33,106 @@ struct TodayWorkoutScreen: View {
                     if viewModel.isLoading {
                         ProgressView().padding(.top, 40)
                     } else {
-                        summaryCard
+                        if !isFocusMode {
+                            if viewModel.activeLiveWorkout != nil {
+                                activeSessionBanner
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                            summaryCard
+                                .transition(.opacity)
+                        }
                         plannedSection
-                        recordedSection
+                        if !isFocusMode {
+                            recordedSection
+                                .transition(.opacity)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 104)
+                // 专注模式底部留白加大，让最后一个动作也能滚到屏幕中间。
+                .padding(.bottom, isFocusMode ? 320 : 104)
             }
+            .scrollPosition(id: $scrolledExerciseId, anchor: .center)
             .dismissKeyboardOnTap()
 
-            addRecordButton
-                .padding(.trailing, 20)
-                .padding(.bottom, 22)
+            if !isFocusMode {
+                addRecordButton
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 22)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
         }
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
+        .safeAreaInset(edge: .top) {
+            if isFocusMode, let session = viewModel.activeLiveWorkout {
+                focusHeader(session)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(flowAnimation, value: isFocusMode)
         .task { await viewModel.onAppear() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             viewModel.syncLiveActivityCompletions()
+        }
+        .onChange(of: isFocusMode) { _, isActive in
+#if canImport(UIKit)
+            // 训练中保持屏幕常亮。
+            UIApplication.shared.isIdleTimerDisabled = isActive
+#endif
+            if isActive {
+                let currentId = viewModel.activeLiveWorkout?.currentExercise?.id
+                displayedExerciseId = currentId
+                // 等布局切换过渡启动后，再把当前动作流动到屏幕中间。
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    withAnimation(flowAnimation) {
+                        scrolledExerciseId = currentId
+                    }
+                }
+            } else {
+                focusSettleTask?.cancel()
+                flowAdvanceTask?.cancel()
+                displayedExerciseId = nil
+                scrolledExerciseId = nil
+            }
+        }
+        .onChange(of: viewModel.activeLiveWorkout?.currentExercise?.id) { _, newId in
+            guard isFocusMode, let newId, newId != displayedExerciseId else { return }
+            // 动作完成后停留一拍展示完成态，再流转到下一个动作。
+            flowAdvanceTask?.cancel()
+            flowAdvanceTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 550_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(flowAnimation) {
+                    displayedExerciseId = newId
+                    scrolledExerciseId = newId
+                }
+            }
+        }
+        .onChange(of: scrolledExerciseId) { _, newId in
+            guard isFocusMode, let newId else { return }
+            // 滑动停稳（250ms 防抖）即展开并锁定该动作。
+            focusSettleTask?.cancel()
+            focusSettleTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(flowAnimation) {
+                    displayedExerciseId = newId
+                }
+                if newId != viewModel.activeLiveWorkout?.currentExercise?.id {
+                    viewModel.focusLiveExercise(id: newId)
+#if canImport(UIKit)
+                    UISelectionFeedbackGenerator().selectionChanged()
+#endif
+                }
+            }
+        }
+        .onDisappear {
+#if canImport(UIKit)
+            UIApplication.shared.isIdleTimerDisabled = false
+#endif
         }
         .sheet(isPresented: $isPresentingDailyRecord) {
             DailyRecordSheet { draft in
@@ -48,11 +144,33 @@ struct TodayWorkoutScreen: View {
                 await viewModel.addPlanExercises(drafts)
             }
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { viewModel.activeLiveWorkout != nil },
-            set: { if !$0 { viewModel.cancelPlanLiveWorkout() } }
-        )) {
-            TrainingSessionScreen(viewModel: viewModel)
+        .confirmationDialog(
+            "training_session.finish_incomplete.title",
+            isPresented: $isPresentingFinishDialog,
+            titleVisibility: .visible
+        ) {
+            Button("training_session.finish") {
+                Task { await viewModel.confirmPlanLiveWorkout() }
+            }
+        } message: {
+            Text(LocalizedPlanText.formatted(
+                "training_session.finish_incomplete.message",
+                locale: locale,
+                Int64(remainingSetsCount)
+            ))
+        }
+        .confirmationDialog(
+            "training_session.cancel_confirm.title",
+            isPresented: $isPresentingCancelDialog,
+            titleVisibility: .visible
+        ) {
+            Button("training_session.cancel", role: .destructive) {
+                withAnimation(flowAnimation) {
+                    viewModel.cancelPlanLiveWorkout()
+                }
+            }
+        } message: {
+            Text("training_session.cancel_confirm.message")
         }
         .alert("common.error_title", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
@@ -62,6 +180,131 @@ struct TodayWorkoutScreen: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+    }
+
+    private var remainingSetsCount: Int {
+        guard let session = viewModel.activeLiveWorkout else { return 0 }
+        return session.totalSetsCount - session.completedSetsCount
+    }
+
+    // MARK: - 专注模式顶部紧凑头
+
+    private func focusHeader(_ session: PlanLiveWorkoutSession) -> some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation(flowAnimation) {
+                        viewModel.minimizeTrainingFocus()
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .glassChip(cornerRadius: AppRadius.full)
+                }
+                .accessibilityLabel(Text("training_session.minimize"))
+                .accessibilityIdentifier("training_focus.minimize")
+
+                Text(TodayPlanHeader.resolve(
+                    planTitle: session.title,
+                    focus: session.focus,
+                    fallbackTitle: String(localized: "today.header.default_title")
+                ).title)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.textPrimary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text("\(session.completedSetsCount)/\(session.totalSetsCount)")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.textPrimary)
+                    .contentTransition(.numericText())
+                    .animation(flowAnimation, value: session.completedSetsCount)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .glassChip(cornerRadius: AppRadius.full)
+
+                Menu {
+                    Button {
+                        if session.isComplete {
+                            Task { await viewModel.confirmPlanLiveWorkout() }
+                        } else {
+                            isPresentingFinishDialog = true
+                        }
+                    } label: {
+                        Label(String(localized: "training_session.finish"), systemImage: "checkmark.circle")
+                    }
+
+                    Button(role: .destructive) {
+                        isPresentingCancelDialog = true
+                    } label: {
+                        Label(String(localized: "training_session.cancel"), systemImage: "xmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .glassChip(cornerRadius: AppRadius.full)
+                }
+                .accessibilityIdentifier("training_focus.menu")
+            }
+
+            PlanProgressBar(progress: session.progress)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(.ultraThinMaterial)
+    }
+
+    // MARK: - 最小化训练横幅（浏览模式 + session 活跃）
+
+    private var activeSessionBanner: some View {
+        Button {
+            withAnimation(flowAnimation) {
+                viewModel.resumeTrainingFocus()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.accentPrimary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("training_session.in_progress")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.textPrimary)
+                    if let session = viewModel.activeLiveWorkout {
+                        Text(LocalizedPlanText.setsCompleted(
+                            completed: session.completedSetsCount,
+                            total: session.totalSetsCount,
+                            locale: locale
+                        ))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                Text("training_session.resume")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassActionBackground(cornerRadius: AppRadius.full, tint: Color.accentPrimary.opacity(0.45))
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .glassPanel(cornerRadius: AppRadius.xl)
+        .accessibilityIdentifier("training_focus.resumeBanner")
     }
 
     private var addRecordButton: some View {
@@ -107,21 +350,49 @@ struct TodayWorkoutScreen: View {
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let plan = viewModel.todayPlan {
-                Text(plan.title)
+                let header = TodayPlanHeader.resolve(
+                    planTitle: plan.title,
+                    focus: plan.focus,
+                    fallbackTitle: String(localized: "today.header.default_title")
+                )
+                let isPlanComplete = plan.totalSetsCount > 0 && plan.completedSetsCount >= plan.totalSetsCount
+
+                HStack(spacing: 8) {
+                    dateEyebrow(color: .accentPrimary)
+                    if isPlanComplete {
+                        completedChip
+                    }
+                }
+
+                Text(header.title)
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
 
-                if let focus = plan.focus, !focus.isEmpty {
-                    Text(focus)
+                if let subtitle = header.subtitle {
+                    Text(subtitle)
                         .font(.system(size: 15))
                         .foregroundColor(.textSecondary)
                 }
 
-                Text(LocalizedPlanText.setsCompleted(completed: plan.completedSetsCount, total: plan.totalSetsCount, locale: locale))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.textMuted)
-
-                PlanProgressBar(progress: plan.totalSetsCount == 0 ? 0 : Double(plan.completedSetsCount) / Double(plan.totalSetsCount))
+                if plan.totalSetsCount > 0 {
+                    HStack(spacing: 10) {
+                        PlanProgressBar(
+                            progress: Double(plan.completedSetsCount) / Double(plan.totalSetsCount),
+                            isComplete: isPlanComplete
+                        )
+                        Text(LocalizedPlanText.formatted(
+                            "today.header.sets_progress",
+                            locale: locale,
+                            Int64(plan.completedSetsCount),
+                            Int64(plan.totalSetsCount)
+                        ))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.textSecondary)
+                        .contentTransition(.numericText())
+                    }
+                    .padding(.top, 2)
+                }
                 if !viewModel.runningRecords.isEmpty {
                     Text(
                         LocalizedPlanText.todayRunningSummary(
@@ -136,6 +407,7 @@ struct TodayWorkoutScreen: View {
                         .padding(.top, 2)
                 }
             } else if viewModel.todayRecord != nil {
+                dateEyebrow(color: .textMuted)
                 Text("today.summary.free_record_day.title")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
@@ -155,6 +427,7 @@ struct TodayWorkoutScreen: View {
                         .foregroundColor(.textSecondary)
                 }
             } else if !viewModel.runningRecords.isEmpty {
+                dateEyebrow(color: .textMuted)
                 Text("today.summary.running_only.title")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
@@ -170,6 +443,7 @@ struct TodayWorkoutScreen: View {
                     .font(.system(size: 15))
                     .foregroundColor(.textMuted)
             } else {
+                dateEyebrow(color: .textMuted)
                 Text("today.summary.empty.title")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.textPrimary)
@@ -183,41 +457,133 @@ struct TodayWorkoutScreen: View {
         .padding(.top, 8)
     }
 
+    private func dateEyebrow(color: Color) -> some View {
+        Text(TodayHeaderDateText.eyebrow(locale: locale))
+            .font(.system(size: 12, weight: .semibold))
+            .kerning(0.8)
+            .foregroundColor(color)
+    }
+
+    private var completedChip: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+            Text("today.header.completed")
+                .font(.system(size: 11, weight: .bold))
+        }
+        .foregroundColor(.green)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.green.opacity(0.14)))
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    // MARK: - 计划动作区（浏览 / 专注共用同一 ForEach，卡片按模式切换形态）
+
     @ViewBuilder
     private var plannedSection: some View {
         if let plan = viewModel.todayPlan {
-            VStack(alignment: .leading, spacing: 16) {
-                sectionHeader(
-                    title: String(localized: "today.section.plan.title"),
-                    subtitle: nil
-                )
-
-                ForEach(plan.exercises) { exercise in
-                    TodayPlannedExerciseCard(
-                        exercise: exercise,
-                        onUpdateSet: { setId, weight, unit, reps in
-                            Task {
-                                await viewModel.updatePlannedSet(
-                                    planSetId: setId,
-                                    targetWeight: weight,
-                                    targetWeightUnit: unit,
-                                    targetReps: reps
-                                )
+            VStack(alignment: .leading, spacing: isFocusMode ? 10 : 16) {
+                let focusActive = isFocusMode
+                let motionReduced = reduceMotion
+                VStack(alignment: .leading, spacing: isFocusMode ? 10 : 16) {
+                    ForEach(plan.exercises) { exercise in
+                        exerciseCard(for: exercise)
+                            .id(exercise.id)
+                            .visualEffect { content, proxy in
+                                // 距屏幕中心越远越小越淡；聚焦是连续函数，滑动过程自然过渡。
+                                let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
+                                let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
+                                let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
+                                let scale = focusActive && !motionReduced ? 1 - 0.04 * distance : 1
+                                let opacity = focusActive ? 1 - 0.35 * distance : 1
+                                return content
+                                    .scaleEffect(scale)
+                                    .opacity(opacity)
                             }
-                        },
-                        onCompleteSet: { setId, rpe in
-                            Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
-                        },
-                        onAddSet: {
-                            Task { await viewModel.addPlannedSet(planExerciseId: exercise.id) }
-                        },
-                        onDeleteLastSet: {
-                            Task { await viewModel.deleteLastPlannedSet(planExerciseId: exercise.id) }
-                        }
-                    )
+                    }
                 }
+                .scrollTargetLayout()
             }
         }
+    }
+
+    @ViewBuilder
+    private func exerciseCard(for exercise: TrainingPlanExercise) -> some View {
+        if isFocusMode, let session = viewModel.activeLiveWorkout {
+            let liveModel = session.exercise(withId: exercise.id) ?? liveExercise(from: exercise)
+            if displayedExerciseId == exercise.id {
+                FocusExerciseCard(
+                    exercise: liveModel,
+                    session: session,
+                    isCurrent: session.currentExercise?.id == exercise.id,
+                    onToggleSet: { setId in
+                        viewModel.toggleLiveSet(setId: setId)
+                    },
+                    onSkip: {
+                        withAnimation(flowAnimation) {
+                            viewModel.skipCurrentLiveExercise()
+                        }
+                    }
+                )
+                .transition(.opacity)
+            } else {
+                FocusCollapsedExerciseRow(
+                    exercise: liveModel,
+                    session: session,
+                    onTap: {
+                        withAnimation(flowAnimation) {
+                            scrolledExerciseId = exercise.id
+                            displayedExerciseId = exercise.id
+                        }
+                    }
+                )
+                .transition(.opacity)
+            }
+        } else {
+            TodayPlannedExerciseCard(
+                exercise: exercise,
+                sessionCompletedSetIds: viewModel.activeLiveWorkout?.completedSetIds ?? [],
+                onUpdateSet: { setId, weight, unit, reps in
+                    Task {
+                        await viewModel.updatePlannedSet(
+                            planSetId: setId,
+                            targetWeight: weight,
+                            targetWeightUnit: unit,
+                            targetReps: reps
+                        )
+                    }
+                },
+                onCompleteSet: { setId, rpe in
+                    Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
+                },
+                onAddSet: {
+                    Task { await viewModel.addPlannedSet(planExerciseId: exercise.id) }
+                },
+                onDeleteLastSet: {
+                    Task { await viewModel.deleteLastPlannedSet(planExerciseId: exercise.id) }
+                }
+            )
+        }
+    }
+
+    /// 计划在 session 开始后新增的动作不在 session 快照里，为展示构造一个只读镜像。
+    private func liveExercise(from exercise: TrainingPlanExercise) -> PlanLiveWorkoutExercise {
+        PlanLiveWorkoutExercise(
+            id: exercise.id,
+            name: exercise.exerciseName,
+            loadType: exercise.exerciseLoadType,
+            sets: exercise.sets.map { set in
+                PlanLiveWorkoutSet(
+                    id: set.id,
+                    setIndex: set.setIndex,
+                    targetWeight: set.targetWeight,
+                    targetWeightUnit: set.targetWeightUnit,
+                    targetReps: set.targetReps,
+                    isAlreadyCompleted: set.isCompleted
+                )
+            }
+        )
     }
 
     @ViewBuilder
@@ -295,6 +661,8 @@ private extension Double {
 
 private struct TodayPlannedExerciseCard: View {
     let exercise: TrainingPlanExercise
+    /// 活跃 session 中已完成但尚未落库的组，用于浏览模式下同步显示勾选状态。
+    let sessionCompletedSetIds: Set<String>
     let onUpdateSet: (String, Double?, WeightUnit, Int) -> Void
     let onCompleteSet: (String, Double?) -> Void
     let onAddSet: () -> Void
@@ -344,6 +712,7 @@ private struct TodayPlannedExerciseCard: View {
                     TodayPlannedSetRow(
                         set: set,
                         exerciseLoadType: exercise.exerciseLoadType,
+                        isCompletedInSession: sessionCompletedSetIds.contains(set.id),
                         onCommit: { weight, unit, reps in
                             onUpdateSet(set.id, weight, unit, reps)
                         },
@@ -367,6 +736,7 @@ private struct TodayPlannedExerciseCard: View {
 private struct TodayPlannedSetRow: View {
     let set: TrainingPlanSet
     let exerciseLoadType: ExerciseLoadType
+    let isCompletedInSession: Bool
     let onCommit: (Double?, WeightUnit, Int) -> Void
     let onToggleComplete: (Double?) -> Void
     @Environment(\.locale) private var locale
@@ -375,6 +745,10 @@ private struct TodayPlannedSetRow: View {
     @State private var editingReps = false
     @State private var weightText = ""
     @State private var repsText = ""
+
+    private var showsCompleted: Bool {
+        self.set.isCompleted || isCompletedInSession
+    }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -440,11 +814,11 @@ private struct TodayPlannedSetRow: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
 #endif
             }) {
-                Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
+                Image(systemName: showsCompleted ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 21, weight: .semibold))
-                    .foregroundColor(set.isCompleted ? .green : .textMuted)
+                    .foregroundColor(showsCompleted ? .green : .textMuted)
             }
-            .disabled(set.isCompleted)
+            .disabled(showsCompleted)
             .contextMenu {
                 ForEach([6, 7, 8, 9, 10], id: \.self) { value in
                     Button(LocalizedPlanText.formatted("today.plan.complete_with_rpe", locale: locale, Int64(value))) {
@@ -502,6 +876,7 @@ private struct TodayPlannedSetRow: View {
 
 struct PlanProgressBar: View {
     let progress: Double
+    var isComplete = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -509,12 +884,23 @@ struct PlanProgressBar: View {
                 Capsule()
                     .fill(Color.appSeparator)
                 Capsule()
-                    .fill(LinearGradient.accentGradient)
+                    .fill(fillStyle)
                     .frame(width: max(proxy.size.width * progress, progress > 0 ? 18 : 0))
                     .animation(.spring(response: 0.45, dampingFraction: 0.85), value: progress)
             }
         }
         .frame(height: 8)
+    }
+
+    private var fillStyle: LinearGradient {
+        if isComplete {
+            return LinearGradient(
+                colors: [Color.green.opacity(0.75), Color.green],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
+        return LinearGradient.accentGradient
     }
 }
 

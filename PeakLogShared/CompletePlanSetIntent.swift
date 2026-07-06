@@ -46,7 +46,8 @@ struct CompletePlanSetIntent: LiveActivityIntent {
         let sortedSetIDs = Array(completedSetIDs).sorted()
         let state = PlanLiveActivityAttributes.contentState(
             for: activity.attributes,
-            completedSetIDs: sortedSetIDs
+            completedSetIDs: sortedSetIDs,
+            focusedExerciseID: PlanLiveActivitySharedStore.readFocusedExerciseID(sessionID: activityID)
         )
         PlanLiveActivitySharedStore.storeCompletedSetIDs(sortedSetIDs, sessionID: activityID)
         await activity.update(ActivityContent(state: state, staleDate: nil, relevanceScore: 1))

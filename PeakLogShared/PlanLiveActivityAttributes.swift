@@ -40,9 +40,27 @@ struct PlanLiveActivityAttributes: ActivityAttributes {
 
     static func contentState(
         for attributes: PlanLiveActivityAttributes,
-        completedSetIDs: [String]
+        completedSetIDs: [String],
+        focusedExerciseID: String? = nil
     ) -> ContentState {
         let completed = Set(completedSetIDs)
+
+        // 用户在 App 内手动聚焦的动作优先作为“当前动作”；聚焦动作做完后回落到顺序扫描。
+        if let focusedExerciseID,
+           let exercise = attributes.exercises.first(where: { $0.id == focusedExerciseID }),
+           let set = exercise.sets.first(where: { !completed.contains($0.id) }) {
+            return ContentState(
+                currentExerciseName: exercise.name,
+                currentPlanSetID: set.id,
+                currentSetIndex: set.setIndex,
+                targetLoadText: set.targetLoadText,
+                targetReps: set.targetReps,
+                completedSetIDs: Array(completed).sorted(),
+                completedSetsCount: completed.count,
+                totalSetsCount: attributes.totalSetsCount,
+                isComplete: false
+            )
+        }
 
         for exercise in attributes.exercises {
             for set in exercise.sets where !completed.contains(set.id) {
@@ -94,8 +112,26 @@ enum PlanLiveActivitySharedStore {
         return Set(values)
     }
 
+    // 聚焦动作跨进程共享：App 内滑动切换后，锁屏 Intent 重建 state 时也要以聚焦动作为当前动作。
+    static func storeFocusedExerciseID(_ exerciseID: String?, sessionID: String) {
+        let key = focusedKey(for: sessionID)
+        if let exerciseID {
+            defaults.set(exerciseID, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    static func readFocusedExerciseID(sessionID: String) -> String? {
+        defaults.string(forKey: focusedKey(for: sessionID))
+    }
+
     private static func key(for sessionID: String) -> String {
         "plan-live-activity.completed-set-ids.\(sessionID)"
+    }
+
+    private static func focusedKey(for sessionID: String) -> String {
+        "plan-live-activity.focused-exercise-id.\(sessionID)"
     }
 }
 #endif
