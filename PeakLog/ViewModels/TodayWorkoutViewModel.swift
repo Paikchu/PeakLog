@@ -86,7 +86,6 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var isTrainingFocusActive = false
     // 组间休息倒计时结束时间；nil 表示不在休息。
     @Published var restEndDate: Date?
-    @Published var quickActions: [AIWorkoutQuickAction] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -681,22 +680,6 @@ final class TodayWorkoutViewModel: ObservableObject {
 
         guard !exercises.isEmpty else { return nil }
         return WorkoutRecord(id: "live-\(session.id)", exercises: exercises)
-    }
-
-    private func applyExerciseInsights(_ insights: [AIWorkoutExerciseInsight]) {
-        guard var plan = todayPlan, !insights.isEmpty else { return }
-        let insightsByName = Dictionary(uniqueKeysWithValues: insights.map {
-            ($0.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), $0)
-        })
-
-        for index in plan.exercises.indices {
-            let key = plan.exercises[index].exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard let insight = insightsByName[key] else { continue }
-            plan.exercises[index].previousPerformanceSummary = insight.previousPerformanceSummary
-            plan.exercises[index].aiSuggestion = insight.suggestion
-        }
-
-        todayPlan = plan
     }
 
     private func findPlanExercise(planExerciseId: String) -> TrainingPlanExercise? {

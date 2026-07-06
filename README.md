@@ -167,7 +167,6 @@ Today 模块由 `TodayWorkoutViewModel` 驱动：
 项目已经直接接入 Supabase，主要涉及：
 
 - `Local Store`: profile、active plan、strength sessions、running records
-- `Edge Functions`: `ai-workout-action` 处理今日训练动作与计划调整
 
 Supabase Client 在 `SupabaseManager` 中以单例形式维护，配置位于 `Supabase/Config.swift`。
 

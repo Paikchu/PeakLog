@@ -60,15 +60,15 @@ flowchart LR
 2. 按天读取时长和距离记录
 3. 与力量记录并存展示
 
-## 5. Agent Action 流程
+## 5. 自动化动作流程
 
 ```mermaid
 flowchart LR
-    U[明确动作请求] --> A[ai-workout-action]
-    A --> B[Agent 选择工具]
+    U[用户手动操作] --> A[Today ViewModel]
+    A --> B[Local Services]
     B --> C[写入训练/计划/目标]
-    C --> D[返回结构化 JSON]
+    C --> D[刷新 Today 和 History]
 ```
 
-- agent action 不再绑定聊天 UI
-- 结果通过结构化 JSON 驱动刷新，不保留消息历史
+- 当前版本不保留 agent action 后端入口。
+- 训练记录、计划调整、目标更新先走显式 UI 操作。

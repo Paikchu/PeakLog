@@ -8,7 +8,6 @@ PeakLog 是个人健身助手，当前核心能力：
 - 力量训练、跑步记录与历史回顾
 - 个人 PR、目标与偏好管理
 - Today 页手动添加记录和计划动作
-- `ai-workout-action` 保留为结构化 agent 动作入口
 
 ## 2. 总体架构
 
@@ -18,8 +17,6 @@ flowchart LR
     V --> VM[ViewModels]
     VM --> S[Service Layer]
     S --> L[(Local JSON Store)]
-    S --> EF[Supabase Edge Functions]
-    EF --> A[Workout Agent + Tools]
 ```
 
 ## 3. 分层说明
@@ -33,13 +30,6 @@ flowchart LR
 
 ### 3.2 后端（`backend/supabase/`）
 
-- **Edge Functions**
-  - `ai-workout-action`: 今日训练动作建议与快捷操作入口
-- **Shared Agent Modules**
-  - `_shared/agent.ts`
-  - `_shared/schema.ts`
-  - `_shared/pr-summary.ts`
-  - `_shared/env.ts`
 - **Postgres + RLS**
   - 后续线上持久化仍按用户隔离设计
 
