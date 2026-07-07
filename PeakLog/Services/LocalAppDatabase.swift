@@ -850,7 +850,10 @@ actor LocalAppDatabase {
 
         let totalVolume = state.strengthSessions.reduce(0.0) { partialResult, session in
             partialResult + session.exercises.flatMap(\.sets).reduce(0.0) { subtotal, set in
-                subtotal + ((set.weight ?? 0) * Double(set.reps))
+                // Normalize every set to kilograms before accumulating so that
+                // `totalVolumeKg` is correct regardless of each set's display unit.
+                let kilograms = (set.weight ?? 0) * set.weightUnit.toKilogramsFactor
+                return subtotal + kilograms * Double(set.reps)
             }
         }
 
@@ -1292,7 +1295,10 @@ nonisolated private struct LocalAppDatabasePreviewDriver: Sendable {
         let activeDays = Array(Set((state.strengthSessions.map(\.date) + state.runningRecords.map(\.workoutDate)).map { calendar.startOfDay(for: $0) })).sorted()
         let totalVolume = state.strengthSessions.reduce(0.0) { partialResult, session in
             partialResult + session.exercises.flatMap(\.sets).reduce(0.0) { subtotal, set in
-                subtotal + ((set.weight ?? 0) * Double(set.reps))
+                // Normalize every set to kilograms before accumulating so that
+                // `totalVolumeKg` is correct regardless of each set's display unit.
+                let kilograms = (set.weight ?? 0) * set.weightUnit.toKilogramsFactor
+                return subtotal + kilograms * Double(set.reps)
             }
         }
 

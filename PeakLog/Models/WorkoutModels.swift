@@ -55,6 +55,14 @@ nonisolated enum WeightUnit: String, Codable, CaseIterable, Sendable {
     case lbs
 
     var display: String { rawValue }
+
+    /// Multiplier to convert a value in this unit to kilograms (canonical storage unit).
+    var toKilogramsFactor: Double {
+        switch self {
+        case .kg: return 1.0
+        case .lbs: return 0.45359237
+        }
+    }
 }
 
 // MARK: - Exercise Set
