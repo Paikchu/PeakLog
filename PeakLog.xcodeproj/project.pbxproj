@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		7A1E10042FC10000004159EF /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7A1E10032FC10000004159EF /* XCTest.framework */; };
-		9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,15 +29,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		9A10000B2FC20000004159EF /* Embed App Extensions */ = {
+		9A10000B2FC20000004159EF /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed App Extensions */,
+				9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -151,7 +151,7 @@
 				50F9621F2F6ADDB9004159EF /* Sources */,
 				50F962202F6ADDB9004159EF /* Frameworks */,
 				50F962212F6ADDB9004159EF /* Resources */,
-				9A10000B2FC20000004159EF /* Embed App Extensions */,
+				9A10000B2FC20000004159EF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -221,7 +221,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2630;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					50F962222F6ADDB9004159EF = {
 						CreatedOnToolsVersion = 26.3;
@@ -463,6 +463,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -500,6 +501,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

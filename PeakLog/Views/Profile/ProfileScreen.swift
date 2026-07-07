@@ -4,6 +4,8 @@ struct ProfileScreen: View {
     @StateObject private var viewModel: ProfileViewModel
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
+    @EnvironmentObject private var authManager: AuthStateManager
+    @EnvironmentObject private var syncController: CloudSyncController
     @Environment(\.openURL) private var openURL
     @State private var showingWeightUnitPicker = false
 
@@ -19,6 +21,7 @@ struct ProfileScreen: View {
             ScrollView {
                 VStack(spacing: 24) {
                     avatarSection
+                    syncStatusRow
                     goalSection
                     statsSection
                     prSection
@@ -134,6 +137,48 @@ struct ProfileScreen: View {
                 .foregroundColor(.textMuted)
         }
         .padding(.top, 16)
+    }
+
+    // MARK: - Cloud sync status
+    // Hidden outside a signed-in cloud session (DEBUG local mode has nothing
+    // to report). The write path is local-first — a mutation's UI update
+    // never waits on the network — so without this, a background push
+    // failure (e.g. offline) would be invisible and a user could go days
+    // without realizing their training data wasn't backed up.
+    @ViewBuilder
+    private var syncStatusRow: some View {
+        if case .signedIn = authManager.state {
+            HStack(spacing: 6) {
+                syncStatusIcon
+                Text(syncStatusText)
+                    .font(.system(size: 12))
+                    .foregroundColor(.textMuted)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var syncStatusIcon: some View {
+        switch syncController.syncStatus {
+        case .idle:
+            Image(systemName: "checkmark.icloud")
+                .foregroundColor(.textMuted)
+        case .syncing:
+            ProgressView()
+                .scaleEffect(0.6)
+                .frame(width: 12, height: 12)
+        case .pendingRetry:
+            Image(systemName: "exclamationmark.icloud")
+                .foregroundColor(Color.accentValue)
+        }
+    }
+
+    private var syncStatusText: LocalizedStringKey {
+        switch syncController.syncStatus {
+        case .idle: return "profile.sync.idle"
+        case .syncing: return "profile.sync.syncing"
+        case .pendingRetry: return "profile.sync.pending_retry"
+        }
     }
 
     @ViewBuilder

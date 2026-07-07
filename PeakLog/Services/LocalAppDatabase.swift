@@ -40,6 +40,17 @@ actor LocalAppDatabase {
     private let decoder: JSONDecoder
     private var state: LocalAppState
 
+    /// Fired after a mutation persists locally, so the cloud syncer can push.
+    /// Installed by `CloudSyncCoordinator` only when signed in; nil in DEBUG
+    /// local mode, which keeps that mode fully offline. A full `replaceAll`
+    /// (a pull writing cloud truth into the cache) deliberately does NOT fire
+    /// it — otherwise every pull would echo straight back as a push.
+    private var onChange: (@Sendable () -> Void)?
+
+    func setOnChange(_ hook: (@Sendable () -> Void)?) {
+        onChange = hook
+    }
+
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL ?? Self.defaultFileURL()
 
@@ -718,9 +729,48 @@ actor LocalAppDatabase {
     }
 
     private func persist() throws {
+        try writeStateToDisk()
+        onChange?()
+    }
+
+    private func writeStateToDisk() throws {
         try Self.ensureParentDirectoryExists(for: fileURL)
         let data = try encoder.encode(state)
         try data.write(to: fileURL, options: [.atomic])
+    }
+
+    // MARK: - Cloud sync bridge
+
+    /// A copy of everything the cloud syncer needs to reconcile. Reads are cheap
+    /// (value types), so callers snapshot rather than hold the actor.
+    func snapshot() -> LocalDataSnapshot {
+        LocalDataSnapshot(
+            profile: state.profile,
+            activePlan: state.activePlan,
+            strengthSessions: state.strengthSessions,
+            runningRecords: state.runningRecords,
+            customExercises: state.customExercises
+        )
+    }
+
+    /// Replace the entire cache with cloud truth (a pull). Does not fire
+    /// `onChange`: this is the sync writing in, not the user mutating.
+    /// Derived profile fields (stats, PRs) are recomputed from the pulled
+    /// sessions so the UI matches without a separate stats fetch.
+    func replaceAll(
+        profile: UserProfile,
+        activePlan: TrainingPlan,
+        strengthSessions: [WorkoutSession],
+        runningRecords: [RunningWorkoutRecord],
+        customExercises: [ExerciseDefinition]
+    ) {
+        state.profile = profile
+        state.activePlan = activePlan
+        state.strengthSessions = strengthSessions
+        state.runningRecords = runningRecords
+        state.customExercises = customExercises
+        recalculateDerivedProfile()
+        try? writeStateToDisk()
     }
 
     private static func ensureParentDirectoryExists(for fileURL: URL) throws {
