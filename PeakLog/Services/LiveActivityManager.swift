@@ -15,6 +15,11 @@ protocol PlanLiveActivityManaging {
 }
 
 final class NoOpPlanLiveActivityManager: PlanLiveActivityManaging {
+    // 显式声明为非隔离 init：本类无状态、无副作用，且作为
+    // `TodayWorkoutViewModel` 指定 init 的默认参数 `NoOpPlanLiveActivityManager()` 使用，
+    // 而默认参数在“非隔离上下文”中求值。若沿用编译器推断的 @MainActor init 会触发
+    // “在同步非隔离上下文中调用 Main Actor 隔离的初始化器”告警，故此处显式 nonisolated。
+    nonisolated init() {}
     func start(session: PlanLiveWorkoutSession) async {}
     func update(session: PlanLiveWorkoutSession) async {}
     func end() async {}
@@ -47,7 +52,7 @@ final class LiveActivityManager: PlanLiveActivityManaging {
         do {
             // 结束系统里所有残留的计划 Activity（含 App 被杀前创建的），避免重复。
             for existing in Activity<PlanLiveActivityAttributes>.activities {
-                await existing.end(dismissalPolicy: .immediate)
+                await existing.end(nil, dismissalPolicy: .immediate)
             }
             activity = nil
 
@@ -75,7 +80,7 @@ final class LiveActivityManager: PlanLiveActivityManaging {
     func end() async {
         guard let activity else { return }
         PlanLiveActivitySharedStore.storeFocusedExerciseID(nil, sessionID: activity.attributes.sessionID)
-        await activity.end(dismissalPolicy: .immediate)
+        await activity.end(nil, dismissalPolicy: .immediate)
         self.activity = nil
     }
 
