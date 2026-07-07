@@ -210,6 +210,7 @@ actor LocalAppDatabase {
                     id: UUID().uuidString,
                     name: exercise.name,
                     exerciseId: exercise.exerciseId,
+                    exerciseLoadType: exercise.exerciseLoadType,
                     sets: exercise.sets.enumerated().map { setOffset, set in
                         ExerciseSet(
                             id: UUID().uuidString,
@@ -331,7 +332,13 @@ actor LocalAppDatabase {
             rpe: nil
         )
 
-        let sessionId = ensureStrengthSessionForPlanDay(day, exerciseName: exercise.exerciseName, linkedSet: linkedSet)
+        let sessionId = ensureStrengthSessionForPlanDay(
+            day,
+            exerciseName: exercise.exerciseName,
+            exerciseId: exercise.exerciseId,
+            exerciseLoadType: exercise.exerciseLoadType,
+            linkedSet: linkedSet
+        )
         day.exercises[planLocation.exerciseIndex].sets[planLocation.setIndex].completedAt = now
         day.exercises[planLocation.exerciseIndex].sets[planLocation.setIndex].linkedExerciseSetId = linkedSet.id
         state.activePlan.days[planLocation.dayIndex] = day
@@ -600,7 +607,13 @@ actor LocalAppDatabase {
         return nil
     }
 
-    private func ensureStrengthSessionForPlanDay(_ day: TrainingPlanDay, exerciseName: String, linkedSet: ExerciseSet) -> String {
+    private func ensureStrengthSessionForPlanDay(
+        _ day: TrainingPlanDay,
+        exerciseName: String,
+        exerciseId: String?,
+        exerciseLoadType: ExerciseLoadType,
+        linkedSet: ExerciseSet
+    ) -> String {
         let sessionDate = Self.date(from: day.planDate) ?? Date()
         let calendar = Calendar.current
 
@@ -611,7 +624,7 @@ actor LocalAppDatabase {
                 state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.append(linkedSet)
             } else {
                 state.strengthSessions[sessionIndex].exercises.append(
-                    Exercise(id: UUID().uuidString, name: exerciseName, sets: [linkedSet])
+                    Exercise(id: UUID().uuidString, name: exerciseName, exerciseId: exerciseId, exerciseLoadType: exerciseLoadType, sets: [linkedSet])
                 )
             }
             state.strengthSessions[sessionIndex].updatedAt = Date()
@@ -625,7 +638,7 @@ actor LocalAppDatabase {
             date: sessionDate,
             durationMinutes: nil,
             label: day.title,
-            exercises: [Exercise(id: UUID().uuidString, name: exerciseName, sets: [linkedSet])],
+            exercises: [Exercise(id: UUID().uuidString, name: exerciseName, exerciseId: exerciseId, exerciseLoadType: exerciseLoadType, sets: [linkedSet])],
             createdAt: now,
             updatedAt: now
         )
@@ -995,6 +1008,10 @@ enum AppServices {
     static let workoutService: WorkoutServiceProtocol = LocalWorkoutService(database: database)
     static let trainingPlanService: TrainingPlanServiceProtocol = LocalTrainingPlanService(database: database)
     static let exerciseLibraryService: ExerciseLibraryServiceProtocol = LocalExerciseLibraryService(database: database)
+    static let setDefaultsProvider: SetDefaultsProviding = RuleBasedSetDefaultsProvider(
+        exerciseLibraryService: exerciseLibraryService,
+        profileService: profileService
+    )
 }
 
 private extension Array {

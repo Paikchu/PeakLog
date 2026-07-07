@@ -484,20 +484,16 @@ struct ExercisePickerScreen: View {
     }
 
     private func lastSummary(_ entry: RecentExerciseEntry) -> String? {
+        guard let reps = entry.lastReps else { return nil }
         // Legacy bodyweight sets stored weight 0 instead of nil, so only a
-        // positive weight counts as a weighted summary.
-        if let weight = entry.lastWeight, weight > 0, let reps = entry.lastReps {
-            return String(
-                format: String(localized: "exercise_picker.last_weighted"),
-                formatWeightValue(weight),
-                entry.lastWeightUnit.display,
-                reps
-            )
-        }
-        if let reps = entry.lastReps {
-            return String(format: String(localized: "exercise_picker.last_bodyweight"), reps)
-        }
-        return nil
+        // positive weight counts as an explicitly logged weight.
+        let weight = (entry.lastWeight ?? 0) > 0 ? entry.lastWeight : nil
+        let loadText = LoadDisplayFormat.plainText(
+            weight: weight,
+            unit: entry.lastWeightUnit,
+            isBodyweight: entry.definition.loadType == .bodyweight
+        )
+        return String(format: String(localized: "exercise_picker.last_summary"), loadText, reps)
     }
 }
 

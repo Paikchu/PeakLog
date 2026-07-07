@@ -40,6 +40,7 @@ nonisolated struct StrengthSessionDraft: Equatable, Sendable {
 
         var name: String
         var exerciseId: String? = nil
+        var exerciseLoadType: ExerciseLoadType = .unknown
         var sets: [SetDraft]
     }
 
@@ -64,10 +65,6 @@ nonisolated struct ExerciseSet: Identifiable, Codable, Equatable, Sendable {
     var weightUnit: WeightUnit
     var reps: Int
     var rpe: Double?
-
-    var isBodyweight: Bool {
-        weight == nil
-    }
 }
 
 // MARK: - Exercise
@@ -76,12 +73,16 @@ nonisolated struct Exercise: Identifiable, Codable, Equatable, Sendable {
     var name: String
     /// Stable library slug; nil for legacy free-text entries.
     var exerciseId: String?
+    /// Optional so pre-existing persisted sessions (recorded before this field
+    /// existed) decode as nil rather than failing; nil is treated as unknown.
+    var exerciseLoadType: ExerciseLoadType?
     var sets: [ExerciseSet]
 
-    init(id: String, name: String, exerciseId: String? = nil, sets: [ExerciseSet]) {
+    init(id: String, name: String, exerciseId: String? = nil, exerciseLoadType: ExerciseLoadType? = nil, sets: [ExerciseSet]) {
         self.id = id
         self.name = name
         self.exerciseId = exerciseId
+        self.exerciseLoadType = exerciseLoadType
         self.sets = sets
     }
 }

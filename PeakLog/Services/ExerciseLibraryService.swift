@@ -142,6 +142,35 @@ nonisolated enum ExerciseLibraryEngine {
                 )
             }
     }
+
+    /// The full per-set breakdown (weight × reps for every set, in order)
+    /// from the most recent session that included this exercise. Used to
+    /// prefill a new set's weight/reps with what was actually done last time,
+    /// as opposed to `recentEntries`'s single top-set summary.
+    static func lastPerformedSets(
+        exerciseId: String?,
+        exerciseName: String,
+        sessions: [WorkoutSession],
+        library: [ExerciseDefinition]
+    ) -> [ExerciseSet]? {
+        guard let definition = resolveDefinition(name: exerciseName, exerciseId: exerciseId, in: library) else {
+            return nil
+        }
+
+        func matches(_ exercise: Exercise) -> Bool {
+            resolveDefinition(name: exercise.name, exerciseId: exercise.exerciseId, in: library)?.id == definition.id
+        }
+
+        guard let latestSession = sessions
+            .filter({ $0.exercises.contains(where: matches) })
+            .max(by: { $0.date < $1.date }),
+            let exercise = latestSession.exercises.first(where: matches)
+        else {
+            return nil
+        }
+
+        return exercise.sets.sorted { $0.setIndex < $1.setIndex }
+    }
 }
 
 // MARK: - Seed Library Loading
@@ -171,6 +200,7 @@ protocol ExerciseLibraryServiceProtocol {
         muscleGroup: MuscleGroup,
         loadType: ExerciseLoadType
     ) async throws -> ExerciseDefinition
+    func fetchLastPerformedSets(exerciseId: String?, exerciseName: String) async -> [ExerciseSet]?
 }
 
 final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
@@ -191,6 +221,15 @@ final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
             sessions: await database.allStrengthSessions(),
             library: await fetchLibrary(),
             limit: limit
+        )
+    }
+
+    func fetchLastPerformedSets(exerciseId: String?, exerciseName: String) async -> [ExerciseSet]? {
+        ExerciseLibraryEngine.lastPerformedSets(
+            exerciseId: exerciseId,
+            exerciseName: exerciseName,
+            sessions: await database.allStrengthSessions(),
+            library: await fetchLibrary()
         )
     }
 

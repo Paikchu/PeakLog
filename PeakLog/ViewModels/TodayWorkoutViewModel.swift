@@ -745,7 +745,7 @@ final class TodayWorkoutViewModel: ObservableObject {
                     )
                 }
             guard !sets.isEmpty else { return nil }
-            return Exercise(id: exercise.id, name: exercise.name, sets: sets)
+            return Exercise(id: exercise.id, name: exercise.name, exerciseLoadType: exercise.loadType, sets: sets)
         }
 
         guard !exercises.isEmpty else { return nil }

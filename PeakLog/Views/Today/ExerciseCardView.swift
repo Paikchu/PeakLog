@@ -7,14 +7,22 @@ import UIKit
 
 private struct SetRowView: View {
     let setIndex: Int
+    let exerciseId: String?
+    let exerciseName: String
+    let exerciseLoadType: ExerciseLoadType?
+    let precedingSet: ExerciseSet?
     @Binding var set: ExerciseSet
 
     @State private var editingWeight: Bool = false
     @State private var editingReps: Bool = false
-    @State private var weightText: String = ""
-    @State private var repsText: String = ""
+    @State private var weightSuggestion: SetDefaultsSuggestion?
+    @State private var repsSuggestion: SetDefaultsSuggestion?
 
     var onCommit: (Double?, WeightUnit, Int) -> Void
+
+    private var allowsBodyweightToggle: Bool {
+        exerciseLoadType == .bodyweight || (exerciseLoadType == nil && set.weight == nil)
+    }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -24,40 +32,21 @@ private struct SetRowView: View {
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.workoutIndexFill))
 
-            valueChip(action: {
-                weightText = set.weight.map(formatWeightValue) ?? ""
-                editingWeight = true
-            }) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if let weight = set.weight {
-                        Text(formatWeightValue(weight))
-                            .font(.exerciseValue)
-                            .foregroundColor(.accentValue)
-                        Text(set.weightUnit.display)
-                            .font(.exerciseUnit)
-                            .foregroundColor(.textSecondary)
-                    } else {
-                        Text("chat.exercise.bodyweight")
-                            .font(.exerciseValue)
-                            .foregroundColor(.accentValue)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.xl)
-                        .fill(Color.workoutPanel)
-                )
+            valueChip(action: { presentWeightEditor() }) {
+                LoadValueLabel(weight: set.weight, weightUnit: set.weightUnit, isBodyweight: allowsBodyweightToggle && set.weight == nil)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppRadius.xl)
+                            .fill(Color.workoutPanel)
+                    )
             }
 
             Text("×")
                 .font(.setIndex)
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
-            valueChip(action: {
-                repsText = "\(set.reps)"
-                editingReps = true
-            }) {
+            valueChip(action: { presentRepsEditor() }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(set.reps)")
                         .font(.exerciseValue)
@@ -80,125 +69,64 @@ private struct SetRowView: View {
             RoundedRectangle(cornerRadius: AppRadius.xxl)
                 .fill(Color.workoutShell)
         )
-        // Edit weight sheet
         .sheet(isPresented: $editingWeight) {
-            ValueEditSheet(
-                title: String(localized: "chat.exercise.weight"),
-                titleKey: "chat.exercise.edit_weight",
-                unit: set.weight == nil ? nil : set.weightUnit.display,
-                placeholder: String(localized: "chat.exercise.bodyweight"),
-                keyboardType: .decimalPad,
-                value: $weightText
-            ) {
-                let trimmed = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    set.weight = nil
-                    onCommit(nil, set.weightUnit, set.reps)
-                } else if let w = Double(trimmed) {
-                    set.weight = w
-                    onCommit(w, set.weightUnit, set.reps)
-                }
+            WeightWheelEditSheet(
+                allowsBodyweightToggle: allowsBodyweightToggle,
+                weightUnit: set.weightUnit,
+                initialWeight: set.weight,
+                lastTime: weightSuggestion
+            ) { weight in
+                set.weight = weight
+                onCommit(weight, set.weightUnit, set.reps)
                 editingWeight = false
             } onCancel: {
                 editingWeight = false
             }
-            .presentationDetents([.height(220)])
+            .presentationDetents([.height(allowsBodyweightToggle ? 420 : 380)])
         }
-        // Edit reps sheet
         .sheet(isPresented: $editingReps) {
-            ValueEditSheet(
-                title: String(localized: "chat.exercise.reps"),
-                titleKey: "chat.exercise.edit_reps",
-                unit: String(localized: "chat.exercise.reps"),
-                placeholder: "0",
-                keyboardType: .numberPad,
-                value: $repsText
-            ) {
-                if let r = Int(repsText) {
-                    set.reps = r
-                    onCommit(set.weight, set.weightUnit, r)
-                }
+            RepsWheelEditSheet(initialReps: set.reps, lastTime: repsSuggestion) { reps in
+                set.reps = reps
+                onCommit(set.weight, set.weightUnit, reps)
                 editingReps = false
             } onCancel: {
                 editingReps = false
             }
-            .presentationDetents([.height(220)])
+            .presentationDetents([.height(360)])
+        }
+    }
+
+    private func presentWeightEditor() {
+        Task {
+            weightSuggestion = await AppServices.setDefaultsProvider.suggestDefaults(for: SetDefaultsContext(
+                exerciseId: exerciseId,
+                exerciseName: exerciseName,
+                setIndex: setIndex,
+                precedingSetInSameExercise: precedingSet.map {
+                    SetDefaultsSuggestion(weight: $0.weight, weightUnit: $0.weightUnit, reps: $0.reps)
+                }
+            ))
+            editingWeight = true
+        }
+    }
+
+    private func presentRepsEditor() {
+        Task {
+            repsSuggestion = await AppServices.setDefaultsProvider.suggestDefaults(for: SetDefaultsContext(
+                exerciseId: exerciseId,
+                exerciseName: exerciseName,
+                setIndex: setIndex,
+                precedingSetInSameExercise: precedingSet.map {
+                    SetDefaultsSuggestion(weight: $0.weight, weightUnit: $0.weightUnit, reps: $0.reps)
+                }
+            ))
+            editingReps = true
         }
     }
 }
 
 func formatWeightValue(_ weight: Double) -> String {
     weight.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(weight)) : String(format: "%.1f", weight)
-}
-
-// MARK: - Inline Edit Sheet
-
-struct ValueEditSheet: View {
-    let title: String
-    let titleKey: String?
-    let unit: String?
-    let placeholder: String
-    let keyboardType: UIKeyboardType
-    @Binding var value: String
-    var onDone: () -> Void
-    var onCancel: () -> Void
-
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Text(titleKey.map { String(localized: String.LocalizationValue($0)) } ?? title)
-                .font(.headerTitle)
-                .foregroundColor(.textPrimary)
-                .padding(.top, 24)
-
-            HStack(alignment: .lastTextBaseline, spacing: 6) {
-                TextField(placeholder, text: $value)
-                    .keyboardType(keyboardType)
-                    .font(.system(size: 40, weight: .bold))
-                    .foregroundColor(.accentValue)
-                    .multilineTextAlignment(.center)
-                    .focused($focused)
-                    .frame(width: 120)
-                    .toolbar {
-                        ToolbarItemGroup(placement: .keyboard) {
-                            Spacer()
-                            Button(String(localized: "common.done")) {
-                                focused = false
-                                onDone()
-                            }
-                        }
-                    }
-
-                if let unit {
-                    Text(unit)
-                        .font(.settingTitle)
-                        .foregroundColor(.textMuted)
-                }
-            }
-
-            HStack(spacing: 16) {
-                Button(String(localized: "common.cancel")) { onCancel() }
-                    .foregroundColor(.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.appSurface)
-                    .cornerRadius(AppRadius.lg)
-
-                Button(String(localized: "common.done")) { onDone() }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(LinearGradient.accentGradient)
-                    .cornerRadius(AppRadius.lg)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-        }
-        .background(Color.appCard)
-        .dismissKeyboardOnTap()
-        .onAppear { focused = true }
-    }
 }
 
 // MARK: - Exercise Card (swipeable)
@@ -256,6 +184,10 @@ struct ExerciseCardView: View {
                     ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, _ in
                         SetRowView(
                             setIndex: index + 1,
+                            exerciseId: exercise.exerciseId,
+                            exerciseName: exercise.name,
+                            exerciseLoadType: exercise.exerciseLoadType,
+                            precedingSet: index > 0 ? exercise.sets[index - 1] : nil,
                             set: $exercise.sets[index]
                         ) { weight, unit, reps in
                             guard isEditable else { return }

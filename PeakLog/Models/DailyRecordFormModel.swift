@@ -78,13 +78,19 @@ enum DailyRecordDraftBuilder {
             for set in exercise.sets {
                 guard set.reps > 0 else { return nil }
                 if exercise.isBodyweight {
-                    setDrafts.append(.init(weight: nil, weightUnit: .kg, reps: set.reps, rpe: nil))
+                    // nil means pure bodyweight; a positive value is added weight on top of it.
+                    setDrafts.append(.init(weight: set.weight, weightUnit: .kg, reps: set.reps, rpe: nil))
                 } else {
                     guard let weight = set.weight, weight > 0 else { return nil }
                     setDrafts.append(.init(weight: weight, weightUnit: .kg, reps: set.reps, rpe: nil))
                 }
             }
-            exerciseDrafts.append(.init(name: name, exerciseId: exercise.sourceExerciseId, sets: setDrafts))
+            exerciseDrafts.append(.init(
+                name: name,
+                exerciseId: exercise.sourceExerciseId,
+                exerciseLoadType: exercise.isBodyweight ? .bodyweight : .weighted,
+                sets: setDrafts
+            ))
         }
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -24,6 +24,7 @@ struct CompletedStrengthSetViewData: Identifiable, Equatable {
     enum LoadDisplay: Equatable {
         case weighted(Double, WeightUnit)
         case bodyweight
+        case bodyweightWithAdded(Double, WeightUnit)
         case unrecordedWeight
     }
 
@@ -75,18 +76,26 @@ enum HistoryCompletedAggregator {
             .flatMap(\.exercises)
             .map { exercise in
                 let hasAnyExplicitWeight = exercise.sets.contains { $0.weight != nil }
+                // Legacy sessions predate `exerciseLoadType`; fall back to the
+                // old "any set here ever had a real weight" heuristic for them.
+                let isBodyweightExercise = exercise.exerciseLoadType == .bodyweight
+                    || (exercise.exerciseLoadType == nil && !hasAnyExplicitWeight)
                 return CompletedStrengthExerciseViewData(
                     id: exercise.id,
                     name: exercise.name,
                     completedSetCount: exercise.sets.count,
                     sets: exercise.sets.map { set in
                         let loadDisplay: CompletedStrengthSetViewData.LoadDisplay
-                        if let weight = set.weight {
+                        if isBodyweightExercise {
+                            if let weight = set.weight, weight > 0 {
+                                loadDisplay = .bodyweightWithAdded(weight, set.weightUnit)
+                            } else {
+                                loadDisplay = .bodyweight
+                            }
+                        } else if let weight = set.weight {
                             loadDisplay = .weighted(weight, set.weightUnit)
-                        } else if hasAnyExplicitWeight {
-                            loadDisplay = .unrecordedWeight
                         } else {
-                            loadDisplay = .bodyweight
+                            loadDisplay = .unrecordedWeight
                         }
 
                         return CompletedStrengthSetViewData(

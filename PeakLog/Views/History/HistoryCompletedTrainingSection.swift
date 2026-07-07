@@ -246,6 +246,8 @@ private struct HistoryCompletedStrengthSetRow: View {
             return "\(formatWeightValue(weight)) \(unit.display)"
         case .bodyweight:
             return String(localized: "chat.exercise.bodyweight")
+        case let .bodyweightWithAdded(weight, unit):
+            return LoadDisplayFormat.plainText(weight: weight, unit: unit, isBodyweight: true)
         case .unrecordedWeight:
             return String(localized: "history.completed.unrecorded_weight")
         }
@@ -253,7 +255,7 @@ private struct HistoryCompletedStrengthSetRow: View {
 
     private var loadTint: Color {
         switch set.loadDisplay {
-        case .weighted:
+        case .weighted, .bodyweightWithAdded:
             return .accentPrimary
         case .bodyweight:
             return .green

@@ -1005,10 +1005,13 @@ private struct TodayPlannedExerciseCard: View {
             }
 
             VStack(spacing: 0) {
-                ForEach(exercise.sets) { set in
+                ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, set in
                     TodayPlannedSetRow(
                         set: set,
+                        exerciseId: exercise.exerciseId,
+                        exerciseName: exercise.exerciseName,
                         exerciseLoadType: exercise.exerciseLoadType,
+                        precedingSet: index > 0 ? exercise.sets[index - 1] : nil,
                         isCompletedInSession: sessionCompletedSetIds.contains(set.id),
                         onCommit: { weight, unit, reps in
                             onUpdateSet(set.id, weight, unit, reps)
@@ -1032,7 +1035,10 @@ private struct TodayPlannedExerciseCard: View {
 
 private struct TodayPlannedSetRow: View {
     let set: TrainingPlanSet
+    let exerciseId: String?
+    let exerciseName: String
     let exerciseLoadType: ExerciseLoadType
+    let precedingSet: TrainingPlanSet?
     let isCompletedInSession: Bool
     let onCommit: (Double?, WeightUnit, Int) -> Void
     let onToggleComplete: (Double?) -> Void
@@ -1040,11 +1046,15 @@ private struct TodayPlannedSetRow: View {
 
     @State private var editingWeight = false
     @State private var editingReps = false
-    @State private var weightText = ""
-    @State private var repsText = ""
+    @State private var weightSuggestion: SetDefaultsSuggestion?
+    @State private var repsSuggestion: SetDefaultsSuggestion?
 
     private var showsCompleted: Bool {
         self.set.isCompleted || isCompletedInSession
+    }
+
+    private var allowsBodyweightToggle: Bool {
+        exerciseLoadType == .bodyweight
     }
 
     var body: some View {
@@ -1056,23 +1066,14 @@ private struct TodayPlannedSetRow: View {
                 .background(Circle().fill(Color.workoutIndexFill))
 
             Button {
-                weightText = set.targetWeight.map(formatWeightValue) ?? ""
-                editingWeight = true
+                presentWeightEditor()
             } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if let weight = set.targetWeight {
-                        Text(formatWeightValue(weight))
-                            .font(.exerciseValue)
-                            .foregroundColor(.accentValue)
-                        Text(set.targetWeightUnit.display)
-                            .font(.exerciseUnit)
-                            .foregroundColor(.textSecondary)
-                    } else {
-                        Text(exerciseLoadLabel)
-                            .font(.exerciseValue)
-                            .foregroundColor(.accentValue)
-                    }
-                }
+                LoadValueLabel(
+                    weight: set.targetWeight,
+                    weightUnit: set.targetWeightUnit,
+                    isBodyweight: allowsBodyweightToggle && set.targetWeight == nil,
+                    unsetPlaceholder: allowsBodyweightToggle ? nil : exerciseLoadType.displayLabel
+                )
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
                 .background(
@@ -1086,8 +1087,7 @@ private struct TodayPlannedSetRow: View {
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
             Button {
-                repsText = "\(set.targetReps)"
-                editingReps = true
+                presentRepsEditor()
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(set.targetReps)")
@@ -1129,45 +1129,58 @@ private struct TodayPlannedSetRow: View {
         }
         .padding(.vertical, 8)
         .sheet(isPresented: $editingWeight) {
-            ValueEditSheet(
-                title: String(localized: "chat.exercise.weight"),
-                titleKey: "chat.exercise.edit_weight",
-                unit: set.targetWeight == nil ? nil : set.targetWeightUnit.display,
-                placeholder: exerciseLoadType.displayLabel,
-                keyboardType: .decimalPad,
-                value: $weightText
-            ) {
-                let trimmed = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
-                let weight = trimmed.isEmpty ? nil : Double(trimmed)
+            WeightWheelEditSheet(
+                allowsBodyweightToggle: allowsBodyweightToggle,
+                weightUnit: set.targetWeightUnit,
+                initialWeight: set.targetWeight,
+                lastTime: weightSuggestion
+            ) { weight in
                 onCommit(weight, set.targetWeightUnit, set.targetReps)
                 editingWeight = false
             } onCancel: {
                 editingWeight = false
             }
-            .presentationDetents([.height(280)])
+            .presentationDetents([.height(allowsBodyweightToggle ? 420 : 380)])
         }
         .sheet(isPresented: $editingReps) {
-            ValueEditSheet(
-                title: String(localized: "chat.exercise.reps"),
-                titleKey: "chat.exercise.edit_reps",
-                unit: String(localized: "chat.exercise.reps"),
-                placeholder: "0",
-                keyboardType: .numberPad,
-                value: $repsText
-            ) {
-                if let reps = Int(repsText) {
-                    onCommit(set.targetWeight, set.targetWeightUnit, reps)
-                }
+            RepsWheelEditSheet(initialReps: set.targetReps, lastTime: repsSuggestion) { reps in
+                onCommit(set.targetWeight, set.targetWeightUnit, reps)
                 editingReps = false
             } onCancel: {
                 editingReps = false
             }
-            .presentationDetents([.height(280)])
+            .presentationDetents([.height(360)])
         }
     }
 
-    private var exerciseLoadLabel: String {
-        exerciseLoadType.displayLabel
+    private func precedingSuggestion() -> SetDefaultsSuggestion? {
+        precedingSet.map {
+            SetDefaultsSuggestion(weight: $0.targetWeight, weightUnit: $0.targetWeightUnit, reps: $0.targetReps)
+        }
+    }
+
+    private func presentWeightEditor() {
+        Task {
+            weightSuggestion = await AppServices.setDefaultsProvider.suggestDefaults(for: SetDefaultsContext(
+                exerciseId: exerciseId,
+                exerciseName: exerciseName,
+                setIndex: set.setIndex,
+                precedingSetInSameExercise: precedingSuggestion()
+            ))
+            editingWeight = true
+        }
+    }
+
+    private func presentRepsEditor() {
+        Task {
+            repsSuggestion = await AppServices.setDefaultsProvider.suggestDefaults(for: SetDefaultsContext(
+                exerciseId: exerciseId,
+                exerciseName: exerciseName,
+                setIndex: set.setIndex,
+                precedingSetInSameExercise: precedingSuggestion()
+            ))
+            editingReps = true
+        }
     }
 }
 
@@ -1242,6 +1255,17 @@ extension View {
     }
 }
 
+private struct TodayWorkoutScreenPreview: View {
+    // `#Preview` 闭包在本项目（Swift 5 语言模式）下并非 Main Actor 隔离，
+    // 而 `TodayWorkoutViewModel` 的 init 是 @MainActor 的。把预览内容放到
+    // `@MainActor` 的 `body` 里构造，即可在正确的执行上下文创建 ViewModel，
+    // 消除 “在同步非隔离上下文中调用 Main Actor 隔离的 init()” 的告警。
+    @MainActor
+    var body: some View {
+        TodayWorkoutScreen(viewModel: TodayWorkoutViewModel())
+    }
+}
+
 #Preview {
-    TodayWorkoutScreen(viewModel: TodayWorkoutViewModel())
+    TodayWorkoutScreenPreview()
 }

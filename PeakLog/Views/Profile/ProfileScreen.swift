@@ -5,6 +5,7 @@ struct ProfileScreen: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
     @Environment(\.openURL) private var openURL
+    @State private var showingWeightUnitPicker = false
 
     init() {
         _viewModel = StateObject(
@@ -192,6 +193,29 @@ struct ProfileScreen: View {
                     detail: localizationManager.appLanguage.nativeDisplayName
                 ) {
                     openAppSettings()
+                }
+
+                Divider()
+                    .background(Color.appSeparator)
+                    .padding(.horizontal, 16)
+
+                PreferenceNavRow(
+                    icon: "scalemass",
+                    title: "profile.preferences.weight_unit",
+                    detail: prefs.weightUnit.display
+                ) {
+                    showingWeightUnitPicker = true
+                }
+                .confirmationDialog(
+                    "profile.preferences.weight_unit.choose",
+                    isPresented: $showingWeightUnitPicker,
+                    titleVisibility: .visible
+                ) {
+                    ForEach(WeightUnit.allCases, id: \.self) { unit in
+                        Button(unit.display) {
+                            Task { await viewModel.setWeightUnit(unit) }
+                        }
+                    }
                 }
 
                 Divider()

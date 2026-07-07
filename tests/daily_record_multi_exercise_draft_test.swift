@@ -4,7 +4,7 @@ import Foundation
 struct DailyRecordMultiExerciseDraftTestRunner {
     static func main() {
         buildsDraftWithMultipleExercisesAndPerSetValues()
-        forcesNilWeightForBodyweightExercises()
+        preservesOptionalAddedWeightForBodyweightExercises()
         rejectsIncompleteForms()
         copiesLastSetWhenAppending()
         trimsTitleAndDropsEmptyOne()
@@ -35,7 +35,10 @@ struct DailyRecordMultiExerciseDraftTestRunner {
         precondition(draft.exercises[1].sets[0].weight == 100)
     }
 
-    private static func forcesNilWeightForBodyweightExercises() {
+    /// A bodyweight exercise (e.g. weighted pull-ups) can mix pure-bodyweight
+    /// sets with sets that add extra weight on top; nil still means no added
+    /// weight, but a positive value must survive the draft builder.
+    private static func preservesOptionalAddedWeightForBodyweightExercises() {
         let exercises = [
             DailyRecordExerciseInput(name: "引体向上", isBodyweight: true, sets: [
                 DailyRecordSetInput(weight: 20, reps: 10),
@@ -47,7 +50,7 @@ struct DailyRecordMultiExerciseDraftTestRunner {
             preconditionFailure("Expected bodyweight exercise without weights to be valid")
         }
 
-        precondition(draft.exercises[0].sets.allSatisfy { $0.weight == nil }, "Bodyweight sets must persist nil weight")
+        precondition(draft.exercises[0].sets.map(\.weight) == [20, nil], "Added weight on a bodyweight set must be preserved")
         precondition(draft.exercises[0].sets.map(\.reps) == [10, 8])
     }
 

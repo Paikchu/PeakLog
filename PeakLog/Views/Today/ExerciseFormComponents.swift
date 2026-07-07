@@ -17,7 +17,10 @@ struct ExerciseFormCard: View {
                 ForEach(Array(exercise.sets.enumerated()), id: \.element.id) { index, _ in
                     ExerciseFormSetRow(
                         setIndex: index + 1,
+                        exerciseId: exercise.sourceExerciseId,
+                        exerciseName: exercise.name,
                         isBodyweight: exercise.isBodyweight,
+                        precedingSet: index > 0 ? exercise.sets[index - 1] : nil,
                         set: $exercise.sets[index]
                     )
                 }
@@ -123,13 +126,16 @@ struct ExerciseFormCard: View {
 
 struct ExerciseFormSetRow: View {
     let setIndex: Int
+    let exerciseId: String?
+    let exerciseName: String
     let isBodyweight: Bool
+    let precedingSet: DailyRecordSetInput?
     @Binding var set: DailyRecordSetInput
 
     @State private var editingWeight = false
     @State private var editingReps = false
-    @State private var weightText = ""
-    @State private var repsText = ""
+    @State private var weightSuggestion: SetDefaultsSuggestion?
+    @State private var repsSuggestion: SetDefaultsSuggestion?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -154,88 +160,53 @@ struct ExerciseFormSetRow: View {
                 .fill(Color.workoutShell)
         )
         .sheet(isPresented: $editingWeight) {
-            ValueEditSheet(
-                title: String(localized: "chat.exercise.weight"),
-                titleKey: "chat.exercise.edit_weight",
-                unit: WeightUnit.kg.display,
-                placeholder: "0",
-                keyboardType: .decimalPad,
-                value: $weightText
-            ) {
-                let trimmed = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
-                set.weight = trimmed.isEmpty ? nil : Double(trimmed)
+            WeightWheelEditSheet(
+                allowsBodyweightToggle: isBodyweight,
+                weightUnit: .kg,
+                initialWeight: set.weight,
+                lastTime: weightSuggestion
+            ) { weight in
+                set.weight = weight
                 editingWeight = false
             } onCancel: {
                 editingWeight = false
             }
-            .presentationDetents([.height(280)])
+            .presentationDetents([.height(isBodyweight ? 420 : 380)])
         }
         .sheet(isPresented: $editingReps) {
-            ValueEditSheet(
-                title: String(localized: "chat.exercise.reps"),
-                titleKey: "chat.exercise.edit_reps",
-                unit: String(localized: "chat.exercise.reps"),
-                placeholder: "0",
-                keyboardType: .numberPad,
-                value: $repsText
-            ) {
-                if let reps = Int(repsText) {
-                    set.reps = reps
-                }
+            RepsWheelEditSheet(initialReps: set.reps, lastTime: repsSuggestion) { reps in
+                set.reps = reps
                 editingReps = false
             } onCancel: {
                 editingReps = false
             }
-            .presentationDetents([.height(280)])
+            .presentationDetents([.height(360)])
         }
     }
 
-    @ViewBuilder
     private var weightChip: some View {
-        if isBodyweight {
-            Text("daily_record.load.bodyweight")
-                .font(.exerciseValue)
-                .foregroundColor(.accentValue)
+        Button {
+            presentWeightEditor()
+        } label: {
+            LoadValueLabel(
+                weight: set.weight,
+                weightUnit: .kg,
+                isBodyweight: isBodyweight && set.weight == nil,
+                unsetPlaceholder: isBodyweight ? nil : String(localized: "daily_record.weight")
+            )
                 .frame(maxWidth: .infinity)
                 .frame(height: 46)
                 .background(
                     RoundedRectangle(cornerRadius: AppRadius.xl)
                         .fill(Color.workoutPanel)
                 )
-        } else {
-            Button {
-                weightText = set.weight.map(formatWeightValue) ?? ""
-                editingWeight = true
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if let weight = set.weight {
-                        Text(formatWeightValue(weight))
-                            .font(.exerciseValue)
-                            .foregroundColor(.accentValue)
-                        Text(WeightUnit.kg.display)
-                            .font(.exerciseUnit)
-                            .foregroundColor(.textSecondary)
-                    } else {
-                        Text("daily_record.weight")
-                            .font(.exerciseValue)
-                            .foregroundColor(.textMuted)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.xl)
-                        .fill(Color.workoutPanel)
-                )
-            }
-            .buttonStyle(.plain)
         }
+        .buttonStyle(.plain)
     }
 
     private var repsChip: some View {
         Button {
-            repsText = "\(set.reps)"
-            editingReps = true
+            presentRepsEditor()
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(set.reps)")
@@ -253,6 +224,34 @@ struct ExerciseFormSetRow: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private func precedingSuggestion() -> SetDefaultsSuggestion? {
+        precedingSet.map { SetDefaultsSuggestion(weight: $0.weight, weightUnit: .kg, reps: $0.reps) }
+    }
+
+    private func presentWeightEditor() {
+        Task {
+            weightSuggestion = await AppServices.setDefaultsProvider.suggestDefaults(for: SetDefaultsContext(
+                exerciseId: exerciseId,
+                exerciseName: exerciseName,
+                setIndex: setIndex,
+                precedingSetInSameExercise: precedingSuggestion()
+            ))
+            editingWeight = true
+        }
+    }
+
+    private func presentRepsEditor() {
+        Task {
+            repsSuggestion = await AppServices.setDefaultsProvider.suggestDefaults(for: SetDefaultsContext(
+                exerciseId: exerciseId,
+                exerciseName: exerciseName,
+                setIndex: setIndex,
+                precedingSetInSameExercise: precedingSuggestion()
+            ))
+            editingReps = true
+        }
     }
 }
 

@@ -42,7 +42,13 @@ enum WorkoutHistoryAggregator {
             for exercise in session.exercises {
                 let key = normalizedName(for: exercise.name)
                 if grouped[key] == nil {
-                    grouped[key] = Exercise(id: exercise.id, name: exercise.name, sets: [])
+                    grouped[key] = Exercise(
+                        id: exercise.id,
+                        name: exercise.name,
+                        exerciseId: exercise.exerciseId,
+                        exerciseLoadType: exercise.exerciseLoadType,
+                        sets: []
+                    )
                     order.append(key)
                 }
 
