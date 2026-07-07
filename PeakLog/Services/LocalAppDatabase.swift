@@ -444,6 +444,19 @@ actor LocalAppDatabase {
         return day
     }
 
+    func reorderPlannedExercises(orderedExerciseIds: [String]) throws -> TrainingPlanDay {
+        let todayDateString = Self.planDateString(from: Date())
+        guard let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) else {
+            throw LocalAppDatabaseError.planExerciseNotFound
+        }
+        guard let reorderedDay = state.activePlan.days[dayIndex].reordered(byExerciseIds: orderedExerciseIds) else {
+            throw LocalAppDatabaseError.invalidExerciseOrder
+        }
+        state.activePlan.days[dayIndex] = reorderedDay
+        try persist()
+        return reorderedDay
+    }
+
     private func makePlanExercise(from draft: PlanExerciseDraft, orderIndex: Int) -> TrainingPlanExercise {
         TrainingPlanExercise(
             id: UUID().uuidString,
@@ -833,6 +846,7 @@ enum LocalAppDatabaseError: LocalizedError {
     case planSetNotFound
     case invalidPlanExerciseName
     case invalidCustomExerciseName
+    case invalidExerciseOrder
 
     var errorDescription: String? {
         switch self {
@@ -850,6 +864,8 @@ enum LocalAppDatabaseError: LocalizedError {
             return "Exercise name cannot be empty."
         case .invalidCustomExerciseName:
             return "Custom exercise name cannot be empty."
+        case .invalidExerciseOrder:
+            return "Exercise order is invalid."
         }
     }
 }

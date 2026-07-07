@@ -14,6 +14,7 @@ struct TodayWorkoutScreen: View {
     @State private var displayedExerciseId: String?
     @State private var focusSettleTask: Task<Void, Never>?
     @State private var flowAdvanceTask: Task<Void, Never>?
+    @State private var isReorderingPlan = false
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -75,6 +76,7 @@ struct TodayWorkoutScreen: View {
                     if let planState {
                         TodayPlanExercisesSection(
                             state: planState,
+                            isReordering: $isReorderingPlan,
                             flowAnimation: flowAnimation,
                             onSetScrolled: { id in
                                 scrolledExerciseId = id
@@ -104,6 +106,9 @@ struct TodayWorkoutScreen: View {
                                 withAnimation(flowAnimation) {
                                     viewModel.skipCurrentLiveExercise()
                                 }
+                            },
+                            onReorderExercises: { orderedIds in
+                                Task { await viewModel.reorderTodayPlanExercises(orderedExerciseIds: orderedIds) }
                             }
                         )
                     }
@@ -138,6 +143,7 @@ struct TodayWorkoutScreen: View {
             .padding(.bottom, isFocusMode ? 320 : 104)
         }
         .scrollPosition(id: $scrolledExerciseId, anchor: .center)
+        .scrollDisabled(isReorderingPlan)
         .dismissKeyboardOnTap()
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
@@ -173,6 +179,8 @@ struct TodayWorkoutScreen: View {
             UIApplication.shared.isIdleTimerDisabled = isActive
 #endif
             if isActive {
+                // 训练进行中不支持调整顺序，进入专注模式时强制退出重排。
+                isReorderingPlan = false
                 let currentId = viewModel.activeLiveWorkout?.currentExercise?.id
                 displayedExerciseId = currentId
                 // 等布局切换过渡启动后，再把当前动作流动到屏幕中间。
@@ -569,6 +577,7 @@ private struct TodayPlanExercisesSection: View {
     }
 
     let state: State
+    @Binding var isReordering: Bool
     let flowAnimation: Animation?
     let onSetScrolled: (String) -> Void
     let onUpdateSet: (String, Double?, WeightUnit, Int) -> Void
@@ -577,25 +586,42 @@ private struct TodayPlanExercisesSection: View {
     let onDeleteLastSet: (String) -> Void
     let onToggleLiveSet: (String) -> Void
     let onSkipCurrentLiveExercise: () -> Void
+    let onReorderExercises: ([String]) -> Void
+
+    @SwiftUI.State private var draftOrder: [TrainingPlanExercise] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: state.isFocusMode ? 10 : 16) {
-            ForEach(state.plan.exercises) { exercise in
-                exerciseCard(for: exercise)
-                    .id(exercise.id)
-                    .visualEffect { content, proxy in
-                        let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
-                        let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
-                        let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
-                        let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
-                        let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
-                        return content
-                            .scaleEffect(scale)
-                            .opacity(opacity)
+        Group {
+            if isReordering {
+                ReorderableExerciseList(
+                    items: $draftOrder,
+                    sessionCompletedSetIds: state.sessionCompletedSetIds,
+                    onCommit: onReorderExercises,
+                    onDone: {
+                        withAnimation(flowAnimation) { isReordering = false }
                     }
+                )
+                .transition(.opacity)
+            } else {
+                VStack(alignment: .leading, spacing: state.isFocusMode ? 10 : 16) {
+                    ForEach(state.plan.exercises) { exercise in
+                        exerciseCard(for: exercise)
+                            .id(exercise.id)
+                            .visualEffect { content, proxy in
+                                let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
+                                let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
+                                let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
+                                let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
+                                let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
+                                return content
+                                    .scaleEffect(scale)
+                                    .opacity(opacity)
+                            }
+                    }
+                }
+                .scrollTargetLayout()
             }
         }
-        .scrollTargetLayout()
     }
 
     @ViewBuilder
@@ -630,7 +656,14 @@ private struct TodayPlanExercisesSection: View {
                 onUpdateSet: onUpdateSet,
                 onCompleteSet: onCompleteSet,
                 onAddSet: { onAddSet(exercise.id) },
-                onDeleteLastSet: { onDeleteLastSet(exercise.id) }
+                onDeleteLastSet: { onDeleteLastSet(exercise.id) },
+                onLongPressHeader: {
+                    draftOrder = state.plan.exercises
+#if canImport(UIKit)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+#endif
+                    withAnimation(flowAnimation) { isReordering = true }
+                }
             )
         }
     }
@@ -651,6 +684,160 @@ private struct TodayPlanExercisesSection: View {
                 )
             }
         )
+    }
+}
+
+private struct ReorderableExerciseList: View {
+    @Binding var items: [TrainingPlanExercise]
+    let sessionCompletedSetIds: Set<String>
+    let onCommit: ([String]) -> Void
+    let onDone: () -> Void
+
+    @State private var draggingId: String?
+    @State private var dragOffset: CGFloat = 0
+
+    private let rowHeight: CGFloat = 52
+    private let rowSpacing: CGFloat = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("today.plan.reorder.title")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.textSecondary)
+                Spacer()
+                Button(action: onDone) {
+                    Text("common.done")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.accentPrimary)
+                }
+                .accessibilityIdentifier("today.plan.reorderDone")
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: rowSpacing) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, exercise in
+                    row(for: exercise, index: index)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(for exercise: TrainingPlanExercise, index: Int) -> some View {
+        let isDragging = draggingId == exercise.id
+        let completedSets = exercise.sets.count { $0.isCompleted || sessionCompletedSetIds.contains($0.id) }
+
+        ReorderableExerciseRow(
+            name: exercise.exerciseName,
+            completedSets: completedSets,
+            totalSets: exercise.sets.count,
+            isDragging: isDragging
+        )
+        .frame(height: rowHeight)
+        .zIndex(isDragging ? 1 : 0)
+        .offset(y: isDragging ? dragOffset : 0)
+        .accessibilityAction(named: Text("today.plan.reorder.move_up")) {
+            guard index > 0 else { return }
+            move(from: index, to: index - 1)
+        }
+        .accessibilityAction(named: Text("today.plan.reorder.move_down")) {
+            guard index < items.count - 1 else { return }
+            move(from: index, to: index + 1)
+        }
+        .gesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { value in
+                    if draggingId == nil {
+                        draggingId = exercise.id
+#if canImport(UIKit)
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+#endif
+                    }
+                    guard draggingId == exercise.id else { return }
+                    dragOffset = value.translation.height
+
+                    let step = rowHeight + rowSpacing
+                    let shift = Int((dragOffset / step).rounded())
+                    guard shift != 0,
+                          let currentIndex = items.firstIndex(where: { $0.id == exercise.id }) else { return }
+                    let targetIndex = max(0, min(items.count - 1, currentIndex + shift))
+                    guard targetIndex != currentIndex else { return }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        items.move(
+                            fromOffsets: IndexSet(integer: currentIndex),
+                            toOffset: targetIndex > currentIndex ? targetIndex + 1 : targetIndex
+                        )
+                    }
+                    dragOffset -= CGFloat(targetIndex - currentIndex) * step
+#if canImport(UIKit)
+                    UISelectionFeedbackGenerator().selectionChanged()
+#endif
+                }
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        dragOffset = 0
+                    }
+                    draggingId = nil
+                    onCommit(items.map(\.id))
+                }
+        )
+    }
+
+    private func move(from source: Int, to destination: Int) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+            items.move(
+                fromOffsets: IndexSet(integer: source),
+                toOffset: destination > source ? destination + 1 : destination
+            )
+        }
+        onCommit(items.map(\.id))
+    }
+}
+
+private struct ReorderableExerciseRow: View {
+    let name: String
+    let completedSets: Int
+    let totalSets: Int
+    let isDragging: Bool
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: AppRadius.full)
+                .fill(Color.accentPrimary)
+                .frame(width: 5, height: 22)
+
+            Text(name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.textPrimary)
+                .lineLimit(1)
+
+            Spacer()
+
+            Text(LocalizedPlanText.formatted(
+                "today.plan.reorder.sets_badge",
+                locale: locale,
+                Int64(completedSets),
+                Int64(totalSets)
+            ))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(.textSecondary)
+
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.textMuted)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+                .fill(Color.workoutPanel)
+        )
+        .scaleEffect(isDragging ? 1.03 : 1)
+        .shadow(color: Color.black.opacity(isDragging ? 0.18 : 0), radius: isDragging ? 10 : 0, y: isDragging ? 4 : 0)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -758,23 +945,28 @@ private struct TodayPlannedExerciseCard: View {
     let onCompleteSet: (String, Double?) -> Void
     let onAddSet: () -> Void
     let onDeleteLastSet: () -> Void
+    let onLongPressHeader: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: AppRadius.full)
-                    .fill(Color.accentPrimary)
-                    .frame(width: 5, height: 22)
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: AppRadius.full)
+                        .fill(Color.accentPrimary)
+                        .frame(width: 5, height: 22)
 
-                Text(exercise.exerciseName)
-                    .font(.exerciseName)
-                    .foregroundColor(.textPrimary)
+                    Text(exercise.exerciseName)
+                        .font(.exerciseName)
+                        .foregroundColor(.textPrimary)
 
-                if let previous = exercise.previousPerformanceSummary, !previous.isEmpty {
-                    Text(previous)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.textMuted)
+                    if let previous = exercise.previousPerformanceSummary, !previous.isEmpty {
+                        Text(previous)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.textMuted)
+                    }
                 }
+                .contentShape(Rectangle())
+                .onLongPressGesture(minimumDuration: 0.4, perform: onLongPressHeader)
 
                 Spacer()
 

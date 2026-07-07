@@ -451,6 +451,23 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
+    /// 训练进行中（专注模式或最小化态）时不生效；UI 层已阻止长按进入重排模式，此处只做兜底。
+    func reorderTodayPlanExercises(orderedExerciseIds: [String]) async {
+        guard activeLiveWorkout == nil, let plan = todayPlan else { return }
+        let previous = plan.exercises
+        let optimistic = orderedExerciseIds.compactMap { id in previous.first { $0.id == id } }
+        guard optimistic.count == previous.count else { return }
+        todayPlan?.exercises = optimistic
+
+        do {
+            let updated = try await trainingPlanService.reorderPlannedExercises(orderedExerciseIds: orderedExerciseIds)
+            todayPlan = updated
+        } catch {
+            errorMessage = error.localizedDescription
+            await refresh()
+        }
+    }
+
     func deleteLastPlannedSet(planExerciseId: String) async {
         guard let lastSetId = findPlanExercise(planExerciseId: planExerciseId)?.sets.last?.id else { return }
         removeLastPlannedSet(from: planExerciseId)

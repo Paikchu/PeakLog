@@ -238,6 +238,10 @@ private final class FocusFlowTrainingPlanService: TrainingPlanServiceProtocol {
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay {
         (try await fetchTodayPlan())!
     }
+
+    func reorderPlannedExercises(orderedExerciseIds: [String]) async throws -> TrainingPlanDay {
+        (try await fetchTodayPlan())!
+    }
 }
 
 private final class FocusFlowWorkoutService: WorkoutServiceProtocol {

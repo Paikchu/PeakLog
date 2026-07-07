@@ -33,7 +33,7 @@ nonisolated struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 
 nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Sendable {
     let id: String
-    let orderIndex: Int
+    var orderIndex: Int
     let exerciseName: String
     /// Stable library slug; nil for legacy free-text entries.
     var exerciseId: String?
@@ -84,6 +84,24 @@ nonisolated struct TrainingPlanDay: Identifiable, Codable, Equatable, Sendable {
 
     var totalSetsCount: Int {
         exercises.flatMap(\.sets).count
+    }
+
+    /// 按 orderedExerciseIds 重排 exercises 并重写 orderIndex(0..<count)。
+    /// orderedExerciseIds 必须是当前 exercises id 集合的一个排列，否则返回 nil。
+    func reordered(byExerciseIds orderedExerciseIds: [String]) -> TrainingPlanDay? {
+        guard orderedExerciseIds.count == exercises.count,
+              Set(orderedExerciseIds) == Set(exercises.map(\.id)) else { return nil }
+        let byId = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
+        var newExercises: [TrainingPlanExercise] = []
+        newExercises.reserveCapacity(orderedExerciseIds.count)
+        for (index, id) in orderedExerciseIds.enumerated() {
+            guard var exercise = byId[id] else { return nil }
+            exercise.orderIndex = index
+            newExercises.append(exercise)
+        }
+        var day = self
+        day.exercises = newExercises
+        return day
     }
 }
 
