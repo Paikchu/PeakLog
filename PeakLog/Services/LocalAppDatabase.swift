@@ -396,6 +396,81 @@ actor LocalAppDatabase {
         try persist()
     }
 
+    func deletePlannedExercise(planExerciseId: String) throws {
+        guard let location = findPlanExercise(planExerciseId: planExerciseId) else {
+            throw LocalAppDatabaseError.planExerciseNotFound
+        }
+
+        // 已完成组落库产生的训练记录一并删除，避免计划删掉后留下孤儿记录。
+        let exercise = state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex]
+        removeLoggedSets(withIds: Set(exercise.sets.compactMap(\.linkedExerciseSetId)))
+
+        state.activePlan.days[location.dayIndex].exercises.remove(at: location.exerciseIndex)
+        for index in state.activePlan.days[location.dayIndex].exercises.indices {
+            state.activePlan.days[location.dayIndex].exercises[index].orderIndex = index
+        }
+        recalculateDerivedProfile()
+        try persist()
+    }
+
+    func deleteExercise(sessionId: String, exerciseId: String) throws {
+        // 今日记录是多个 session 合并展示的，exerciseId 不一定挂在传入的 session 下，找不到时退回全量查找。
+        let sessionIndex = state.strengthSessions.firstIndex {
+            $0.id == sessionId && $0.exercises.contains { $0.id == exerciseId }
+        } ?? state.strengthSessions.firstIndex { $0.exercises.contains { $0.id == exerciseId } }
+        guard let sessionIndex,
+              let exerciseIndex = state.strengthSessions[sessionIndex].exercises.firstIndex(where: { $0.id == exerciseId })
+        else {
+            throw LocalAppDatabaseError.exerciseNotFound
+        }
+
+        let removedSetIds = Set(state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.map(\.id))
+        state.strengthSessions[sessionIndex].exercises.remove(at: exerciseIndex)
+        if state.strengthSessions[sessionIndex].exercises.isEmpty {
+            state.strengthSessions.remove(at: sessionIndex)
+        } else {
+            state.strengthSessions[sessionIndex].updatedAt = Date()
+        }
+        clearPlanCompletionLinks(to: removedSetIds)
+        recalculateDerivedProfile()
+        try persist()
+    }
+
+    /// 删除散落在各 session 中的记录组；清空后的动作与 session 一并移除。
+    private func removeLoggedSets(withIds setIds: Set<String>) {
+        guard !setIds.isEmpty else { return }
+        for sessionIndex in state.strengthSessions.indices {
+            var didChange = false
+            for exerciseIndex in state.strengthSessions[sessionIndex].exercises.indices {
+                let before = state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.count
+                state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.removeAll { setIds.contains($0.id) }
+                guard state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.count != before else { continue }
+                didChange = true
+                normalizeSetIndices(for: sessionIndex, exerciseIndex: exerciseIndex)
+            }
+            if didChange {
+                state.strengthSessions[sessionIndex].exercises.removeAll { $0.sets.isEmpty }
+                state.strengthSessions[sessionIndex].updatedAt = Date()
+            }
+        }
+        state.strengthSessions.removeAll { $0.exercises.isEmpty }
+    }
+
+    /// 记录被删除后，指向这些记录组的计划组回退为未完成。
+    private func clearPlanCompletionLinks(to removedSetIds: Set<String>) {
+        guard !removedSetIds.isEmpty else { return }
+        for dayIndex in state.activePlan.days.indices {
+            for exerciseIndex in state.activePlan.days[dayIndex].exercises.indices {
+                for setIndex in state.activePlan.days[dayIndex].exercises[exerciseIndex].sets.indices {
+                    guard let linkedId = state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex].linkedExerciseSetId,
+                          removedSetIds.contains(linkedId) else { continue }
+                    state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex].linkedExerciseSetId = nil
+                    state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex].completedAt = nil
+                }
+            }
+        }
+    }
+
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) throws -> TrainingPlanDay {
         guard !drafts.isEmpty,
               drafts.allSatisfy({ !$0.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {

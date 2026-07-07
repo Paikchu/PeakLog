@@ -480,6 +480,45 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
+    func deletePlanExercise(planExerciseId: String) async {
+        guard var plan = todayPlan, plan.exercises.contains(where: { $0.id == planExerciseId }) else { return }
+        plan.exercises.removeAll { $0.id == planExerciseId }
+        for index in plan.exercises.indices {
+            plan.exercises[index].orderIndex = index
+        }
+        todayPlan = plan
+        removeExerciseFromLiveSession(planExerciseId)
+
+        do {
+            try await trainingPlanService.deletePlannedExercise(planExerciseId: planExerciseId)
+            // 已完成组关联的记录会被级联删除，同步刷新记录区。
+            await refreshTodayRecordOnly()
+        } catch {
+            errorMessage = error.localizedDescription
+            await refresh()
+        }
+    }
+
+    /// 删除计划动作时同步从进行中的训练 session 移除；动作删空则整个训练取消。
+    private func removeExerciseFromLiveSession(_ planExerciseId: String) {
+        guard var session = activeLiveWorkout,
+              let index = session.exercises.firstIndex(where: { $0.id == planExerciseId }) else { return }
+        let removedSetIds = Set(session.exercises[index].sets.map(\.id))
+        session.exercises.remove(at: index)
+        session.completedSetIds.subtract(removedSetIds)
+        session.skippedExerciseIds.remove(planExerciseId)
+        if session.manualFocusExerciseId == planExerciseId {
+            session.manualFocusExerciseId = nil
+        }
+        guard !session.exercises.isEmpty else {
+            cancelPlanLiveWorkout()
+            return
+        }
+        moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
+        activeLiveWorkout = session
+        Task { await liveActivityManager.update(session: session) }
+    }
+
     func updateLoggedSet(exerciseId: String, updatedSet: ExerciseSet) async {
         updateLoggedSetInPlace(exerciseId: exerciseId, setId: updatedSet.id) { current in
             current.weight = updatedSet.weight
@@ -528,6 +567,20 @@ final class TodayWorkoutViewModel: ObservableObject {
                 exerciseId: exerciseId,
                 setId: lastSetId
             )
+        } catch {
+            errorMessage = error.localizedDescription
+            await refreshTodayRecordOnly()
+        }
+    }
+
+    func deleteLoggedExercise(exerciseId: String) async {
+        guard var record = todayRecord, record.exercises.contains(where: { $0.id == exerciseId }) else { return }
+        let sessionId = record.id
+        record.exercises.removeAll { $0.id == exerciseId }
+        todayRecord = record.exercises.isEmpty ? nil : record
+
+        do {
+            try await workoutService.deleteExercise(sessionId: sessionId, exerciseId: exerciseId)
         } catch {
             errorMessage = error.localizedDescription
             await refreshTodayRecordOnly()

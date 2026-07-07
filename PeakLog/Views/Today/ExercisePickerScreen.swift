@@ -347,23 +347,28 @@ struct ExercisePickerScreen: View {
     @ViewBuilder
     private var confirmBar: some View {
         if !selection.isEmpty {
-            Button {
-                let picked = selection
-                withAnimation(pickerSpring) { selection.removeAll() }
-                onConfirm(picked)
-            } label: {
-                Text(String(format: String(localized: "exercise_picker.add_count"), selection.count))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .contentTransition(.numericText())
-                    .animation(pickerSpring, value: selection.count)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Capsule().fill(LinearGradient.accentGradient))
+            VStack(spacing: 10) {
+                selectionPreview
+
+                Button {
+                    let picked = selection
+                    withAnimation(pickerSpring) { selection.removeAll() }
+                    onConfirm(picked)
+                } label: {
+                    Text(String(format: String(localized: "exercise_picker.add_count"), selection.count))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .contentTransition(.numericText())
+                        .animation(pickerSpring, value: selection.count)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Capsule().fill(LinearGradient.accentGradient))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("exercisePicker.confirm")
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, 10)
             .padding(.bottom, 4)
             .background(
                 Color.appBackground
@@ -371,8 +376,59 @@ struct ExercisePickerScreen: View {
                     .ignoresSafeArea(edges: .bottom)
             )
             .transition(.move(edge: .bottom).combined(with: .opacity))
-            .accessibilityIdentifier("exercisePicker.confirm")
         }
+    }
+
+    /// Horizontally scrolling chips of the current selection, so the user can
+    /// see (and undo) what they've picked without scanning the list above.
+    private var selectionPreview: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(selection) { definition in
+                        selectionChip(definition)
+                            .id(definition.id)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .animation(pickerSpring, value: selection.map(\.id))
+            }
+            .onChange(of: selection.count) {
+                guard let lastId = selection.last?.id else { return }
+                withAnimation(pickerSpring) { proxy.scrollTo(lastId, anchor: .trailing) }
+            }
+        }
+        .accessibilityIdentifier("exercisePicker.selectionPreview")
+    }
+
+    private func selectionChip(_ definition: ExerciseDefinition) -> some View {
+        Button {
+            withAnimation(pickerSpring) { toggle(definition) }
+        } label: {
+            HStack(spacing: 5) {
+                Text(definition.displayName(for: localizationManager.appLanguage))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.textPrimary)
+                    .lineLimit(1)
+
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.textMuted)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(
+                Capsule()
+                    .fill(Color.workoutPanel)
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.accentPrimary.opacity(0.35), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .transition(.scale(scale: 0.8).combined(with: .opacity))
+        .accessibilityHint(Text("exercise_picker.remove_selected_hint"))
     }
 
     // MARK: - Actions

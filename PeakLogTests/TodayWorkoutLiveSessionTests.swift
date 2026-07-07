@@ -180,6 +180,8 @@ private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol 
 
     func deletePlannedSet(planSetId: String) async throws {}
 
+    func deletePlannedExercise(planExerciseId: String) async throws {}
+
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay {
         (try await fetchTodayPlan())!
     }
@@ -207,6 +209,7 @@ private final class LiveSessionWorkoutService: WorkoutServiceProtocol {
     }
 
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws {}
+    func deleteExercise(sessionId: String, exerciseId: String) async throws {}
     func updateSetRPE(setId: String, rpe: Double?) async throws -> ExerciseSet {
         ExerciseSet(id: setId, setIndex: 1, weight: 60, weightUnit: .kg, reps: 8, rpe: rpe)
     }

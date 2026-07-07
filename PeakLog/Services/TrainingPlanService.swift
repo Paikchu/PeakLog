@@ -22,6 +22,7 @@ protocol TrainingPlanServiceProtocol {
         targetReps: Int
     ) async throws -> TrainingPlanSet
     func deletePlannedSet(planSetId: String) async throws
+    func deletePlannedExercise(planExerciseId: String) async throws
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay
     func reorderPlannedExercises(orderedExerciseIds: [String]) async throws -> TrainingPlanDay
 }
@@ -85,6 +86,10 @@ final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
 
     func deletePlannedSet(planSetId: String) async throws {
         try await database.deletePlannedSet(planSetId: planSetId)
+    }
+
+    func deletePlannedExercise(planExerciseId: String) async throws {
+        try await database.deletePlannedExercise(planExerciseId: planExerciseId)
     }
 
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay {
@@ -151,6 +156,10 @@ final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
 
     func deletePlannedSet(planSetId: String) async throws {
         try await local.deletePlannedSet(planSetId: planSetId)
+    }
+
+    func deletePlannedExercise(planExerciseId: String) async throws {
+        try await local.deletePlannedExercise(planExerciseId: planExerciseId)
     }
 
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay {

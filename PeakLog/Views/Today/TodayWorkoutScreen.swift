@@ -109,6 +109,9 @@ struct TodayWorkoutScreen: View {
                             },
                             onReorderExercises: { orderedIds in
                                 Task { await viewModel.reorderTodayPlanExercises(orderedExerciseIds: orderedIds) }
+                            },
+                            onDeleteExercise: { exerciseId in
+                                Task { await viewModel.deletePlanExercise(planExerciseId: exerciseId) }
                             }
                         )
                     }
@@ -131,6 +134,9 @@ struct TodayWorkoutScreen: View {
                             },
                             onDeleteLastSet: { exerciseId in
                                 Task { await viewModel.deleteLastLoggedSet(exerciseId: exerciseId) }
+                            },
+                            onDeleteExercise: { exerciseId in
+                                Task { await viewModel.deleteLoggedExercise(exerciseId: exerciseId) }
                             }
                         )
                             .transition(.opacity)
@@ -587,6 +593,7 @@ private struct TodayPlanExercisesSection: View {
     let onToggleLiveSet: (String) -> Void
     let onSkipCurrentLiveExercise: () -> Void
     let onReorderExercises: ([String]) -> Void
+    let onDeleteExercise: (String) -> Void
 
     @SwiftUI.State private var draftOrder: [TrainingPlanExercise] = []
 
@@ -620,6 +627,8 @@ private struct TodayPlanExercisesSection: View {
                     }
                 }
                 .scrollTargetLayout()
+                // 滑动删除动作后列表平滑收拢。
+                .animation(flowAnimation, value: state.plan.exercises.map(\.id))
             }
         }
     }
@@ -650,21 +659,24 @@ private struct TodayPlanExercisesSection: View {
                 .transition(.opacity)
             }
         } else {
-            TodayPlannedExerciseCard(
-                exercise: exercise,
-                sessionCompletedSetIds: state.sessionCompletedSetIds,
-                onUpdateSet: onUpdateSet,
-                onCompleteSet: onCompleteSet,
-                onAddSet: { onAddSet(exercise.id) },
-                onDeleteLastSet: { onDeleteLastSet(exercise.id) },
-                onLongPressHeader: {
-                    draftOrder = state.plan.exercises
+            // 由右向左滑动删除该计划动作（已完成的动作同样支持）。
+            SwipeToDeleteRow(onDelete: { onDeleteExercise(exercise.id) }) {
+                TodayPlannedExerciseCard(
+                    exercise: exercise,
+                    sessionCompletedSetIds: state.sessionCompletedSetIds,
+                    onUpdateSet: onUpdateSet,
+                    onCompleteSet: onCompleteSet,
+                    onAddSet: { onAddSet(exercise.id) },
+                    onDeleteLastSet: { onDeleteLastSet(exercise.id) },
+                    onLongPressHeader: {
+                        draftOrder = state.plan.exercises
 #if canImport(UIKit)
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 #endif
-                    withAnimation(flowAnimation) { isReordering = true }
-                }
-            )
+                        withAnimation(flowAnimation) { isReordering = true }
+                    }
+                )
+            }
         }
     }
 
@@ -882,6 +894,7 @@ private struct TodayRecordsSection: View {
     let onSetChanged: (String, ExerciseSet) -> Void
     let onAddSet: (String) -> Void
     let onDeleteLastSet: (String) -> Void
+    let onDeleteExercise: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -899,7 +912,8 @@ private struct TodayRecordsSection: View {
                     isEditable: true,
                     onSetChanged: onSetChanged,
                     onAddSet: onAddSet,
-                    onDeleteLastSet: onDeleteLastSet
+                    onDeleteLastSet: onDeleteLastSet,
+                    onDeleteExercise: onDeleteExercise
                 )
             }
 
