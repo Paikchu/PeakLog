@@ -5,6 +5,7 @@ import Foundation
 //   swiftc -parse-as-library \
 //     PeakLog/Models/UserProfile.swift PeakLog/Models/WorkoutModels.swift \
 //     PeakLog/Models/TrainingPlanModels.swift PeakLog/Models/ExerciseLibraryModels.swift \
+//     PeakLog/Models/GoalSpec.swift PeakLog/Models/PlanEditEvent.swift PeakLog/Models/JSONValue.swift \
 //     PeakLog/Localization/AppLanguage.swift PeakLog/Support/WorkoutDateFormatter.swift \
 //     PeakLog/Services/Cloud/LocalDataSnapshot.swift PeakLog/Services/Cloud/CloudRows.swift \
 //     PeakLog/Services/Cloud/CloudMapper.swift tests/cloud_mapper_roundtrip_test.swift -o /tmp/cm && /tmp/cm
@@ -47,11 +48,20 @@ struct CloudMapperRoundtripTest {
             membershipLevel: .free,
             stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: 0, prCount: 0),
             preferences: UserPreferences(notificationsEnabled: true, darkModeEnabled: false,
-                weightUnit: .kg, timezone: "Asia/Shanghai", language: .simplifiedChinese),
+                weightUnit: .kg, timezone: "Asia/Shanghai", language: AppLanguage.simplifiedChinese),
             fitnessGoalSummary: "get stronger", exercisePRs: [])
 
+        let goalSpec = GoalSpec(objective: .strength, daysPerWeek: 4, sessionMinutes: 60,
+            equipment: [.barbell], focusAreas: [.chest], experience: .intermediate, note: "phase1 test")
+        let editEvent = PlanEditEvent(id: "bbbbbbbb-0000-0000-0000-000000000001", userId: userId,
+            planId: plan.id, planDayId: planDay.id, planDate: planDay.planDate,
+            eventType: .setTargetUpdated, exerciseName: "Back Squat", exerciseId: "back_squat",
+            payload: .object(["note": .string("test")]), source: .user, clientSeq: 1,
+            occurredAt: Date(timeIntervalSince1970: 1_783_000_100))
+
         let original = LocalDataSnapshot(profile: profile, activePlan: plan,
-            strengthSessions: [session], runningRecords: [running], customExercises: [custom])
+            strengthSessions: [session], runningRecords: [running], customExercises: [custom],
+            goalSpec: goalSpec, pendingEditEvents: [editEvent])
 
         // Push → rows.
         let bundle = CloudMapper.pushBundle(from: original, userId: userId)
@@ -61,14 +71,21 @@ struct CloudMapperRoundtripTest {
             "custom id should be stripped for cloud")
         precondition(bundle.exercises[0].exercise_load_type == "weighted", "load type lost")
         precondition(bundle.planSets[0].target_weight == 62.5, "plan target weight lost")
+        precondition(bundle.goalSpec?.objective == "strength", "goal spec objective lost")
+        precondition(bundle.editEvents.count == 1 && bundle.editEvents[0].event_type == "set_target_updated",
+            "edit event lost in push bundle")
 
         // Rows → assembled snapshot.
         let back = CloudMapper.assembleSnapshot(userId: userId,
             profileRow: bundle.profile, preferencesRow: bundle.preferences,
+            goalSpecRow: bundle.goalSpec,
             customRows: bundle.customExercises, sessionRows: bundle.sessions,
             exerciseRows: bundle.exercises, setRows: bundle.exerciseSets,
             runningRows: bundle.running, planRows: bundle.plans, planDayRows: bundle.planDays,
             planExerciseRows: bundle.planExercises, planSetRows: bundle.planSets)
+
+        precondition(back.goalSpec?.objective == .strength, "goal spec must round-trip through a pull")
+        precondition(back.pendingEditEvents.isEmpty, "a pulled snapshot must never carry local outbox events (EV1)")
 
         // Assert the training-relevant fields survived the round-trip.
         precondition(back.activePlan.id == plan.id, "plan id")

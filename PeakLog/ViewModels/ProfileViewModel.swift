@@ -5,6 +5,7 @@ import Combine
 final class ProfileViewModel: ObservableObject {
     // MARK: - State
     @Published var profile: UserProfile?
+    @Published var goalSpec: GoalSpec?
     @Published var isLoading: Bool = false
     @Published var isSaving: Bool = false
     @Published var errorMessage: String?
@@ -28,6 +29,20 @@ final class ProfileViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func loadGoalSpec() async {
+        goalSpec = try? await profileService.fetchGoalSpec()
+    }
+
+    func saveGoalSpec(_ spec: GoalSpec) async {
+        isSaving = true
+        do {
+            goalSpec = try await profileService.updateGoalSpec(spec)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
     }
 
     // MARK: - Preferences

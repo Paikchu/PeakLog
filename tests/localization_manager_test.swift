@@ -101,4 +101,12 @@ private actor RecordingProfileService: ProfileServiceProtocol {
     func updateFitnessGoalSummary(_ summary: String) async throws -> String {
         summary
     }
+
+    func fetchGoalSpec() async throws -> GoalSpec? {
+        nil
+    }
+
+    func updateGoalSpec(_ spec: GoalSpec) async throws -> GoalSpec {
+        spec
+    }
 }

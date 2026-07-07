@@ -64,12 +64,15 @@ nonisolated struct SupabaseDataClient: Sendable {
     }
 
     /// Delete this user's rows in `table` whose id is not in `keepIds`. An empty
-    /// `keepIds` deletes every row the user owns in the table (local truth says
-    /// the table is now empty).
-    func deleteNotIn(table: String, keepIds: [String]) async throws {
-        var items: [URLQueryItem] = []
+    /// `keepIds` deletes every row matched by `extraFilters` (or, with no
+    /// filters at all, every row the user owns in the table).
+    ///
+    /// `extraFilters` narrows which rows are even candidates for deletion —
+    /// e.g. `plan_id=eq.<active>` so pruning a plan's child rows never
+    /// touches a different (archived) plan's rows sitting in the same table.
+    func deleteNotIn(table: String, keepIds: [String], extraFilters: [URLQueryItem] = []) async throws {
+        var items = extraFilters
         if keepIds.isEmpty {
-            // No id filter → delete all rows RLS lets us see (our own).
             items.append(URLQueryItem(name: "id", value: "not.is.null"))
         } else {
             let list = keepIds.map { "\"\($0)\"" }.joined(separator: ",")
@@ -77,6 +80,20 @@ nonisolated struct SupabaseDataClient: Sendable {
         }
         var request = try await makeRequest(table: table, method: "DELETE", queryItems: items)
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        _ = try await send(request)
+    }
+
+    /// Insert `rows`, silently skipping any that already exist (matched by
+    /// primary key). For append-only tables like `plan_edit_events`, whose RLS
+    /// deliberately grants no UPDATE policy: unlike `upsert`'s
+    /// `ON CONFLICT DO UPDATE` (which needs UPDATE privilege even when no row
+    /// actually conflicts), `DO NOTHING` needs only INSERT — and makes a
+    /// retried push of the same client-generated ids idempotent.
+    func insertIgnoringDuplicates<Row: Encodable>(table: String, rows: [Row]) async throws {
+        guard !rows.isEmpty else { return }
+        var request = try await makeRequest(table: table, method: "POST", queryItems: [])
+        request.setValue("resolution=ignore-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder().encode(rows)
         _ = try await send(request)
     }
 

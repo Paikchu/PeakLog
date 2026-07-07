@@ -8,6 +8,7 @@ struct ProfileScreen: View {
     @EnvironmentObject private var syncController: CloudSyncController
     @Environment(\.openURL) private var openURL
     @State private var showingWeightUnitPicker = false
+    @State private var showingGoalSpecEditor = false
 
     init() {
         _viewModel = StateObject(
@@ -34,6 +35,7 @@ struct ProfileScreen: View {
         .background(Color.appBackground.ignoresSafeArea())
         .task {
             await viewModel.loadProfile()
+            await viewModel.loadGoalSpec()
             if let preferences = viewModel.profile?.preferences {
                 themeManager.isDarkMode = preferences.darkModeEnabled
             }
@@ -45,6 +47,14 @@ struct ProfileScreen: View {
             Button("common.ok", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .sheet(isPresented: $showingGoalSpecEditor) {
+            GoalSpecEditorScreen(
+                initial: viewModel.goalSpec,
+                legacyGoalSummary: viewModel.profile?.fitnessGoalSummary
+            ) { spec in
+                await viewModel.saveGoalSpec(spec)
+            }
         }
     }
 
@@ -183,6 +193,17 @@ struct ProfileScreen: View {
 
     @ViewBuilder
     private var goalSection: some View {
+        SettingsSection(title: "goal_spec.section.goal") {
+            PreferenceNavRow(
+                icon: "target",
+                title: "profile.goal_spec.entry",
+                detail: viewModel.goalSpec?.objective.displayLabel
+            ) {
+                showingGoalSpecEditor = true
+            }
+        }
+        .padding(.horizontal, 16)
+
         if let goal = viewModel.profile?.fitnessGoalSummary, !goal.isEmpty {
             SettingsSection(title: "Fitness Goal") {
                 Text(goal)

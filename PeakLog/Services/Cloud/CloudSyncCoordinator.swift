@@ -49,7 +49,7 @@ actor CloudSyncCoordinator {
     }
 
     func stop() async {
-        await database.setOnChange(nil)
+        await database.disarmCloudSync()
     }
 
     /// On returning to the foreground: if we owe the cloud a push, retry it;
@@ -72,7 +72,8 @@ actor CloudSyncCoordinator {
                 activePlan: snapshot.activePlan,
                 strengthSessions: snapshot.strengthSessions,
                 runningRecords: snapshot.runningRecords,
-                customExercises: snapshot.customExercises
+                customExercises: snapshot.customExercises,
+                goalSpec: snapshot.goalSpec
             )
             lastErrorDescription = nil
         } catch {
@@ -83,7 +84,7 @@ actor CloudSyncCoordinator {
     // MARK: - Push
 
     private func installChangeHook() async {
-        await database.setOnChange { [weak self] in
+        await database.armCloudSync(userId: userId) { [weak self] in
             guard let self else { return }
             Task { await self.requestPush() }
         }
@@ -138,6 +139,14 @@ actor CloudSyncCoordinator {
             row: bundle.preferences
         )
 
+        // user_goal_specs' PK IS user_id (unlike the two tables above), so an
+        // upsert's conflict key is the PK directly — safe. Skipped entirely
+        // if the user has never saved a goal (G5), rather than pushing a
+        // synthetic default row.
+        if let goalSpec = bundle.goalSpec {
+            try await client.upsert(table: "user_goal_specs", rows: [goalSpec])
+        }
+
         // Upsert parents before children so foreign keys always resolve;
         // exercise_sets precede plan sets because a plan set may link one.
         try await client.upsert(table: "custom_exercises", rows: bundle.customExercises)
@@ -150,12 +159,29 @@ actor CloudSyncCoordinator {
         try await client.upsert(table: "training_plan_exercises", rows: bundle.planExercises)
         try await client.upsert(table: "training_plan_sets", rows: bundle.planSets)
 
+        // Append-only: insert, skipping rows the cloud already has (a retried
+        // push resending the same client-generated ids), never pruned or
+        // overwritten (RLS grants plan_edit_events no UPDATE policy). Cleared
+        // locally only once the cloud confirms receipt.
+        if !bundle.editEvents.isEmpty {
+            try await client.insertIgnoringDuplicates(table: "plan_edit_events", rows: bundle.editEvents)
+            await database.clearPushedEditEvents(ids: Set(bundle.editEvents.map(\.id)))
+        }
+
         // Prune rows the cloud has but the local cache no longer does. Children
         // first so a parent delete never strands a child mid-request.
-        try await client.deleteNotIn(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id))
-        try await client.deleteNotIn(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id))
-        try await client.deleteNotIn(table: "training_plan_days", keepIds: bundle.planDays.map(\.id))
-        try await client.deleteNotIn(table: "training_plans", keepIds: bundle.plans.map(\.id))
+        //
+        // training_plans is intentionally NEVER pruned (SY1): the local cache
+        // only ever holds the current week, so pruning by "not present
+        // locally" would delete every past week's plan on the push right
+        // after each rotation — destroying the history Phase 2's learning
+        // loop depends on. The three child tables ARE pruned, but scoped to
+        // the *active* plan only, so an archived week's rows are left alone
+        // (SY2) — see also the matching scoped fetch in `CloudSnapshotLoader`.
+        let activePlanScope = [URLQueryItem(name: "plan_id", value: "eq.\(snapshot.activePlan.id)")]
+        try await client.deleteNotIn(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id), extraFilters: activePlanScope)
+        try await client.deleteNotIn(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id), extraFilters: activePlanScope)
+        try await client.deleteNotIn(table: "training_plan_days", keepIds: bundle.planDays.map(\.id), extraFilters: activePlanScope)
         try await client.deleteNotIn(table: "exercise_sets", keepIds: bundle.exerciseSets.map(\.id))
         try await client.deleteNotIn(table: "exercises", keepIds: bundle.exercises.map(\.id))
         try await client.deleteNotIn(table: "workout_sessions", keepIds: bundle.sessions.map(\.id))

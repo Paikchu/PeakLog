@@ -5,6 +5,7 @@ struct LocalStateDecodeCompatTestRunner {
     static func main() async {
         await legacyStateFileWithoutCustomExercisesLoads()
         await customExercisesPersistAcrossReopen()
+        await legacyStateFileWithoutPhase1FieldsLoads()
         print("local_state_decode_compat_test passed")
     }
 
@@ -50,6 +51,59 @@ struct LocalStateDecodeCompatTestRunner {
         precondition(plan?.id == originalPlan?.id, "Active plan must survive the legacy decode")
         precondition(sessions.count == originalSessions.count, "Sessions must survive the legacy decode")
         precondition(custom.isEmpty, "Missing key decodes as an empty custom library")
+    }
+
+    /// Simulates a state file written before Phase 1 (goalSpec /
+    /// pendingEditEvents / editEventSeq) existed. SY4: a file missing these
+    /// keys must load with safe defaults, not fail or reseed.
+    private static func legacyStateFileWithoutPhase1FieldsLoads() async {
+        let seededURL = tempFileURL("phase1-seeded.json")
+        let seededDatabase = LocalAppDatabase(fileURL: seededURL)
+        let originalProfile = await seededDatabase.fetchProfile()
+
+        guard let data = try? Data(contentsOf: seededURL),
+              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            preconditionFailure("Expected seeded state file to be readable JSON")
+        }
+        // goalSpec is Optional and nil by default, so the synthesized encoder
+        // already omits it — nothing to strip there. pendingEditEvents/
+        // editEventSeq are non-optional (default `[]`/`0`), so they ARE
+        // written; strip them to simulate a file from before Phase 1 existed.
+        precondition(json["goalSpec"] == nil, "nil optional should already be omitted by the encoder")
+        for key in ["pendingEditEvents", "editEventSeq"] {
+            precondition(json[key] != nil, "Seeded file should contain the new key \(key)")
+        }
+        json.removeValue(forKey: "pendingEditEvents")
+        json.removeValue(forKey: "editEventSeq")
+
+        let legacyURL = tempFileURL("phase1-legacy.json")
+        try? FileManager.default.createDirectory(
+            at: legacyURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        guard let legacyData = try? JSONSerialization.data(withJSONObject: json) else {
+            preconditionFailure("Expected legacy JSON to serialize")
+        }
+        try? legacyData.write(to: legacyURL)
+
+        let legacyDatabase = LocalAppDatabase(fileURL: legacyURL)
+        let profile = await legacyDatabase.fetchProfile()
+        precondition(profile.id == originalProfile.id, "Legacy file must load, not be replaced by a fresh seed")
+
+        let snapshot = await legacyDatabase.snapshot()
+        precondition(snapshot.goalSpec == nil, "Missing goalSpec key decodes as nil")
+        precondition(snapshot.pendingEditEvents.isEmpty, "Missing pendingEditEvents key decodes as empty")
+
+        // The database must still be fully usable after loading a legacy
+        // file — arming and recording a new event must work normally, with
+        // the sequence counter starting fresh from 0.
+        await legacyDatabase.armCloudSync(userId: "user-a") {}
+        _ = try! await legacyDatabase.addPlannedExercises([
+            PlanExerciseDraft(exerciseName: "Lat Pulldown", exerciseId: nil, isBodyweight: false,
+                sets: [.init(targetWeight: 45, targetWeightUnit: .kg, targetReps: 10)])
+        ])
+        let events = await legacyDatabase.snapshot().pendingEditEvents
+        precondition(events.count == 1 && events[0].clientSeq == 1, "editEventSeq must start from 0 when missing, not crash or skip")
     }
 
     private static func customExercisesPersistAcrossReopen() async {

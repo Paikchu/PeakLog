@@ -6,22 +6,37 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     var strengthSessions: [WorkoutSession]
     var runningRecords: [RunningWorkoutRecord]
     var customExercises: [ExerciseDefinition]
+    var goalSpec: GoalSpec?
+    /// Not-yet-pushed edit events. Deliberately NOT overwritten by a pull
+    /// (`replaceAll`) — a pull replaces cloud-mirrored *state*, but these are
+    /// unpushed *facts*; overwriting them would silently lose history
+    /// recorded while offline. See phase1 plan §4.3 / EV1.
+    var pendingEditEvents: [PlanEditEvent]
+    /// Monotonic counter backing `PlanEditEvent.clientSeq`. Persisted so a
+    /// restart never reuses or rewinds a sequence number (EV3).
+    var editEventSeq: Int64
 
     init(
         profile: UserProfile,
         activePlan: TrainingPlan,
         strengthSessions: [WorkoutSession],
         runningRecords: [RunningWorkoutRecord],
-        customExercises: [ExerciseDefinition] = []
+        customExercises: [ExerciseDefinition] = [],
+        goalSpec: GoalSpec? = nil,
+        pendingEditEvents: [PlanEditEvent] = [],
+        editEventSeq: Int64 = 0
     ) {
         self.profile = profile
         self.activePlan = activePlan
         self.strengthSessions = strengthSessions
         self.runningRecords = runningRecords
         self.customExercises = customExercises
+        self.goalSpec = goalSpec
+        self.pendingEditEvents = pendingEditEvents
+        self.editEventSeq = editEventSeq
     }
 
-    // Custom decode keeps state files written before the exercise library existed loadable.
+    // Custom decode keeps state files written before newer fields existed loadable.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         profile = try container.decode(UserProfile.self, forKey: .profile)
@@ -29,6 +44,9 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         strengthSessions = try container.decode([WorkoutSession].self, forKey: .strengthSessions)
         runningRecords = try container.decode([RunningWorkoutRecord].self, forKey: .runningRecords)
         customExercises = try container.decodeIfPresent([ExerciseDefinition].self, forKey: .customExercises) ?? []
+        goalSpec = try container.decodeIfPresent(GoalSpec.self, forKey: .goalSpec)
+        pendingEditEvents = try container.decodeIfPresent([PlanEditEvent].self, forKey: .pendingEditEvents) ?? []
+        editEventSeq = try container.decodeIfPresent(Int64.self, forKey: .editEventSeq) ?? 0
     }
 }
 
@@ -47,8 +65,37 @@ actor LocalAppDatabase {
     /// it — otherwise every pull would echo straight back as a push.
     private var onChange: (@Sendable () -> Void)?
 
-    func setOnChange(_ hook: (@Sendable () -> Void)?) {
-        onChange = hook
+    /// The signed-in user plan-edit events are currently being recorded for.
+    /// nil while signed out or in DEBUG local mode, which keeps both of those
+    /// paths from accumulating events nobody will ever push (EV8).
+    private var armedUserId: String?
+
+    /// Events dropped by the soft cap this launch — diagnostic only, not
+    /// persisted (EV12).
+    private var droppedEditEventCount = 0
+
+    private static let maxPendingEditEvents = 5000
+
+    /// Arms plan-edit-event recording for `userId` and installs the push
+    /// hook, in one call so they can never be out of sync. Call once the
+    /// initial pull has landed (see `CloudSyncCoordinator.start`), so a
+    /// mutation made right after sign-in is never silently unrecorded.
+    ///
+    /// Discards any pending events left over from a *different* account
+    /// (EV9): without this, a stale event recorded under account A — still
+    /// sitting in `pendingEditEvents` because its push kept failing — would
+    /// otherwise get swept up in account B's next push. `CloudMapper` stamps
+    /// every pushed row with the *current* signed-in user, so that event
+    /// would be silently mis-attributed to B rather than merely rejected.
+    func armCloudSync(userId: String, onChange: @escaping @Sendable () -> Void) {
+        self.armedUserId = userId
+        self.onChange = onChange
+        state.pendingEditEvents.removeAll { $0.userId != userId }
+    }
+
+    func disarmCloudSync() {
+        armedUserId = nil
+        onChange = nil
     }
 
     init(fileURL: URL? = nil) {
@@ -102,6 +149,7 @@ actor LocalAppDatabase {
     }
 
     func updateFitnessGoalSummary(_ summary: String) throws -> String {
+        let before = state.profile.fitnessGoalSummary
         state.profile.fitnessGoalSummary = summary
         if !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             state.activePlan = rebuildPlan(
@@ -110,8 +158,31 @@ actor LocalAppDatabase {
                 coachSummary: state.activePlan.coachSummary
             )
         }
+        appendEditEvent(
+            type: .goalChanged,
+            payload: .from(GoalTextChangedPayload(before: before, after: summary))
+        )
         try persist()
         return summary
+    }
+
+    func goalSpec() -> GoalSpec? {
+        state.goalSpec
+    }
+
+    /// Saves the structured goal. Deliberately does not touch `activePlan` —
+    /// unlike `updateFitnessGoalSummary`'s legacy free-text path, changing the
+    /// goal mid-week must not rebuild the current plan (G4); the next
+    /// Phase-2 generation picks it up naturally.
+    func updateGoalSpec(_ spec: GoalSpec) throws -> GoalSpec {
+        let before = state.goalSpec
+        state.goalSpec = spec
+        appendEditEvent(
+            type: .goalChanged,
+            payload: .from(GoalSpecChangedPayload(before: before, after: spec))
+        )
+        try persist()
+        return spec
     }
 
     func customExercises() -> [ExerciseDefinition] {
@@ -372,11 +443,26 @@ actor LocalAppDatabase {
         guard let planLocation = findPlanSet(planSetId: planSetId) else {
             throw LocalAppDatabaseError.planSetNotFound
         }
+        let day = state.activePlan.days[planLocation.dayIndex]
+        let exercise = day.exercises[planLocation.exerciseIndex]
+        let before = PlannedSetSnapshot(exercise.sets[planLocation.setIndex])
+
         state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex].targetWeight = targetWeight
         state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex].targetWeightUnit = targetWeightUnit
         state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex].targetReps = targetReps
+
+        let updated = state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex]
+        appendEditEvent(
+            planId: state.activePlan.id,
+            planDayId: day.id,
+            planDate: day.planDate,
+            type: .setTargetUpdated,
+            exerciseName: exercise.exerciseName,
+            exerciseId: exercise.exerciseId,
+            payload: .from(SetTargetUpdatedPayload(before: before, after: PlannedSetSnapshot(updated)))
+        )
         try persist()
-        return state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex]
+        return updated
     }
 
     func addPlannedSet(
@@ -388,7 +474,9 @@ actor LocalAppDatabase {
         guard let location = findPlanExercise(planExerciseId: planExerciseId) else {
             throw LocalAppDatabaseError.planExerciseNotFound
         }
-        let nextIndex = (state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex].sets.map(\.setIndex).max() ?? 0) + 1
+        let day = state.activePlan.days[location.dayIndex]
+        let exercise = day.exercises[location.exerciseIndex]
+        let nextIndex = (exercise.sets.map(\.setIndex).max() ?? 0) + 1
         let set = TrainingPlanSet(
             id: UUID().uuidString,
             setIndex: nextIndex,
@@ -399,6 +487,15 @@ actor LocalAppDatabase {
             linkedExerciseSetId: nil
         )
         state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex].sets.append(set)
+        appendEditEvent(
+            planId: state.activePlan.id,
+            planDayId: day.id,
+            planDate: day.planDate,
+            type: .setAdded,
+            exerciseName: exercise.exerciseName,
+            exerciseId: exercise.exerciseId,
+            payload: .from(PlannedSetSnapshot(set))
+        )
         try persist()
         return set
     }
@@ -407,10 +504,23 @@ actor LocalAppDatabase {
         guard let location = findPlanSet(planSetId: planSetId) else {
             throw LocalAppDatabaseError.planSetNotFound
         }
+        let day = state.activePlan.days[location.dayIndex]
+        let exercise = day.exercises[location.exerciseIndex]
+        let removedSet = exercise.sets[location.setIndex]
+
         state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex].sets.remove(at: location.setIndex)
         for index in state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex].sets.indices {
             state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex].sets[index].setIndex = index + 1
         }
+        appendEditEvent(
+            planId: state.activePlan.id,
+            planDayId: day.id,
+            planDate: day.planDate,
+            type: .setRemoved,
+            exerciseName: exercise.exerciseName,
+            exerciseId: exercise.exerciseId,
+            payload: .from(SetRemovedPayload(snapshot: PlannedSetSnapshot(removedSet), wasCompleted: removedSet.isCompleted))
+        )
         try persist()
     }
 
@@ -419,6 +529,7 @@ actor LocalAppDatabase {
             throw LocalAppDatabaseError.planExerciseNotFound
         }
 
+        let day = state.activePlan.days[location.dayIndex]
         // 已完成组落库产生的训练记录一并删除，避免计划删掉后留下孤儿记录。
         let exercise = state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex]
         removeLoggedSets(withIds: Set(exercise.sets.compactMap(\.linkedExerciseSetId)))
@@ -427,6 +538,18 @@ actor LocalAppDatabase {
         for index in state.activePlan.days[location.dayIndex].exercises.indices {
             state.activePlan.days[location.dayIndex].exercises[index].orderIndex = index
         }
+        appendEditEvent(
+            planId: state.activePlan.id,
+            planDayId: day.id,
+            planDate: day.planDate,
+            type: .exerciseRemoved,
+            exerciseName: exercise.exerciseName,
+            exerciseId: exercise.exerciseId,
+            payload: .from(ExerciseRemovedPayload(
+                snapshot: PlannedExerciseSnapshot(exercise),
+                hadCompletedSets: exercise.sets.contains(where: \.isCompleted)
+            ))
+        )
         recalculateDerivedProfile()
         try persist()
     }
@@ -500,8 +623,11 @@ actor LocalAppDatabase {
         if let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) {
             var day = state.activePlan.days[dayIndex]
             let wasEmpty = day.exercises.isEmpty
+            var addedExercises: [TrainingPlanExercise] = []
             for draft in drafts {
-                day.exercises.append(makePlanExercise(from: draft, orderIndex: day.exercises.count))
+                let exercise = makePlanExercise(from: draft, orderIndex: day.exercises.count)
+                day.exercises.append(exercise)
+                addedExercises.append(exercise)
             }
             if wasEmpty {
                 day = TrainingPlanDay(
@@ -515,6 +641,17 @@ actor LocalAppDatabase {
                 )
             }
             state.activePlan.days[dayIndex] = day
+            for exercise in addedExercises {
+                appendEditEvent(
+                    planId: state.activePlan.id,
+                    planDayId: day.id,
+                    planDate: day.planDate,
+                    type: .exerciseAdded,
+                    exerciseName: exercise.exerciseName,
+                    exerciseId: exercise.exerciseId,
+                    payload: .from(PlannedExerciseSnapshot(exercise))
+                )
+            }
             try persist()
             return day
         }
@@ -533,6 +670,17 @@ actor LocalAppDatabase {
             exercises: exercises
         )
         state.activePlan.days.append(day)
+        for exercise in exercises {
+            appendEditEvent(
+                planId: state.activePlan.id,
+                planDayId: day.id,
+                planDate: day.planDate,
+                type: .exerciseAdded,
+                exerciseName: exercise.exerciseName,
+                exerciseId: exercise.exerciseId,
+                payload: .from(PlannedExerciseSnapshot(exercise))
+            )
+        }
         try persist()
         return day
     }
@@ -542,10 +690,23 @@ actor LocalAppDatabase {
         guard let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) else {
             throw LocalAppDatabaseError.planExerciseNotFound
         }
+        let beforeNames = state.activePlan.days[dayIndex].exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map(\.exerciseName)
         guard let reorderedDay = state.activePlan.days[dayIndex].reordered(byExerciseIds: orderedExerciseIds) else {
             throw LocalAppDatabaseError.invalidExerciseOrder
         }
+        let afterNames = reorderedDay.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map(\.exerciseName)
         state.activePlan.days[dayIndex] = reorderedDay
+        appendEditEvent(
+            planId: state.activePlan.id,
+            planDayId: reorderedDay.id,
+            planDate: reorderedDay.planDate,
+            type: .exercisesReordered,
+            payload: .from(ExercisesReorderedPayload(before: beforeNames, after: afterNames))
+        )
         try persist()
         return reorderedDay
     }
@@ -728,6 +889,111 @@ actor LocalAppDatabase {
         )
     }
 
+    // MARK: - Plan edit events
+
+    private struct PlannedSetSnapshot: Encodable {
+        let setIndex: Int
+        let targetWeight: Double?
+        let targetWeightUnit: WeightUnit
+        let targetReps: Int
+
+        init(_ set: TrainingPlanSet) {
+            setIndex = set.setIndex
+            targetWeight = set.targetWeight
+            targetWeightUnit = set.targetWeightUnit
+            targetReps = set.targetReps
+        }
+    }
+
+    private struct PlannedExerciseSnapshot: Encodable {
+        let exerciseName: String
+        let exerciseId: String?
+        let exerciseLoadType: ExerciseLoadType
+        let sets: [PlannedSetSnapshot]
+
+        init(_ exercise: TrainingPlanExercise) {
+            exerciseName = exercise.exerciseName
+            exerciseId = exercise.exerciseId
+            exerciseLoadType = exercise.exerciseLoadType
+            sets = exercise.sets.map(PlannedSetSnapshot.init)
+        }
+    }
+
+    private struct ExerciseRemovedPayload: Encodable {
+        let snapshot: PlannedExerciseSnapshot
+        let hadCompletedSets: Bool
+    }
+
+    private struct SetRemovedPayload: Encodable {
+        let snapshot: PlannedSetSnapshot
+        let wasCompleted: Bool
+    }
+
+    private struct SetTargetUpdatedPayload: Encodable {
+        let before: PlannedSetSnapshot
+        let after: PlannedSetSnapshot
+    }
+
+    private struct ExercisesReorderedPayload: Encodable {
+        let before: [String]
+        let after: [String]
+    }
+
+    private struct GoalTextChangedPayload: Encodable {
+        let before: String?
+        let after: String
+    }
+
+    private struct GoalSpecChangedPayload: Encodable {
+        let before: GoalSpec?
+        let after: GoalSpec
+    }
+
+    /// Records a structural plan edit. No-op while unarmed (signed out or
+    /// DEBUG local mode, EV8) so the outbox never accumulates events nobody
+    /// will push. Caps at `maxPendingEditEvents`, dropping the oldest — a
+    /// bound against unbounded growth if pushing stays broken for a long
+    /// time (EV12), not a limit normal usage should ever reach.
+    private func appendEditEvent(
+        planId: String? = nil,
+        planDayId: String? = nil,
+        planDate: String? = nil,
+        type: PlanEditEventType,
+        exerciseName: String? = nil,
+        exerciseId: String? = nil,
+        payload: JSONValue
+    ) {
+        guard let userId = armedUserId else { return }
+        state.editEventSeq += 1
+        let event = PlanEditEvent(
+            id: UUID().uuidString,
+            userId: userId,
+            planId: planId,
+            planDayId: planDayId,
+            planDate: planDate,
+            eventType: type,
+            exerciseName: exerciseName,
+            exerciseId: exerciseId,
+            payload: payload,
+            source: .user,
+            clientSeq: state.editEventSeq,
+            occurredAt: Date()
+        )
+        state.pendingEditEvents.append(event)
+        let overflow = state.pendingEditEvents.count - Self.maxPendingEditEvents
+        if overflow > 0 {
+            state.pendingEditEvents.removeFirst(overflow)
+            droppedEditEventCount += overflow
+        }
+    }
+
+    /// Drops events the cloud has confirmed receiving. Safe to call with ids
+    /// that no longer exist locally (already cleared by a later call).
+    func clearPushedEditEvents(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        state.pendingEditEvents.removeAll { ids.contains($0.id) }
+    }
+
     private func persist() throws {
         try writeStateToDisk()
         onChange?()
@@ -749,7 +1015,9 @@ actor LocalAppDatabase {
             activePlan: state.activePlan,
             strengthSessions: state.strengthSessions,
             runningRecords: state.runningRecords,
-            customExercises: state.customExercises
+            customExercises: state.customExercises,
+            goalSpec: state.goalSpec,
+            pendingEditEvents: state.pendingEditEvents
         )
     }
 
@@ -757,18 +1025,25 @@ actor LocalAppDatabase {
     /// `onChange`: this is the sync writing in, not the user mutating.
     /// Derived profile fields (stats, PRs) are recomputed from the pulled
     /// sessions so the UI matches without a separate stats fetch.
+    ///
+    /// `pendingEditEvents`/`editEventSeq` are deliberately NOT touched here —
+    /// a pull overwrites cloud-mirrored *state*, but those are unpushed
+    /// *facts* that must survive it (EV1). `goalSpec` is ordinary state, so
+    /// it IS overwritten like everything else, cloud-wins.
     func replaceAll(
         profile: UserProfile,
         activePlan: TrainingPlan,
         strengthSessions: [WorkoutSession],
         runningRecords: [RunningWorkoutRecord],
-        customExercises: [ExerciseDefinition]
+        customExercises: [ExerciseDefinition],
+        goalSpec: GoalSpec?
     ) {
         state.profile = profile
         state.activePlan = activePlan
         state.strengthSessions = strengthSessions
         state.runningRecords = runningRecords
         state.customExercises = customExercises
+        state.goalSpec = goalSpec
         recalculateDerivedProfile()
         try? writeStateToDisk()
     }

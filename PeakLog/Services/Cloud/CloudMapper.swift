@@ -4,6 +4,9 @@ import Foundation
 nonisolated struct CloudPushBundle: Sendable {
     var profile: ProfileRow
     var preferences: PreferencesRow
+    /// nil when the user has never saved a goal — pushing skips the upsert
+    /// rather than writing a synthetic default row (G5).
+    var goalSpec: GoalSpecRow?
     var customExercises: [CustomExerciseRow]
     var sessions: [WorkoutSessionRow]
     var exercises: [ExerciseRow]
@@ -13,6 +16,9 @@ nonisolated struct CloudPushBundle: Sendable {
     var planDays: [TrainingPlanDayRow]
     var planExercises: [TrainingPlanExerciseRow]
     var planSets: [TrainingPlanSetRow]
+    /// Not-yet-pushed edit events. Inserted (never upserted/pruned) — see
+    /// `SupabaseDataClient.insertIgnoringDuplicates`.
+    var editEvents: [PlanEditEventRow]
 }
 
 /// Translates between domain models and PostgREST rows. Pure and static so the
@@ -99,6 +105,7 @@ nonisolated enum CloudMapper {
         return CloudPushBundle(
             profile: profileRow(from: snapshot.profile),
             preferences: preferencesRow(from: snapshot.profile),
+            goalSpec: snapshot.goalSpec.map { goalSpecRow(from: $0, userId: userId) },
             customExercises: snapshot.customExercises.map { customRow(from: $0, userId: userId) },
             sessions: snapshot.strengthSessions.map { sessionRow(from: $0, userId: userId) },
             exercises: exercises,
@@ -107,7 +114,38 @@ nonisolated enum CloudMapper {
             plans: [planRow(from: plan, userId: userId)],
             planDays: planDays,
             planExercises: planExercises,
-            planSets: planSets
+            planSets: planSets,
+            editEvents: snapshot.pendingEditEvents.map(planEditEventRow(from:))
+        )
+    }
+
+    static func goalSpecRow(from spec: GoalSpec, userId: String) -> GoalSpecRow {
+        GoalSpecRow(
+            user_id: userId,
+            objective: spec.objective.rawValue,
+            days_per_week: spec.daysPerWeek,
+            session_minutes: spec.sessionMinutes,
+            equipment: spec.equipment.map(\.rawValue),
+            focus_areas: spec.focusAreas.map(\.rawValue),
+            experience: spec.experience.rawValue,
+            note: spec.note
+        )
+    }
+
+    static func planEditEventRow(from event: PlanEditEvent) -> PlanEditEventRow {
+        PlanEditEventRow(
+            id: event.id,
+            user_id: event.userId,
+            plan_id: event.planId,
+            plan_day_id: event.planDayId,
+            plan_date: event.planDate,
+            event_type: event.eventType.rawValue,
+            exercise_name: event.exerciseName,
+            exercise_id: event.exerciseId,
+            payload: event.payload,
+            source: event.source.rawValue,
+            client_seq: event.clientSeq,
+            occurred_at: CloudDate.timestampString(from: event.occurredAt)
         )
     }
 
@@ -189,6 +227,7 @@ nonisolated enum CloudMapper {
         userId: String,
         profileRow: ProfileRow?,
         preferencesRow: PreferencesRow?,
+        goalSpecRow: GoalSpecRow?,
         customRows: [CustomExerciseRow],
         sessionRows: [WorkoutSessionRow],
         exerciseRows: [ExerciseRow],
@@ -204,7 +243,24 @@ nonisolated enum CloudMapper {
             activePlan: plan(userId: userId, planRows: planRows, dayRows: planDayRows, exerciseRows: planExerciseRows, setRows: planSetRows),
             strengthSessions: sessions(sessionRows: sessionRows, exerciseRows: exerciseRows, setRows: setRows),
             runningRecords: runningRows.map(running(from:)),
-            customExercises: customRows.map(custom(from:))
+            customExercises: customRows.map(custom(from:)),
+            goalSpec: goalSpec(from: goalSpecRow),
+            // A pull assembles cloud truth, not local outbox facts — the
+            // caller's `replaceAll` doesn't even accept this field (EV1).
+            pendingEditEvents: []
+        )
+    }
+
+    static func goalSpec(from row: GoalSpecRow?) -> GoalSpec? {
+        guard let row else { return nil }
+        return GoalSpec(
+            objective: GoalObjective(rawValue: row.objective) ?? .general,
+            daysPerWeek: row.days_per_week,
+            sessionMinutes: row.session_minutes,
+            equipment: row.equipment.compactMap(Equipment.init(rawValue:)),
+            focusAreas: row.focus_areas.compactMap(MuscleGroup.init(rawValue:)),
+            experience: ExperienceLevel(rawValue: row.experience) ?? .beginner,
+            note: row.note
         )
     }
 

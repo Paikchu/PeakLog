@@ -9,4 +9,9 @@ nonisolated struct LocalDataSnapshot: Sendable {
     let strengthSessions: [WorkoutSession]
     let runningRecords: [RunningWorkoutRecord]
     let customExercises: [ExerciseDefinition]
+    let goalSpec: GoalSpec?
+    /// Not-yet-pushed edit events, for the push direction only. A snapshot
+    /// assembled from a *pull* leaves this empty — pulled data represents
+    /// cloud truth, not local outbox facts.
+    let pendingEditEvents: [PlanEditEvent]
 }

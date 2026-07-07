@@ -148,6 +148,34 @@ nonisolated struct RunningWorkoutRow: Codable, Sendable {
     var updated_at: String?
 }
 
+// MARK: - goal spec / plan edit events (Phase 1)
+
+nonisolated struct GoalSpecRow: Codable, Sendable {
+    let user_id: String
+    var objective: String
+    var days_per_week: Int
+    var session_minutes: Int
+    var equipment: [String]
+    var focus_areas: [String]
+    var experience: String
+    var note: String?
+}
+
+nonisolated struct PlanEditEventRow: Codable, Sendable {
+    let id: String
+    let user_id: String
+    var plan_id: String?
+    var plan_day_id: String?
+    var plan_date: String?
+    var event_type: String
+    var exercise_name: String?
+    var exercise_id: String?
+    var payload: JSONValue
+    var source: String
+    var client_seq: Int64
+    var occurred_at: String
+}
+
 nonisolated struct CustomExerciseRow: Codable, Sendable {
     let id: String
     let user_id: String

@@ -12,6 +12,8 @@ protocol ProfileServiceProtocol {
     func fetchProfile() async throws -> UserProfile
     func updatePreferences(_ prefs: UpdatePreferencesRequest) async throws -> UserPreferences
     func updateFitnessGoalSummary(_ summary: String) async throws -> String
+    func fetchGoalSpec() async throws -> GoalSpec?
+    func updateGoalSpec(_ spec: GoalSpec) async throws -> GoalSpec
 }
 
 final class LocalProfileService: ProfileServiceProtocol {
@@ -31,5 +33,13 @@ final class LocalProfileService: ProfileServiceProtocol {
 
     func updateFitnessGoalSummary(_ summary: String) async throws -> String {
         try await database.updateFitnessGoalSummary(summary)
+    }
+
+    func fetchGoalSpec() async throws -> GoalSpec? {
+        await database.goalSpec()
+    }
+
+    func updateGoalSpec(_ spec: GoalSpec) async throws -> GoalSpec {
+        try await database.updateGoalSpec(spec)
     }
 }
