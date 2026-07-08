@@ -8,6 +8,11 @@ nonisolated enum PlanEditEventType: String, Codable, Sendable {
     case setTargetUpdated = "set_target_updated"
     case exercisesReordered = "exercises_reordered"
     case goalChanged = "goal_changed"
+    /// A one-tap mid-week signal (Phase 3): skip/low-energy/time-limited. The
+    /// user's intent, recorded locally so it reaches the learning loop even if
+    /// the replan request itself fails. The Agent's structural response is a
+    /// separate `agent`-sourced event written server-side.
+    case daySignal = "day_signal"
 }
 
 nonisolated enum PlanEditEventSource: String, Codable, Sendable {

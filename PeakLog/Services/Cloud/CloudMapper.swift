@@ -345,7 +345,8 @@ nonisolated enum CloudMapper {
             weekStartDate: planRow.week_start_date,
             goalSummary: planRow.goal_snapshot,
             coachSummary: planRow.coach_summary,
-            days: days
+            days: days,
+            revision: planRow.revision
         )
     }
 

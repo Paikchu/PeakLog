@@ -145,6 +145,24 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
+    /// True once any of today's planned sets is completed — used to gray out the
+    /// one-tap signals that only make sense on an untrained day (the server's
+    /// C31 would reject them regardless).
+    var todayHasCompletedSets: Bool {
+        todayPlan?.exercises.contains { $0.sets.contains(where: { $0.isCompleted }) } ?? false
+    }
+
+    /// Records a one-tap mid-week signal locally (Phase 3) so it reaches the
+    /// learning loop even if the subsequent server replan fails. The actual
+    /// plan change is applied server-side and arrives via the next pull.
+    func recordDaySignal(_ signal: ReplanSignal) async {
+        do {
+            try await trainingPlanService.recordDaySignal(signal)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func startPlanLiveWorkout() {
         guard let plan = todayPlan else { return }
         let exercises = plan.exercises

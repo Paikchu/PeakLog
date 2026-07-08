@@ -111,6 +111,12 @@ nonisolated struct TrainingPlan: Identifiable, Codable, Equatable, Sendable {
     let goalSummary: String?
     let coachSummary: String
     var days: [TrainingPlanDay]
+    /// Server-assigned optimistic-concurrency counter (Phase 3). Bumped by the
+    /// `replan_plan_days` RPC on the server; the client only reads it, as the
+    /// baseline for detecting a server-side replan before a push would clobber
+    /// it (see CloudSyncCoordinator's revision guard). Defaults to 0 for plans
+    /// created locally or loaded from a pre-Phase-3 cache.
+    var revision: Int = 0
 
     var completedSetsCount: Int {
         days.reduce(0) { $0 + $1.completedSetsCount }
@@ -118,5 +124,24 @@ nonisolated struct TrainingPlan: Identifiable, Codable, Equatable, Sendable {
 
     var totalSetsCount: Int {
         days.reduce(0) { $0 + $1.totalSetsCount }
+    }
+}
+
+extension TrainingPlan {
+    // Custom decode (in an extension, so the memberwise initializer is still
+    // synthesized for the many call sites that build a plan directly) tolerates
+    // a missing `revision` key in older on-disk caches. Encode stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case id, weekStartDate, goalSummary, coachSummary, days, revision
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        weekStartDate = try container.decode(String.self, forKey: .weekStartDate)
+        goalSummary = try container.decodeIfPresent(String.self, forKey: .goalSummary)
+        coachSummary = try container.decode(String.self, forKey: .coachSummary)
+        days = try container.decode([TrainingPlanDay].self, forKey: .days)
+        revision = try container.decodeIfPresent(Int.self, forKey: .revision) ?? 0
     }
 }

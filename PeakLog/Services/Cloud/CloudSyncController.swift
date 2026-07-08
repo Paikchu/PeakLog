@@ -19,7 +19,12 @@ final class CloudSyncController: ObservableObject {
     private let database: LocalAppDatabase
     private var coordinator: CloudSyncCoordinator?
     private var activeUserId: String?
+    private var activeTokenProvider: TokenProviding?
     private var stateSubscription: AnyCancellable?
+
+    /// True while a one-tap replan request is in flight — the Today UI disables
+    /// the adjust menu so a double-tap can't fire two requests.
+    @Published private(set) var isRequestingReplan = false
 
     init(database: LocalAppDatabase = .shared) {
         self.database = database
@@ -101,6 +106,7 @@ final class CloudSyncController: ObservableObject {
         )
         self.coordinator = coordinator
         self.activeUserId = userId
+        self.activeTokenProvider = tokenProvider
         isPreparingSession = true
         syncStatus = .idle
         Task {
@@ -113,9 +119,43 @@ final class CloudSyncController: ObservableObject {
     private func stop() {
         isPreparingSession = false
         syncStatus = .idle
+        activeTokenProvider = nil
         guard let coordinator else { return }
         self.coordinator = nil
         self.activeUserId = nil
         Task { await coordinator.stop() }
+    }
+
+    /// Whether one-tap replan is available at all — false in DEBUG local mode
+    /// and while signed out (no cloud session), so the UI can hide the control.
+    var isReplanAvailable: Bool {
+        coordinator != nil && activeUserId != nil && activeTokenProvider != nil
+    }
+
+    /// Fires a one-tap replan (Phase 3). Records nothing itself — the caller has
+    /// already recorded the local signal event — then calls the Edge Function
+    /// and, on a real replan, pulls so the new plan lands in the local cache and
+    /// the UI refreshes. Returns nil when there's no active cloud session.
+    func requestReplan(signal: ReplanSignal) async -> PlanReplanService.Outcome? {
+        guard let coordinator, let userId = activeUserId, let tokenProvider = activeTokenProvider else {
+            return nil
+        }
+        guard !isRequestingReplan else { return nil }
+        isRequestingReplan = true
+        defer { isRequestingReplan = false }
+
+        let service = PlanReplanService(tokenProvider: tokenProvider)
+        do {
+            let outcome = try await service.requestReplan(userId: userId, signal: signal)
+            if case .replanned = outcome {
+                // Pull the server-applied replan into the local cache. Because
+                // this immediately follows a successful call, the revision guard
+                // on the next push is naturally satisfied.
+                await coordinator.pull()
+            }
+            return outcome
+        } catch {
+            return .failed(reason: "\(error)")
+        }
     }
 }

@@ -25,6 +25,13 @@ protocol TrainingPlanServiceProtocol {
     func deletePlannedExercise(planExerciseId: String) async throws
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay
     func reorderPlannedExercises(orderedExerciseIds: [String]) async throws -> TrainingPlanDay
+    func recordDaySignal(_ signal: ReplanSignal) async throws
+}
+
+extension TrainingPlanServiceProtocol {
+    // Default no-op: only the local (real) service records the signal. Mocks
+    // and empty services inherit this and need no change.
+    func recordDaySignal(_ signal: ReplanSignal) async throws {}
 }
 
 final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
@@ -98,6 +105,10 @@ final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
 
     func reorderPlannedExercises(orderedExerciseIds: [String]) async throws -> TrainingPlanDay {
         try await database.reorderPlannedExercises(orderedExerciseIds: orderedExerciseIds)
+    }
+
+    func recordDaySignal(_ signal: ReplanSignal) async throws {
+        try await database.recordDaySignal(signal)
     }
 }
 

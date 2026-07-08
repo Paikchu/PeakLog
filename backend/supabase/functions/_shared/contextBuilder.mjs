@@ -129,6 +129,46 @@ export function projectGoalSpec(goalSpecRow) {
   };
 }
 
+/**
+ * Per-day overview of the CURRENT week's plan, for replan context (Phase 3):
+ * what's already there, and whether each day already has any completed sets.
+ * `hasCompletedSets` is only what's *shown* to the LLM (and to the caller
+ * for computing which dates to even offer as targets) — the real safety
+ * enforcement happens independently inside replan_plan_days (C31), this is
+ * not itself a security boundary.
+ *
+ * @param {object} input
+ * @param {Array} input.dayRows - training_plan_days rows for the current week's plan
+ * @param {Array} input.exerciseRows - training_plan_exercises rows for those days
+ * @param {Array} input.setRows - training_plan_sets rows for those exercises
+ */
+export function summarizeCurrentWeekDays({ dayRows, exerciseRows, setRows }) {
+  const setsByExercise = groupBy(setRows, 'plan_exercise_id');
+  const exercisesByDay = groupBy(exerciseRows, 'plan_day_id');
+
+  return [...dayRows]
+    .sort((a, b) => a.day_index - b.day_index)
+    .map((day) => {
+      const exercises = (exercisesByDay[day.id] ?? []).map((ex) => {
+        const sets = setsByExercise[ex.id] ?? [];
+        return {
+          exerciseName: ex.exercise_name,
+          exerciseId: ex.exercise_id,
+          targetReps: sets.map((s) => s.target_reps),
+          completedCount: sets.filter((s) => s.completed_at != null || s.linked_exercise_set_id != null).length,
+          totalCount: sets.length,
+        };
+      });
+      return {
+        planDate: day.plan_date,
+        title: day.title,
+        focus: day.focus ?? null,
+        exercises,
+        hasCompletedSets: exercises.some((e) => e.completedCount > 0),
+      };
+    });
+}
+
 export function projectLibrary(libraryExercises, customExercises = []) {
   const seed = libraryExercises.map((e) => ({
     id: e.id, nameEN: e.nameEN, nameZH: e.nameZH,
@@ -181,5 +221,39 @@ export function buildContext({
     editEvents: summarizeEditEvents(editEventRows ?? []),
     library: projectLibrary(libraryExercises, customExercises),
     libraryVersion: libraryVersion ?? null,
+  };
+}
+
+/**
+ * The fact JSON for a mid-week replan (Phase 3): everything buildContext
+ * already assembles (goalSpec, exerciseHistory, library, adherence, edit
+ * events) PLUS the current week's full day-by-day state and which dates are
+ * actually eligible to be rewritten. `weekStartDate` here is the CURRENT
+ * week being replanned, not the next week a weekly generation would target.
+ *
+ * @param {object} input - everything buildContext takes, plus:
+ * @param {Array} input.currentWeekDayRows - training_plan_days for the current week's plan
+ * @param {Array} input.currentWeekExerciseRows - training_plan_exercises for those days
+ * @param {Array} input.currentWeekSetRows - training_plan_sets for those exercises
+ * @param {string[]} input.targetDates - dates the LLM is being asked to replan
+ * @param {string|null} input.signal - 'skip_today' | 'low_energy' | 'time_limited' | null (inference-triggered)
+ */
+export function buildReplanContext({
+  currentWeekDayRows, currentWeekExerciseRows, currentWeekSetRows,
+  targetDates, signal,
+  ...rest
+}) {
+  const base = buildContext(rest);
+  return {
+    ...base,
+    replan: {
+      signal: signal ?? null,
+      targetDates,
+      currentWeekOverview: summarizeCurrentWeekDays({
+        dayRows: currentWeekDayRows,
+        exerciseRows: currentWeekExerciseRows,
+        setRows: currentWeekSetRows,
+      }),
+    },
   };
 }

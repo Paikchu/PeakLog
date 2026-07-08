@@ -9,6 +9,8 @@ import {
   buildContext,
   normalizeToKg,
   estimateOneRepMax,
+  summarizeCurrentWeekDays,
+  buildReplanContext,
 } from '../supabase/functions/_shared/contextBuilder.mjs';
 
 test('normalizeToKg passes kg through and converts lbs', () => {
@@ -160,4 +162,71 @@ test('buildContext: propagates weekStartDate and weightUnit unchanged', () => {
   assert.equal(context.weekStartDate, '2026-07-20');
   assert.equal(context.weightUnit, 'lbs');
   assert.equal(context.language, 'zh-Hans');
+});
+
+// ---- summarizeCurrentWeekDays / buildReplanContext (Phase 3) ----
+
+test('summarizeCurrentWeekDays: orders by day_index and flags hasCompletedSets per day', () => {
+  const dayRows = [
+    { id: 'd2', day_index: 1, plan_date: '2026-07-08', title: 'Day B', focus: null },
+    { id: 'd1', day_index: 0, plan_date: '2026-07-07', title: 'Day A', focus: 'push' },
+  ];
+  const exerciseRows = [
+    { id: 'e1', plan_day_id: 'd1', exercise_name: 'Bench', exercise_id: 'bench' },
+    { id: 'e2', plan_day_id: 'd2', exercise_name: 'Squat', exercise_id: 'squat' },
+  ];
+  const setRows = [
+    { plan_exercise_id: 'e1', target_reps: 8, completed_at: '2026-07-07T10:00:00Z', linked_exercise_set_id: null },
+    { plan_exercise_id: 'e2', target_reps: 5, completed_at: null, linked_exercise_set_id: null },
+  ];
+
+  const overview = summarizeCurrentWeekDays({ dayRows, exerciseRows, setRows });
+  assert.equal(overview.length, 2);
+  assert.equal(overview[0].planDate, '2026-07-07', 'must be ordered by day_index, not array order');
+  assert.equal(overview[0].hasCompletedSets, true);
+  assert.equal(overview[1].planDate, '2026-07-08');
+  assert.equal(overview[1].hasCompletedSets, false);
+  assert.equal(overview[0].exercises[0].completedCount, 1);
+  assert.equal(overview[0].exercises[0].totalCount, 1);
+});
+
+test('summarizeCurrentWeekDays: a rest day with no exercises has hasCompletedSets false, not a crash', () => {
+  const overview = summarizeCurrentWeekDays({
+    dayRows: [{ id: 'd1', day_index: 0, plan_date: '2026-07-07', title: 'Rest', focus: null }],
+    exerciseRows: [],
+    setRows: [],
+  });
+  assert.equal(overview[0].exercises.length, 0);
+  assert.equal(overview[0].hasCompletedSets, false);
+});
+
+test('buildReplanContext: includes base facts plus a replan object with signal/targetDates/currentWeekOverview', () => {
+  const context = buildReplanContext({
+    goalSpecRow: null, weightUnit: 'kg', language: 'en',
+    planExerciseRows: [], planSetRows: [], actualSetsById: {},
+    editEventRows: [], libraryExercises: [], customExercises: [],
+    weekStartDate: '2026-07-06', libraryVersion: '1',
+    currentWeekDayRows: [{ id: 'd1', day_index: 0, plan_date: '2026-07-08', title: 'Day', focus: null }],
+    currentWeekExerciseRows: [],
+    currentWeekSetRows: [],
+    targetDates: ['2026-07-09'],
+    signal: 'time_limited',
+  });
+  assert.equal(context.weekStartDate, '2026-07-06', 'replan context uses the CURRENT week, not next week');
+  assert.equal(context.replan.signal, 'time_limited');
+  assert.deepEqual(context.replan.targetDates, ['2026-07-09']);
+  assert.equal(context.replan.currentWeekOverview.length, 1);
+  assert.equal(context.replan.currentWeekOverview[0].planDate, '2026-07-08');
+});
+
+test('buildReplanContext: signal defaults to null (behavioral-inference trigger has no signal)', () => {
+  const context = buildReplanContext({
+    goalSpecRow: null, weightUnit: 'kg', language: 'en',
+    planExerciseRows: [], planSetRows: [], actualSetsById: {},
+    editEventRows: [], libraryExercises: [], customExercises: [],
+    weekStartDate: '2026-07-06', libraryVersion: '1',
+    currentWeekDayRows: [], currentWeekExerciseRows: [], currentWeekSetRows: [],
+    targetDates: ['2026-07-09'],
+  });
+  assert.equal(context.replan.signal, null);
 });

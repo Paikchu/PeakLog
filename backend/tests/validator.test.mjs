@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateWeeklyPlan,
+  validateReplanDays,
   weekDates,
   MAX_WEEKLY_INCREASE_FACTOR,
   NO_HISTORY_CAP_FACTOR,
@@ -198,4 +199,79 @@ test('missing days array entirely is a hard rejection, not a crash', () => {
 test('null plan is a hard rejection, not a crash', () => {
   const result = validateWeeklyPlan(null, baseContext());
   assert.equal(result.ok, false);
+});
+
+// ---- validateReplanDays (Phase 3) ----
+
+function replanDay(planDate, exercises) {
+  return { planDate, title: 'Replanned', focus: null, exercises };
+}
+
+test('validateReplanDays: exact target date set passes clean', () => {
+  const targetDates = ['2026-07-15', '2026-07-16'];
+  const plan = {
+    days: [replanDay('2026-07-15', [validExercise()]), replanDay('2026-07-16', [])],
+    coachSummary: 'Adjusted.',
+  };
+  const result = validateReplanDays(plan, targetDates, baseContext());
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.structuralViolations, []);
+});
+
+test('validateReplanDays: no daysPerWeek or 7-day expectation — a single target day is fine', () => {
+  const result = validateReplanDays(
+    { days: [replanDay('2026-07-15', [])], coachSummary: 'Rest day.' },
+    ['2026-07-15'],
+    baseContext()
+  );
+  assert.equal(result.ok, true);
+});
+
+test('validateReplanDays: missing a target date is rejected', () => {
+  const result = validateReplanDays(
+    { days: [replanDay('2026-07-15', [])], coachSummary: '' },
+    ['2026-07-15', '2026-07-16'],
+    baseContext()
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.structuralViolations.some((v) => v.includes('missing replanned day for 2026-07-16')));
+});
+
+test('validateReplanDays: an extra day outside the target set is rejected', () => {
+  const result = validateReplanDays(
+    { days: [replanDay('2026-07-15', []), replanDay('2026-07-20', [])], coachSummary: '' },
+    ['2026-07-15'],
+    baseContext()
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.structuralViolations.some((v) => v.includes('unexpected day 2026-07-20')));
+});
+
+test('validateReplanDays: duplicate planDate entries are rejected', () => {
+  const result = validateReplanDays(
+    { days: [replanDay('2026-07-15', []), replanDay('2026-07-15', [])], coachSummary: '' },
+    ['2026-07-15'],
+    baseContext()
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.structuralViolations.some((v) => v.includes('duplicate planDate')));
+});
+
+test('validateReplanDays: reuses the same safety clamps as the weekly validator (unknown exerciseId)', () => {
+  const plan = { days: [replanDay('2026-07-15', [{ ...validExercise(), exerciseId: 'made-up' }])], coachSummary: '' };
+  const result = validateReplanDays(plan, ['2026-07-15'], baseContext());
+  assert.equal(result.ok, false);
+  assert.ok(result.structuralViolations.some((v) => v.includes('unknown exerciseId')));
+});
+
+test('validateReplanDays: reuses weight clamping, not rejection', () => {
+  const plan = { days: [replanDay('2026-07-15', [validExercise()])], coachSummary: '' };
+  plan.days[0].exercises[0].sets[0].targetWeight = 100;
+  const context = baseContext({
+    exerciseHistory: { 'barbell-bench-press': { occurrences: [{ allSetsHit: true, maxWeightKg: 60, targetReps: 8 }] } },
+  });
+  const result = validateReplanDays(plan, ['2026-07-15'], context);
+  assert.equal(result.ok, true);
+  assert.equal(result.verdicts.length, 1);
+  assert.equal(result.clampedPlan.days[0].exercises[0].sets[0].targetWeight, 60 * MAX_WEEKLY_INCREASE_FACTOR);
 });

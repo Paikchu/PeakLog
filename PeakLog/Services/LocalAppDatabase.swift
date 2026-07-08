@@ -211,6 +211,25 @@ actor LocalAppDatabase {
         return spec
     }
 
+    /// Records a one-tap mid-week signal (Phase 3) as a `user`-sourced edit
+    /// event. No plan mutation happens here — the Agent's structural response
+    /// is applied server-side and pulled back down. Recording the signal
+    /// locally (and pushing it via the normal event pipeline) means it reaches
+    /// the next weekly generation's learning context even if the replan
+    /// request itself fails.
+    func recordDaySignal(_ signal: ReplanSignal) throws {
+        let today = Self.planDateString(from: Date())
+        let day = state.activePlan.days.first(where: { $0.planDate == today })
+        appendEditEvent(
+            planId: state.activePlan.id,
+            planDayId: day?.id,
+            planDate: today,
+            type: .daySignal,
+            payload: .object(["signal": .string(signal.rawValue)])
+        )
+        try persist()
+    }
+
     func customExercises() -> [ExerciseDefinition] {
         state.customExercises
     }
@@ -1219,7 +1238,11 @@ actor LocalAppDatabase {
             weekStartDate: cloud.weekStartDate,
             goalSummary: cloud.goalSummary,
             coachSummary: cloud.coachSummary,
-            days: mergedDays
+            days: mergedDays,
+            // Adopt the cloud's revision as the new local baseline — after this
+            // merge the local cache reflects the server's (possibly replanned)
+            // plan, so the next push's revision guard compares against it.
+            revision: cloud.revision
         )
     }
 

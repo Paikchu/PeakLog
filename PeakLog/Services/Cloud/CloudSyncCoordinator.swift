@@ -127,7 +127,22 @@ actor CloudSyncCoordinator {
     }
 
     private func performPush() async throws {
-        let snapshot = await database.snapshot()
+        var snapshot = await database.snapshot()
+
+        // Revision guard (Phase 3): if the server's copy of the active plan
+        // advanced since our last pull — a server-side replan landed while we
+        // were holding unpushed local changes — we MUST pull-merge before
+        // pushing. Otherwise the child-table `deleteNotIn` below would delete
+        // the freshly replanned rows and re-upsert our stale ones, silently
+        // undoing the replan the user just saw. Pulling first folds the replan
+        // into the local cache (offline completions preserved, per Issue #1),
+        // and re-snapshotting picks it up so the push echoes it back intact.
+        // See Phase 3 plan §4.2/§4.3.
+        if try await serverPlanRevisionAdvanced(beyond: snapshot.activePlan) {
+            await pull()
+            snapshot = await database.snapshot()
+        }
+
         let bundle = CloudMapper.pushBundle(from: snapshot, userId: userId)
 
         // profiles and user_preferences already exist (created by the
@@ -194,4 +209,24 @@ actor CloudSyncCoordinator {
         try await client.deleteNotIn(table: "running_workouts", keepIds: bundle.running.map(\.id))
         try await client.deleteNotIn(table: "custom_exercises", keepIds: bundle.customExercises.map(\.id))
     }
+
+    /// Lightweight check: has the server's active-plan `revision` moved past the
+    /// local baseline? A single-column, single-row fetch — cheap enough to run
+    /// before every push. Returns false (no guard action) when the local plan
+    /// has no cloud counterpart yet (a freshly seeded/empty plan whose id was
+    /// generated locally), so a brand-new user's first push isn't blocked.
+    private func serverPlanRevisionAdvanced(beyond localPlan: TrainingPlan) async throws -> Bool {
+        let rows = try await client.fetch(TrainingPlanRevisionRow.self, table: "training_plans", query: [
+            URLQueryItem(name: "id", value: "eq.\(localPlan.id)"),
+            URLQueryItem(name: "select", value: "revision"),
+            URLQueryItem(name: "limit", value: "1")
+        ])
+        guard let serverRevision = rows.first?.revision else { return false }
+        return serverRevision != localPlan.revision
+    }
+}
+
+/// Minimal projection for the revision guard's single-column probe.
+private struct TrainingPlanRevisionRow: Decodable, Sendable {
+    let revision: Int
 }

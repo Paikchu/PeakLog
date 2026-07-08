@@ -21,6 +21,64 @@ export function weekDates(weekStartDate) {
 }
 
 /**
+ * Shared safety checks for one day's exercises: unknown library ids, reps
+ * range, missing weight on weighted exercises, and weekly-load clamping.
+ * Used by both the full-week validator and the replan validator so the two
+ * can never quietly diverge on what counts as an unsafe number.
+ */
+function clampDayExercises(day, dayIndex, context, structuralViolations, verdicts) {
+  const knownIds = new Set((context.library ?? []).map((e) => e.id));
+  const exercises = Array.isArray(day.exercises) ? day.exercises : [];
+
+  const clampedExercises = exercises.map((exercise) => {
+    if (exercise.exerciseId && !knownIds.has(exercise.exerciseId)) {
+      structuralViolations.push(`day ${dayIndex}: unknown exerciseId "${exercise.exerciseId}"`);
+    }
+
+    const isBodyweight = exercise.loadType === 'bodyweight';
+    const history = context.exerciseHistory?.[exercise.exerciseId];
+    const cap = history?.occurrences?.[0]?.maxWeightKg != null
+      ? history.occurrences[0].maxWeightKg * MAX_WEEKLY_INCREASE_FACTOR
+      : (history?.referenceMaxKg != null ? history.referenceMaxKg * NO_HISTORY_CAP_FACTOR : null);
+
+    const sets = Array.isArray(exercise.sets) ? exercise.sets : [];
+    const clampedSets = sets.map((set, setIndex) => {
+      if (!Number.isInteger(set.targetReps) || set.targetReps < MIN_REPS || set.targetReps > MAX_REPS) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName ?? exercise.exerciseId}" set ${setIndex}: reps ${set.targetReps} out of range [${MIN_REPS},${MAX_REPS}]`
+        );
+      }
+      if (!isBodyweight && set.targetWeight == null) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName ?? exercise.exerciseId}" set ${setIndex}: weighted exercise missing target weight`
+        );
+      }
+
+      let targetWeight = set.targetWeight;
+      if (targetWeight != null && cap != null && targetWeight > cap) {
+        verdicts.push({
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          setIndex,
+          action: 'clamped',
+          from: targetWeight,
+          to: cap,
+          reason: history?.occurrences?.[0]?.maxWeightKg != null
+            ? 'exceeds 110% of last actual weight'
+            : 'exceeds 90% of reference max with no logged history',
+        });
+        targetWeight = cap;
+      }
+      return { ...set, targetWeight };
+    });
+
+    return { ...exercise, sets: clampedSets };
+  });
+
+  return { ...day, exercises: clampedExercises };
+}
+
+/**
  * @param {object} plan - raw LLM output: { days: [{ dayIndex, planDate, title, focus, exercises: [...] }] }
  * @param {object} context - ContextBuilder output (see contextBuilder.mjs)
  * @returns {{ok: boolean, structuralViolations: string[], verdicts: object[], clampedPlan: object|null}}
@@ -54,56 +112,53 @@ export function validateWeeklyPlan(plan, context) {
     structuralViolations.push(`expected ${expectedTrainingDays} training days, got ${trainingDayCount}`);
   }
 
-  const knownIds = new Set((context.library ?? []).map((e) => e.id));
+  const clampedDays = plan.days.map((day, dayIndex) => clampDayExercises(day, dayIndex, context, structuralViolations, verdicts));
 
-  const clampedDays = plan.days.map((day, dayIndex) => {
-    const exercises = Array.isArray(day.exercises) ? day.exercises : [];
-    const clampedExercises = exercises.map((exercise) => {
-      if (exercise.exerciseId && !knownIds.has(exercise.exerciseId)) {
-        structuralViolations.push(`day ${dayIndex}: unknown exerciseId "${exercise.exerciseId}"`);
-      }
+  return {
+    ok: structuralViolations.length === 0,
+    structuralViolations,
+    verdicts,
+    clampedPlan: { ...plan, days: clampedDays },
+  };
+}
 
-      const isBodyweight = exercise.loadType === 'bodyweight';
-      const history = context.exerciseHistory?.[exercise.exerciseId];
-      const cap = history?.occurrences?.[0]?.maxWeightKg != null
-        ? history.occurrences[0].maxWeightKg * MAX_WEEKLY_INCREASE_FACTOR
-        : (history?.referenceMaxKg != null ? history.referenceMaxKg * NO_HISTORY_CAP_FACTOR : null);
+/**
+ * Validates a mid-week replan response (Phase 3): unlike the full weekly
+ * plan, there is no fixed "7 days" or "daysPerWeek" expectation — the LLM is
+ * only replanning a caller-given subset of days (the ones still eligible,
+ * i.e. not in the past and not already trained). Structural correctness
+ * here means exactly: the plan covers exactly the target dates, no more, no
+ * less. Safety checks (library ids, reps range, weight clamping) are
+ * identical to the weekly validator — reused via clampDayExercises so the
+ * two paths can't drift on what counts as unsafe.
+ *
+ * @param {object} plan - raw LLM output: { days: [{ planDate, title, focus, exercises: [...] }] }
+ * @param {string[]} targetDates - the exact set of yyyy-MM-dd dates the caller asked to be replanned
+ * @param {object} context - ContextBuilder output (see contextBuilder.mjs buildReplanContext)
+ * @returns {{ok: boolean, structuralViolations: string[], verdicts: object[], clampedPlan: object|null}}
+ */
+export function validateReplanDays(plan, targetDates, context) {
+  const structuralViolations = [];
+  const verdicts = [];
 
-      const sets = Array.isArray(exercise.sets) ? exercise.sets : [];
-      const clampedSets = sets.map((set, setIndex) => {
-        if (!Number.isInteger(set.targetReps) || set.targetReps < MIN_REPS || set.targetReps > MAX_REPS) {
-          structuralViolations.push(
-            `day ${dayIndex} exercise "${exercise.exerciseName ?? exercise.exerciseId}" set ${setIndex}: reps ${set.targetReps} out of range [${MIN_REPS},${MAX_REPS}]`
-          );
-        }
-        if (!isBodyweight && set.targetWeight == null) {
-          structuralViolations.push(
-            `day ${dayIndex} exercise "${exercise.exerciseName ?? exercise.exerciseId}" set ${setIndex}: weighted exercise missing target weight`
-          );
-        }
+  if (!plan || !Array.isArray(plan.days)) {
+    return { ok: false, structuralViolations: ['plan.days is missing or not an array'], verdicts: [], clampedPlan: null };
+  }
 
-        let targetWeight = set.targetWeight;
-        if (targetWeight != null && cap != null && targetWeight > cap) {
-          verdicts.push({
-            exerciseId: exercise.exerciseId,
-            exerciseName: exercise.exerciseName,
-            setIndex,
-            action: 'clamped',
-            from: targetWeight,
-            to: cap,
-            reason: history?.occurrences?.[0]?.maxWeightKg != null
-              ? 'exceeds 110% of last actual weight'
-              : 'exceeds 90% of reference max with no logged history',
-          });
-          targetWeight = cap;
-        }
-        return { ...set, targetWeight };
-      });
+  const expected = new Set(targetDates);
+  const got = new Set(plan.days.map((d) => d.planDate));
 
-      return { ...exercise, sets: clampedSets };
-    });
-    return { ...day, exercises: clampedExercises };
-  });
+  for (const date of expected) {
+    if (!got.has(date)) structuralViolations.push(`missing replanned day for ${date}`);
+  }
+  for (const date of got) {
+    if (!expected.has(date)) structuralViolations.push(`unexpected day ${date} — not in the target date set`);
+  }
+  if (plan.days.length !== new Set(plan.days.map((d) => d.planDate)).size) {
+    structuralViolations.push('duplicate planDate entries in replanned days');
+  }
+
+  const clampedDays = plan.days.map((day, dayIndex) => clampDayExercises(day, dayIndex, context, structuralViolations, verdicts));
 
   return {
     ok: structuralViolations.length === 0,

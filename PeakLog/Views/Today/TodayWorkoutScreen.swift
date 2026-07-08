@@ -6,9 +6,11 @@ import UIKit
 struct TodayWorkoutScreen: View {
     // Owned by ContentView so the dock can surface the start-training action.
     @ObservedObject var viewModel: TodayWorkoutViewModel
+    @EnvironmentObject private var syncController: CloudSyncController
     @State private var isPresentingAddPlanExercise = false
     @State private var isPresentingFinishDialog = false
     @State private var isPresentingCancelDialog = false
+    @State private var replanToast: ReplanToast?
     // 专注模式滚动编排：scrolledExerciseId 追踪屏幕中心的卡片，displayedExerciseId 决定哪张卡展开。
     @State private var scrolledExerciseId: String?
     @State private var displayedExerciseId: String?
@@ -72,6 +74,10 @@ struct TodayWorkoutScreen: View {
                         }
                         TodaySummarySection(state: summaryState, locale: locale)
                             .transition(.opacity)
+                        if showReplanMenu {
+                            replanMenu
+                                .transition(.opacity)
+                        }
                     }
                     if let planState {
                         TodayPlanExercisesSection(
@@ -153,6 +159,14 @@ struct TodayWorkoutScreen: View {
         .dismissKeyboardOnTap()
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
+        .overlay(alignment: .bottom) {
+            if let toast = replanToast {
+                replanToastView(toast)
+                    .padding(.bottom, isFocusMode ? 340 : 120)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(flowAnimation, value: replanToast)
         .safeAreaInset(edge: .top) {
             if isFocusMode, let session = viewModel.activeLiveWorkout {
                 TodayFocusHeader(
@@ -287,6 +301,96 @@ struct TodayWorkoutScreen: View {
         return session.totalSetsCount - session.completedSetsCount
     }
 
+}
+
+// MARK: - One-tap mid-week replan (Phase 3)
+
+struct ReplanToast: Equatable {
+    let message: String
+    let isError: Bool
+}
+
+private extension TodayWorkoutScreen {
+    /// Shown under the summary when: there is a training day today with actual
+    /// exercises, we're not mid-focus-session, and a cloud session exists to
+    /// carry the request. A rest day or a brand-new local-only user sees nothing.
+    var showReplanMenu: Bool {
+        guard syncController.isReplanAvailable, !isFocusMode else { return false }
+        guard let plan = viewModel.todayPlan else { return false }
+        return !plan.exercises.isEmpty
+    }
+
+    var replanMenu: some View {
+        Menu {
+            ForEach(ReplanSignal.allCases, id: \.self) { signal in
+                Button {
+                    Task { await handleReplan(signal) }
+                } label: {
+                    Label(signal.menuTitle, systemImage: signal.menuIcon)
+                }
+                .disabled(signal.requiresUntrainedToday && viewModel.todayHasCompletedSets)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if syncController.isRequestingReplan {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                Text(String(localized: "today.replan.menu", defaultValue: "调整今天"))
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.10))
+            )
+        }
+        .disabled(syncController.isRequestingReplan)
+    }
+
+    func replanToastView(_ toast: ReplanToast) -> some View {
+        Text(toast.message)
+            .font(.subheadline)
+            .foregroundStyle(.white)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(toast.isError ? Color.red.opacity(0.92) : Color.black.opacity(0.82))
+            )
+            .padding(.horizontal, 24)
+            .shadow(radius: 8, y: 2)
+    }
+
+    func handleReplan(_ signal: ReplanSignal) async {
+        // Record the user's signal locally first — it must reach the learning
+        // loop even if the server call fails (Phase 3 plan §4.1).
+        await viewModel.recordDaySignal(signal)
+
+        let outcome = await syncController.requestReplan(signal: signal)
+        switch outcome {
+        case .replanned:
+            await viewModel.refresh()
+            showToast(String(localized: "today.replan.done", defaultValue: "已为你调整今天的计划"), isError: false)
+        case .noChange:
+            showToast(String(localized: "today.replan.no_change", defaultValue: "今天暂时无需调整"), isError: false)
+        case .failed, .none:
+            // The plan is intentionally left untouched on failure — say so plainly.
+            showToast(String(localized: "today.replan.failed", defaultValue: "暂时无法调整，计划保持不变"), isError: true)
+        }
+    }
+
+    func showToast(_ message: String, isError: Bool) {
+        replanToast = ReplanToast(message: message, isError: isError)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if replanToast?.message == message { replanToast = nil }
+        }
+    }
 }
 
 private struct TodayFocusHeader: View {
@@ -1263,6 +1367,7 @@ private struct TodayWorkoutScreenPreview: View {
     @MainActor
     var body: some View {
         TodayWorkoutScreen(viewModel: TodayWorkoutViewModel())
+            .environmentObject(CloudSyncController())
     }
 }
 

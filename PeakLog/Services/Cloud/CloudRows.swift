@@ -61,6 +61,44 @@ nonisolated struct TrainingPlanRow: Codable, Sendable {
     var status: String
     var goal_snapshot: String?
     var coach_summary: String
+    // Optimistic-lock counter (Phase 3). Read on pull; deliberately NOT sent on
+    // push (see encode below) so a client upsert never overwrites the value the
+    // server bumps via replan_plan_days. Defaults to 0 so a decode of any row
+    // predating the column can't fail.
+    var revision: Int = 0
+
+    private enum CodingKeys: String, CodingKey {
+        case id, user_id, week_start_date, status, goal_snapshot, coach_summary, revision
+    }
+
+    // Encode omits revision on purpose: with a merge-duplicates upsert, an
+    // omitted column is preserved on conflict, so the server's replan counter
+    // survives a client push.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(user_id, forKey: .user_id)
+        try c.encode(week_start_date, forKey: .week_start_date)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(goal_snapshot, forKey: .goal_snapshot)
+        try c.encode(coach_summary, forKey: .coach_summary)
+    }
+}
+
+extension TrainingPlanRow {
+    // Custom decode (extension keeps the memberwise init available) tolerates a
+    // missing `revision` — real cloud rows always have it, but this makes an
+    // encode(omit)→decode roundtrip of this type safe too.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        user_id = try c.decode(String.self, forKey: .user_id)
+        week_start_date = try c.decode(String.self, forKey: .week_start_date)
+        status = try c.decode(String.self, forKey: .status)
+        goal_snapshot = try c.decodeIfPresent(String.self, forKey: .goal_snapshot)
+        coach_summary = try c.decode(String.self, forKey: .coach_summary)
+        revision = try c.decodeIfPresent(Int.self, forKey: .revision) ?? 0
+    }
 }
 
 nonisolated struct TrainingPlanDayRow: Codable, Sendable {
