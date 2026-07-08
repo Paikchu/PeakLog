@@ -40,9 +40,12 @@ actor CloudSyncCoordinator {
 
     // MARK: - Lifecycle
 
-    /// Pull cloud truth into the cache, then arm push-on-change. Pulling first
-    /// is essential: it overwrites any seed/stale cache so a later push can
-    /// never send non-cloud (e.g. seed, non-UUID) rows.
+    /// Merge cloud truth into the cache, then arm push-on-change. The merge
+    /// (not a blind overwrite) preserves real offline user records —
+    /// sessions, runs, custom exercises, and offline plan-set completions —
+    /// while still dropping seed rows (non-UUID ids) so a later push can
+    /// never send non-cloud rows. See `LocalAppDatabase.mergeFromCloud`
+    /// (Issue #1 fix).
     func start() async {
         await pull()
         await installChangeHook()
@@ -67,7 +70,10 @@ actor CloudSyncCoordinator {
     func pull() async {
         do {
             let snapshot = try await loader.load(userId: userId)
-            await database.replaceAll(
+            // Merge (not replace) so offline user records survive the login
+            // pull while seed rows are still dropped. See Issue #1 /
+            // `LocalAppDatabase.mergeFromCloud`.
+            await database.mergeFromCloud(
                 profile: snapshot.profile,
                 activePlan: snapshot.activePlan,
                 strengthSessions: snapshot.strengthSessions,

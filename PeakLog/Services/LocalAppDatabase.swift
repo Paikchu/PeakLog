@@ -1,5 +1,31 @@
 import Foundation
 
+// MARK: - Cloud merge support
+
+/// Records that carry an `updatedAt` can be merged by last-write-wins on a
+/// login pull, instead of the cloud snapshot blindly overwriting offline
+/// creations. Used by `LocalAppDatabase.mergeFromCloud` (Issue #1 fix).
+nonisolated protocol CloudMergeableRecord: Sendable {
+    var id: String { get }
+    var updatedAt: Date { get }
+}
+
+extension WorkoutSession: CloudMergeableRecord {}
+extension RunningWorkoutRecord: CloudMergeableRecord {}
+
+/// A row id is "user-generated" (and thus worth preserving across a login
+/// pull) when — after stripping the `custom-` prefix used by custom exercises
+/// — it parses as a UUID. Seed/demo rows use deterministic non-UUID ids
+/// (`local-plan`, `seed-session-1`, `plan-day-1`, …) and are intentionally
+/// dropped so they never get pushed to the cloud (the original pull-first
+/// intent); only real offline user data survives the merge.
+private extension String {
+    var isUserGeneratedID: Bool {
+        let trimmed = hasPrefix("custom-") ? String(dropFirst("custom-".count)) : self
+        return UUID(uuidString: trimmed) != nil
+    }
+}
+
 nonisolated private struct LocalAppState: Codable, Sendable {
     var profile: UserProfile
     var activePlan: TrainingPlan
@@ -1024,15 +1050,20 @@ actor LocalAppDatabase {
         )
     }
 
-    /// Replace the entire cache with cloud truth (a pull). Does not fire
-    /// `onChange`: this is the sync writing in, not the user mutating.
-    /// Derived profile fields (stats, PRs) are recomputed from the pulled
-    /// sessions so the UI matches without a separate stats fetch.
+    /// Replace the entire cache with cloud truth. Does not fire `onChange`:
+    /// this is the sync writing in, not the user mutating. Derived profile
+    /// fields (stats, PRs) are recomputed from the pulled sessions so the UI
+    /// matches without a separate stats fetch.
     ///
     /// `pendingEditEvents`/`editEventSeq` are deliberately NOT touched here —
     /// a pull overwrites cloud-mirrored *state*, but those are unpushed
     /// *facts* that must survive it (EV1). `goalSpec` is ordinary state, so
     /// it IS overwritten like everything else, cloud-wins.
+    ///
+    /// - Note: The login pull path now uses `mergeFromCloud` (which preserves
+    ///   real offline user data instead of overwriting it — Issue #1). This
+    ///   blunt replace is retained only for any future "force cloud truth"
+    ///   scenario; no live caller overwrites offline records with it today.
     func replaceAll(
         profile: UserProfile,
         activePlan: TrainingPlan,
@@ -1049,6 +1080,119 @@ actor LocalAppDatabase {
         state.goalSpec = goalSpec
         recalculateDerivedProfile()
         try? writeStateToDisk()
+    }
+
+    /// Merge a cloud snapshot into the cache, preserving real offline user
+    /// data instead of blindly overwriting it (the bug fixed for Issue #1).
+    ///
+    /// Policy (see `docs/plans/2026-07-08-cloud-pull-merge-local-plan.md`):
+    /// - `strengthSessions` / `runningRecords`: cloud wins; same-id
+    ///   collisions resolve by `updatedAt` (tie → cloud); local-only rows
+    ///   whose id is a user-generated UUID are kept (offline records
+    ///   survive); seed rows (non-UUID id) are dropped so they never reach
+    ///   the cloud.
+    /// - `customExercises`: cloud wins; local-only user-generated customs
+    ///   are kept.
+    /// - `activePlan`: cloud structure wins; when `cloud.id == local.id`,
+    ///   offline plan-set completion markers (`completedAt` /
+    ///   `linkedExerciseSetId`) are carried back onto the cloud plan
+    ///   (completion is monotonic). A local seed plan (different id) is
+    ///   replaced wholesale.
+    /// - `profile` / `goalSpec`: cloud wins (confirmed decision; timezone
+    ///   self-heals via `reconcileDeviceTimezone`).
+    /// - `pendingEditEvents` / `editEventSeq`: untouched (EV1).
+    ///
+    /// Like `replaceAll`, this does NOT fire `onChange`: it is the sync
+    /// writing in, not the user mutating, so a pull never echoes back as a
+    /// push.
+    func mergeFromCloud(
+        profile: UserProfile,
+        activePlan: TrainingPlan,
+        strengthSessions: [WorkoutSession],
+        runningRecords: [RunningWorkoutRecord],
+        customExercises: [ExerciseDefinition],
+        goalSpec: GoalSpec?
+    ) {
+        state.profile = profile
+        state.activePlan = mergePlanPreservingCompletions(cloud: activePlan, local: state.activePlan)
+        state.strengthSessions = mergeRecords(cloud: strengthSessions, local: state.strengthSessions)
+        state.runningRecords = mergeRecords(cloud: runningRecords, local: state.runningRecords)
+        state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
+        state.goalSpec = goalSpec
+        // pendingEditEvents / editEventSeq deliberately untouched (EV1).
+        recalculateDerivedProfile()
+        try? writeStateToDisk()
+    }
+
+    /// Last-write-wins merge for record lists that carry `updatedAt`. Cloud is
+    /// the base; local-only user-generated rows are added (offline records
+    /// survive); same-id collisions take the newer `updatedAt` (tie → cloud,
+    /// which is already in the dictionary).
+    private func mergeRecords<T: CloudMergeableRecord>(cloud: [T], local: [T]) -> [T] {
+        var byId: [String: T] = [:]
+        byId.reserveCapacity(cloud.count)
+        for row in cloud { byId[row.id] = row }
+        for row in local {
+            if let cloudRow = byId[row.id] {
+                if row.updatedAt > cloudRow.updatedAt { byId[row.id] = row }
+            } else if row.id.isUserGeneratedID {
+                byId[row.id] = row
+            }
+        }
+        return Array(byId.values)
+    }
+
+    /// Cloud wins; local-only user-generated customs survive.
+    /// `ExerciseDefinition` has no timestamps, so no LWW — a same-id
+    /// collision keeps cloud.
+    private func mergeCustomExercises(cloud: [ExerciseDefinition], local: [ExerciseDefinition]) -> [ExerciseDefinition] {
+        var byId: [String: ExerciseDefinition] = [:]
+        byId.reserveCapacity(cloud.count)
+        for exercise in cloud { byId[exercise.id] = exercise }
+        for exercise in local where byId[exercise.id] == nil && exercise.id.isUserGeneratedID {
+            byId[exercise.id] = exercise
+        }
+        return Array(byId.values)
+    }
+
+    /// Cloud plan structure wins. When the same plan id was already present
+    /// locally, carry offline plan-set completion markers back onto the cloud
+    /// plan (completion is monotonic: once a set is completed it stays
+    /// completed). A local seed plan (different id) is replaced wholesale.
+    private func mergePlanPreservingCompletions(cloud: TrainingPlan, local: TrainingPlan) -> TrainingPlan {
+        guard cloud.id == local.id else { return cloud }
+
+        // Index local completion markers by plan-set id for O(1) lookup.
+        var localCompletionById: [String: (completedAt: Date?, linkedExerciseSetId: String?)] = [:]
+        for day in local.days {
+            for exercise in day.exercises {
+                for set in exercise.sets where set.isCompleted {
+                    localCompletionById[set.id] = (set.completedAt, set.linkedExerciseSetId)
+                }
+            }
+        }
+
+        let mergedDays = cloud.days.map { day -> TrainingPlanDay in
+            var day = day
+            for exerciseIndex in day.exercises.indices {
+                for setIndex in day.exercises[exerciseIndex].sets.indices {
+                    let setId = day.exercises[exerciseIndex].sets[setIndex].id
+                    guard !day.exercises[exerciseIndex].sets[setIndex].isCompleted,
+                          let local = localCompletionById[setId] else { continue }
+                    day.exercises[exerciseIndex].sets[setIndex].completedAt = local.completedAt
+                    day.exercises[exerciseIndex].sets[setIndex].linkedExerciseSetId = local.linkedExerciseSetId
+                }
+            }
+            return day
+        }
+
+        return TrainingPlan(
+            id: cloud.id,
+            weekStartDate: cloud.weekStartDate,
+            goalSummary: cloud.goalSummary,
+            coachSummary: cloud.coachSummary,
+            days: mergedDays
+        )
     }
 
     private static func ensureParentDirectoryExists(for fileURL: URL) throws {
