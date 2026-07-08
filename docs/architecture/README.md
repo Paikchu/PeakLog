@@ -14,7 +14,7 @@
   接口文档，包含 iOS 侧调用的 Supabase Edge Functions、SSE 事件协议、关键数据结构与错误语义。
 
 - `adr-001-llm-weekly-plan-generation.md`  
-  架构决策记录：LLM 驱动的每周训练计划自动生成（周粒度生成、LLM 决策 + 确定性薄层、编辑事件流、计划溯源、周中动态重排）。Phase 0 前置方案见 `../plans/2026-07-07-phase0-auth-sync-plan.md`；Phase 1（结构化目标 GoalSpec、编辑事件流、生成溯源基建）见 `../plans/2026-07-08-phase1-edit-events-goalspec-plan.md`。
+  架构决策记录：LLM 驱动的每周训练计划自动生成（周粒度生成、LLM 决策 + 确定性薄层、编辑事件流、计划溯源、周中动态重排）。Phase 0 前置方案见 `../plans/2026-07-07-phase0-auth-sync-plan.md`；Phase 1（结构化目标 GoalSpec、编辑事件流、生成溯源基建）见 `../plans/2026-07-08-phase1-edit-events-goalspec-plan.md`；Phase 2（`generate-weekly-plan` Edge Function 主链路、pg_cron 调度、C21 硬约束）见 `../plans/2026-07-08-phase2-weekly-generation-plan.md` 与 `../logs/2026-07-08-phase2-weekly-generation.md`。
 
 ## 阅读建议
 

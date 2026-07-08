@@ -13,13 +13,23 @@ nonisolated struct CloudSnapshotLoader: Sendable {
 
     func load(userId: String) async throws -> LocalDataSnapshot {
         // The plan-child tables (days/exercises/sets) must be scoped to the
-        // *active* plan's id (SY2): once a weekly rotation leaves an archived
-        // plan's rows sitting in the same table, an unscoped fetch would pull
-        // those in too and they'd get spliced into `activePlan`. That means
-        // this fetch can't run concurrently with its children — everything
-        // else still can.
+        // *selected* plan's id (SY2): once a weekly rotation leaves an
+        // archived plan's rows sitting in the same table, an unscoped fetch
+        // would pull those in too and they'd get spliced into `activePlan`.
+        // That means this fetch can't run concurrently with its children —
+        // everything else still can.
+        //
+        // Selection is by date, not just status='active' (Phase 2): the
+        // server generates next week's plan ahead of time (Sunday evening,
+        // status='active') without touching the current week, so for a
+        // window of up to ~a week two rows can legitimately both be
+        // status='active' — this week and next week. Picking the latest one
+        // whose week has actually started is what makes Monday's rollover
+        // automatic with no separate "activate" step on either side.
+        let today = WorkoutDateFormatter().string(from: Date())
         let plans = try await client.fetch(TrainingPlanRow.self, table: "training_plans", query: [
             URLQueryItem(name: "status", value: "eq.active"),
+            URLQueryItem(name: "week_start_date", value: "lte.\(today)"),
             URLQueryItem(name: "order", value: "week_start_date.desc"),
             URLQueryItem(name: "limit", value: "1")
         ])

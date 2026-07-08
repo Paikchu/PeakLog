@@ -52,7 +52,33 @@ final class CloudSyncController: ObservableObject {
 
     func onForeground() {
         guard let coordinator else { return }
-        Task { await coordinator.onForeground() }
+        Task {
+            // Reconcile first: if the device's timezone changed (e.g. travel),
+            // this mutation must land before onForeground() decides whether
+            // there's anything pending to push, or it waits for next time.
+            await reconcileDeviceTimezone()
+            await coordinator.onForeground()
+        }
+    }
+
+    /// Writes the device's real IANA timezone to preferences if it differs
+    /// from what's on record. `profiles.timezone` defaults to `'UTC'`
+    /// server-side and the client has otherwise never set it — left alone,
+    /// server-side timezone-sensitive logic (e.g. Phase 2's Sunday-evening
+    /// weekly plan generation) would silently run against the wrong clock
+    /// for every user. No UI: this is a background reconciliation, same as
+    /// the sync itself.
+    private func reconcileDeviceTimezone() async {
+        let deviceTimezone = TimeZone.current.identifier
+        let profile = await database.fetchProfile()
+        guard profile.preferences.timezone != deviceTimezone else { return }
+        _ = try? await database.updatePreferences(UpdatePreferencesRequest(
+            notificationsEnabled: nil,
+            darkModeEnabled: nil,
+            weightUnit: nil,
+            timezone: deviceTimezone,
+            language: nil
+        ))
     }
 
     #if DEBUG
@@ -79,6 +105,7 @@ final class CloudSyncController: ObservableObject {
         syncStatus = .idle
         Task {
             await coordinator.start()   // pulls cloud truth, then arms push-on-change
+            await reconcileDeviceTimezone()   // hook is armed by now, so this pushes
             isPreparingSession = false
         }
     }
