@@ -9,8 +9,10 @@ import Foundation
 //   2. same-id collisions resolve by updatedAt (local-wins when newer;
 //      cloud-wins when newer).
 //   3. seed plan (local-plan) replaced by cloud plan.
-//   4. offline plan-set completion markers preserved when plan ids match;
-//      no backfill when plan ids differ.
+//   4. offline plan-set completion markers preserved when plan ids match and
+//      the completion is backed by a real logged set (b637e5e invariant),
+//      even if that session has not yet synced to the cloud; no backfill when
+//      plan ids differ.
 //   5. pendingEditEvents untouched (EV1).
 //   6. mergeFromCloud does not fire onChange (no pull→push echo).
 //
@@ -196,6 +198,14 @@ struct CloudPullMergeTest {
     }
 
     // 4. Same plan id: offline completion markers survive onto the cloud plan.
+    //    A genuine offline completion is backed by a real logged set (created
+    //    by `completePlannedSet` → `ensureStrengthSessionForPlanDay`), so its
+    //    `linkedExerciseSetId` resolves in `strengthSessions`. We seed that
+    //    backing set in LOCAL state only and deliberately do NOT hand it to
+    //    `mergeFromCloud` as cloud data — proving the completion survives even
+    //    when the backing workout session has not yet synced to the cloud,
+    //    because `mergeRecords` retains local user-generated sessions and the
+    //    completion therefore passes `sanitizePlanCompletionLinks` (b637e5e).
     static func testPlanCompletionPreservedWhenSamePlanId() async {
         let db = LocalAppDatabase(fileURL: tempURL())
         let profile = await db.fetchProfile()
@@ -215,9 +225,23 @@ struct CloudPullMergeTest {
             id: "plan-1", weekStartDate: "2026-07-06",
             goalSummary: "local goal", coachSummary: "local coach", days: [localDay])
 
+        // The offline logged set that backs the completion (id matches the
+        // plan set's linkedExerciseSetId). Its session id is a user-generated
+        // UUID so `mergeRecords` keeps it as a local-only offline row.
+        let offlineLoggedSession = WorkoutSession(
+            id: UUID().uuidString, userId: "offline-user", date: Date(),
+            durationMinutes: nil, label: "Offline Bench",
+            exercises: [Exercise(
+                id: UUID().uuidString, name: "Bench", exerciseId: nil,
+                exerciseLoadType: .weighted,
+                sets: [ExerciseSet(id: "link-1", setIndex: 1, weight: 60,
+                    weightUnit: .kg, reps: 8, rpe: nil)])],
+            createdAt: Date(), updatedAt: Date())
+
         // Set local state to the controlled plan via replaceAll (setup only).
         await db.replaceAll(profile: profile, activePlan: localPlan,
-            strengthSessions: [], runningRecords: [], customExercises: [], goalSpec: nil)
+            strengthSessions: [offlineLoggedSession], runningRecords: [],
+            customExercises: [], goalSpec: nil)
 
         // Cloud plan: SAME id, same set id but NOT completed; cloud structural
         // fields (goal/title) differ to prove cloud structure still wins.
