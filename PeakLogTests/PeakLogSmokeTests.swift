@@ -52,4 +52,87 @@ final class PeakLogSmokeTests: XCTestCase {
         XCTAssertEqual(merged[0].exercises.count, 1)
         XCTAssertEqual(merged[0].exercises[0].sets.map(\.setIndex), [1, 2, 3])
     }
+
+    func testPlanCompletionWithoutLoggedSetIsClearedWhenCloudStateLoads() async throws {
+        let databaseFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plan-completion-sanitize-\(UUID().uuidString).json")
+        let database = LocalAppDatabase(fileURL: databaseFileURL)
+        defer { try? FileManager.default.removeItem(at: databaseFileURL) }
+
+        let snapshot = await database.snapshot()
+        var dirtyPlan = snapshot.activePlan
+        dirtyPlan.days[0].exercises[0].sets[0].completedAt = Date()
+        dirtyPlan.days[0].exercises[0].sets[0].linkedExerciseSetId = "missing-set"
+
+        await database.replaceAll(
+            profile: snapshot.profile,
+            activePlan: dirtyPlan,
+            strengthSessions: [],
+            runningRecords: [],
+            customExercises: snapshot.customExercises,
+            goalSpec: snapshot.goalSpec
+        )
+
+        let maybeLoadedPlan = await database.activePlan()
+        let loadedPlan = try XCTUnwrap(maybeLoadedPlan)
+        XCTAssertFalse(loadedPlan.days[0].exercises[0].sets[0].isCompleted)
+        XCTAssertNil(loadedPlan.days[0].exercises[0].sets[0].linkedExerciseSetId)
+    }
+
+    func testPlanCompletionWithLoggedSetSurvivesCloudStateLoad() async throws {
+        let databaseFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("plan-completion-preserve-\(UUID().uuidString).json")
+        let database = LocalAppDatabase(fileURL: databaseFileURL)
+        defer { try? FileManager.default.removeItem(at: databaseFileURL) }
+
+        let snapshot = await database.snapshot()
+        var completedPlan = snapshot.activePlan
+        let planDay = completedPlan.days[0]
+        let planExercise = planDay.exercises[0]
+        completedPlan.days[0].exercises[0].sets[0].completedAt = Date()
+        completedPlan.days[0].exercises[0].sets[0].linkedExerciseSetId = "logged-set"
+
+        let sessionDate = WorkoutDateFormatter().date(from: planDay.planDate) ?? Date()
+        let session = WorkoutSession(
+            id: UUID().uuidString,
+            userId: snapshot.profile.id,
+            date: sessionDate,
+            durationMinutes: nil,
+            label: planDay.title,
+            exercises: [
+                Exercise(
+                    id: UUID().uuidString,
+                    name: planExercise.exerciseName,
+                    exerciseId: planExercise.exerciseId,
+                    exerciseLoadType: planExercise.exerciseLoadType,
+                    sets: [
+                        ExerciseSet(
+                            id: "logged-set",
+                            setIndex: 1,
+                            weight: 60,
+                            weightUnit: .kg,
+                            reps: 8,
+                            rpe: nil
+                        )
+                    ]
+                )
+            ],
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+
+        await database.replaceAll(
+            profile: snapshot.profile,
+            activePlan: completedPlan,
+            strengthSessions: [session],
+            runningRecords: [],
+            customExercises: snapshot.customExercises,
+            goalSpec: snapshot.goalSpec
+        )
+
+        let maybeLoadedPlan = await database.activePlan()
+        let loadedPlan = try XCTUnwrap(maybeLoadedPlan)
+        XCTAssertTrue(loadedPlan.days[0].exercises[0].sets[0].isCompleted)
+        XCTAssertEqual(loadedPlan.days[0].exercises[0].sets[0].linkedExerciseSetId, "logged-set")
+    }
 }

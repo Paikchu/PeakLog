@@ -249,11 +249,13 @@ actor LocalAppDatabase {
     }
 
     func activePlan() -> TrainingPlan? {
-        state.activePlan
+        sanitizePlanCompletionLinks()
+        return state.activePlan
     }
 
     func todayPlan() -> TrainingPlanDay? {
-        state.activePlan.days.first(where: { $0.planDate == Self.planDateString(from: Date()) })
+        sanitizePlanCompletionLinks()
+        return state.activePlan.days.first(where: { $0.planDate == Self.planDateString(from: Date()) })
     }
 
     func activeDaysInMonth(year: Int, month: Int) -> [Date] {
@@ -1078,6 +1080,7 @@ actor LocalAppDatabase {
         state.runningRecords = runningRecords
         state.customExercises = customExercises
         state.goalSpec = goalSpec
+        sanitizePlanCompletionLinks()
         recalculateDerivedProfile()
         try? writeStateToDisk()
     }
@@ -1119,9 +1122,34 @@ actor LocalAppDatabase {
         state.runningRecords = mergeRecords(cloud: runningRecords, local: state.runningRecords)
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
         state.goalSpec = goalSpec
+        sanitizePlanCompletionLinks()
         // pendingEditEvents / editEventSeq deliberately untouched (EV1).
         recalculateDerivedProfile()
         try? writeStateToDisk()
+    }
+
+    private func sanitizePlanCompletionLinks() {
+        let loggedSetIds = Set(state.strengthSessions.flatMap { session in
+            session.exercises.flatMap { exercise in
+                exercise.sets.map(\.id)
+            }
+        })
+
+        for dayIndex in state.activePlan.days.indices {
+            for exerciseIndex in state.activePlan.days[dayIndex].exercises.indices {
+                for setIndex in state.activePlan.days[dayIndex].exercises[exerciseIndex].sets.indices {
+                    let set = state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex]
+                    guard set.completedAt != nil || set.linkedExerciseSetId != nil else { continue }
+                    guard let linkedSetId = set.linkedExerciseSetId,
+                          loggedSetIds.contains(linkedSetId)
+                    else {
+                        state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex].completedAt = nil
+                        state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex].linkedExerciseSetId = nil
+                        continue
+                    }
+                }
+            }
+        }
     }
 
     /// Last-write-wins merge for record lists that carry `updatedAt`. Cloud is
