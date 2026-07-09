@@ -103,8 +103,8 @@ PeakLog 当前是纯本地运行的 iOS App:
 
 ## 6. Action Items
 
-1. [ ] **Phase 0 — 登录 + 云同步**(关键路径,详见 `docs/plans/2026-07-07-phase0-auth-sync-plan.md`)
-2. [ ] **Phase 1 — 事件与溯源基建**:客户端 `PlanEditEvent` 记录;后端 `plan_edit_events`、`plan_generations` 表;GoalSpec 模型与录入 UI
-3. [ ] **Phase 2 — 周生成主链路**:ContextBuilder + 生成 Edge Function + Validator + repair loop + pg_cron 周日晚任务
-4. [ ] **Phase 3 — 周中动态重排**:行为推断触发 + Today 页一键输入触发
-5. [ ] 指标看板:依从率/编辑率/进阶速度的最小统计
+1. [x] **Phase 0 — 登录 + 云同步**(关键路径,详见 `docs/plans/2026-07-07-phase0-auth-sync-plan.md`;落地日志 `docs/logs/2026-07-07-phase0-*.md`)
+2. [x] **Phase 1 — 事件与溯源基建**:客户端 `PlanEditEvent` 记录;后端 `plan_edit_events`、`plan_generations` 表;GoalSpec 模型与录入 UI(日志 `docs/logs/2026-07-08-phase1-edit-events-goalspec-generations.md`)
+3. [x] **Phase 2 — 周生成主链路**:ContextBuilder + 生成 Edge Function + Validator + repair loop + pg_cron 周日晚任务(日志 `docs/logs/2026-07-08-phase2-weekly-generation.md`)
+4. [x] **Phase 3 — 周中动态重排**:行为推断触发 + Today 页一键输入触发(日志 `docs/logs/2026-07-08-phase3-midweek-replan.md`)
+5. [ ] 指标看板:依从率/编辑率/进阶速度的最小统计(另立项,未排期)
