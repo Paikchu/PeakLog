@@ -38,7 +38,6 @@ struct DailyRecordSheet: View {
     @State private var path: [Route] = []
 
     let onSave: (DailyRecordDraft) async -> Void
-    var initialDate: Date = Date()
 
     private var formSpring: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
@@ -217,7 +216,7 @@ struct DailyRecordSheet: View {
         case .strength:
             return DailyRecordDraftBuilder.strengthDraft(
                 title: title,
-                workoutDate: initialDate,
+                workoutDate: Date(),
                 exercises: exercises
             ).map(DailyRecordDraft.strength)
         case .cardio:

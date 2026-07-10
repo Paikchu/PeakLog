@@ -2682,13 +2682,6 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "记录力量或有氧训练，完成后会显示在这里" } }
       }
     },
-    "history.empty.add_record": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Add workout" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加训练记录" } }
-      }
-    },
     "history.calendar.open": {
       "extractionState": "manual",
       "localizations": {

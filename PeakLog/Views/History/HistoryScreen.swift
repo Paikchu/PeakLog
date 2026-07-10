@@ -3,7 +3,6 @@ import SwiftUI
 struct HistoryScreen: View {
     @StateObject private var viewModel = HistoryViewModel()
     @State private var showsCalendarPopup = false
-    @State private var showsDailyRecordSheet = false
     @Environment(\.locale) private var locale
 
     var body: some View {
@@ -20,11 +19,6 @@ struct HistoryScreen: View {
         .background(Color.appBackground.ignoresSafeArea())
         .sheet(isPresented: $showsCalendarPopup) {
             CalendarPopupSheet(viewModel: viewModel)
-        }
-        .sheet(isPresented: $showsDailyRecordSheet) {
-            DailyRecordSheet(initialDate: viewModel.selectedDate) { draft in
-                await viewModel.addDailyRecord(draft)
-            }
         }
         .task {
             await viewModel.loadPlan()
@@ -91,29 +85,12 @@ struct HistoryScreen: View {
                 locale: locale
             )
             VStack(alignment: .leading, spacing: 12) {
-                Text(selectedDateLabel)
-                    .font(.rootPageEyebrow)
-                    .kerning(0.8)
-                    .foregroundColor(.textMuted)
                 Text(content.title)
                     .font(.rootPageTitle)
                     .foregroundColor(.textPrimary)
                 Text(content.subtitle)
                     .font(.system(size: 15))
                     .foregroundColor(.textSecondary)
-                Button {
-                    showsDailyRecordSheet = true
-                } label: {
-                    Label("history.empty.add_record", systemImage: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .frame(height: 42)
-                        .background(Color.accentPrimary)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("history.empty.addRecord")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, RootPageHeaderMetrics.horizontalPadding)

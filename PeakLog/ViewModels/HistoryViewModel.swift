@@ -94,26 +94,6 @@ final class HistoryViewModel: ObservableObject {
         isLoadingSessions = false
     }
 
-    func addDailyRecord(_ draft: DailyRecordDraft) async {
-        do {
-            switch draft {
-            case .strength(let strengthDraft):
-                _ = try await workoutService.createStrengthSession(strengthDraft)
-            case .cardio(let durationMinutes, let distanceKm):
-                _ = try await workoutService.createRunningRecord(
-                    workoutDate: selectedDate,
-                    durationMinutes: durationMinutes,
-                    distanceKm: distanceKm,
-                    source: .manual
-                )
-            }
-            await loadSessionsForSelectedDate()
-            await loadCalendar()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     // MARK: - Navigate Months
     func goToPreviousMonth() {
         if let prev = Calendar.current.date(byAdding: .month, value: -1, to: displayedMonth) {
