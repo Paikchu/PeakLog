@@ -2,8 +2,18 @@ import SwiftUI
 
 struct CalendarGridView: View {
     @ObservedObject var viewModel: HistoryViewModel
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
     @Environment(\.locale) private var locale
+
+    /// When true (popup mode) the grid stays in month view and the
+    /// week/month toggle is hidden.
+    private let alwaysExpanded: Bool
+
+    init(viewModel: HistoryViewModel, alwaysExpanded: Bool = false) {
+        self.viewModel = viewModel
+        self.alwaysExpanded = alwaysExpanded
+        _isExpanded = State(initialValue: alwaysExpanded)
+    }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
@@ -28,15 +38,66 @@ struct CalendarGridView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            expandToggle
+            if !alwaysExpanded {
+                expandToggle
+            }
+
+            if viewModel.hasCompletedRecords {
+                completedSummaryRow
+            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
-        .padding(.bottom, 6)
+        .padding(.bottom, viewModel.hasCompletedRecords ? 12 : 6)
         .background(Color.appSurface)
         .cornerRadius(AppRadius.xl)
         .clipped()
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isExpanded)
+    }
+
+    // MARK: - Completed Day Summary (merged, compact)
+    private var completedSummaryRow: some View {
+        let summary = viewModel.completedDaySummary
+        return VStack(alignment: .leading, spacing: 8) {
+            Divider().background(Color.appSeparator)
+
+            HStack(spacing: 8) {
+                if summary.strengthExerciseCount > 0 {
+                    summaryPill(
+                        value: LocalizedPlanText.completedStrengthValue(summary.strengthExerciseCount, locale: locale),
+                        tint: .accentPrimary
+                    )
+                }
+                if summary.strengthSetCount > 0 {
+                    summaryPill(
+                        value: LocalizedPlanText.completedSetValue(summary.strengthSetCount, locale: locale),
+                        tint: .green
+                    )
+                }
+                if summary.cardioRecordCount > 0 {
+                    summaryPill(
+                        value: LocalizedPlanText.completedCardioValue(summary.cardioRecordCount, locale: locale),
+                        tint: .teal
+                    )
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func summaryPill(value: String, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(tint)
+                .frame(width: 5, height: 5)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.textPrimary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.1))
+        .clipShape(Capsule())
     }
 
     // MARK: - Month Navigation

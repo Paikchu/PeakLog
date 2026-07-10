@@ -542,8 +542,6 @@ private struct TodaySummarySection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-        .padding(.top, 8)
     }
 
     private func planSummary(_ plan: TrainingPlanDay) -> some View {
@@ -555,23 +553,9 @@ private struct TodaySummarySection: View {
         let isPlanComplete = plan.totalSetsCount > 0 && plan.completedSetsCount >= plan.totalSetsCount
 
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                dateEyebrow(color: .accentPrimary)
-                if isPlanComplete {
-                    completedChip
-                }
+            RootPageHeader(eyebrow: TodayHeaderDateText.eyebrow(locale: locale), title: header.title, subtitle: header.subtitle) {
+                if isPlanComplete { completedChip } else { Color.clear }
             }
-
-            Text(header.title)
-                .font(.system(size: 30, weight: .bold))
-                .foregroundColor(.textPrimary)
-
-            if let subtitle = header.subtitle {
-                Text(subtitle)
-                    .font(.system(size: 15))
-                    .foregroundColor(.textSecondary)
-            }
-
             if plan.totalSetsCount > 0 {
                 HStack(spacing: 10) {
                     PlanProgressBar(
@@ -589,6 +573,7 @@ private struct TodaySummarySection: View {
                     .foregroundColor(.textSecondary)
                     .contentTransition(.numericText())
                 }
+                .padding(.horizontal, RootPageHeaderMetrics.horizontalPadding)
                 .padding(.top, 2)
             }
 
@@ -607,58 +592,45 @@ private struct TodaySummarySection: View {
             ))
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(.textSecondary)
+            .padding(.horizontal, RootPageHeaderMetrics.horizontalPadding)
             .padding(.top, 2)
         }
     }
 
     private var freeRecordSummary: some View {
         VStack(alignment: .leading, spacing: 10) {
-            dateEyebrow(color: .textMuted)
-            Text("today.summary.free_record_day.title")
-                .font(.system(size: 30, weight: .bold))
-                .foregroundColor(.textPrimary)
-            Text("today.summary.free_record_day.subtitle")
-                .font(.system(size: 15))
-                .foregroundColor(.textSecondary)
+            RootPageHeader(
+                eyebrow: TodayHeaderDateText.eyebrow(locale: locale),
+                title: String(localized: "today.summary.free_record_day.title"),
+                subtitle: String(localized: "today.summary.free_record_day.subtitle")
+            )
             runningPlanSummary
         }
     }
 
     private var runningOnlySummary: some View {
         VStack(alignment: .leading, spacing: 10) {
-            dateEyebrow(color: .textMuted)
-            Text("today.summary.running_only.title")
-                .font(.system(size: 30, weight: .bold))
-                .foregroundColor(.textPrimary)
-
-            Text(LocalizedPlanText.todayRunningRecordsSummary(
-                distance: state.totalDistance.cleanDistance,
-                durationMinutes: state.totalDuration,
-                count: state.runningRecords.count,
-                locale: locale
-            ))
-            .font(.system(size: 15))
-            .foregroundColor(.textMuted)
+            RootPageHeader(
+                eyebrow: TodayHeaderDateText.eyebrow(locale: locale),
+                title: String(localized: "today.summary.running_only.title"),
+                subtitle: LocalizedPlanText.todayRunningRecordsSummary(
+                    distance: state.totalDistance.cleanDistance,
+                    durationMinutes: state.totalDuration,
+                    count: state.runningRecords.count,
+                    locale: locale
+                )
+            )
         }
     }
 
     private var emptySummary: some View {
         VStack(alignment: .leading, spacing: 10) {
-            dateEyebrow(color: .textMuted)
-            Text("today.summary.empty.title")
-                .font(.system(size: 30, weight: .bold))
-                .foregroundColor(.textPrimary)
-            Text("today.summary.empty.subtitle")
-                .font(.system(size: 15))
-                .foregroundColor(.textSecondary)
+            RootPageHeader(
+                eyebrow: TodayHeaderDateText.eyebrow(locale: locale),
+                title: String(localized: "today.summary.empty.title"),
+                subtitle: String(localized: "today.summary.empty.subtitle")
+            )
         }
-    }
-
-    private func dateEyebrow(color: Color) -> some View {
-        Text(TodayHeaderDateText.eyebrow(locale: locale))
-            .font(.system(size: 12, weight: .semibold))
-            .kerning(0.8)
-            .foregroundColor(color)
     }
 
     private var completedChip: some View {

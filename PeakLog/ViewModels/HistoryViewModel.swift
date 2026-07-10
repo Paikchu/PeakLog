@@ -18,22 +18,33 @@ final class HistoryViewModel: ObservableObject {
     @Published var isLoadingPlan: Bool = false
     @Published var errorMessage: String?
 
+    @Published var exerciseLibrary: [ExerciseDefinition] = []
+
     private let workoutService: WorkoutServiceProtocol
     private let trainingPlanService: TrainingPlanServiceProtocol
+    private let exerciseLibraryService: ExerciseLibraryServiceProtocol?
 
     init(
         workoutService: WorkoutServiceProtocol,
-        trainingPlanService: TrainingPlanServiceProtocol
+        trainingPlanService: TrainingPlanServiceProtocol,
+        exerciseLibraryService: ExerciseLibraryServiceProtocol? = nil
     ) {
         self.workoutService = workoutService
         self.trainingPlanService = trainingPlanService
+        self.exerciseLibraryService = exerciseLibraryService
     }
 
     convenience init() {
         self.init(
             workoutService: AppServices.workoutService,
-            trainingPlanService: AppServices.trainingPlanService
+            trainingPlanService: AppServices.trainingPlanService,
+            exerciseLibraryService: AppServices.exerciseLibraryService
         )
+    }
+
+    func loadExerciseLibrary() async {
+        guard let exerciseLibraryService else { return }
+        exerciseLibrary = await exerciseLibraryService.fetchLibrary()
     }
 
     // MARK: - Load Calendar
@@ -81,6 +92,26 @@ final class HistoryViewModel: ObservableObject {
             sessions = []
         }
         isLoadingSessions = false
+    }
+
+    func addDailyRecord(_ draft: DailyRecordDraft) async {
+        do {
+            switch draft {
+            case .strength(let strengthDraft):
+                _ = try await workoutService.createStrengthSession(strengthDraft)
+            case .cardio(let durationMinutes, let distanceKm):
+                _ = try await workoutService.createRunningRecord(
+                    workoutDate: selectedDate,
+                    durationMinutes: durationMinutes,
+                    distanceKm: distanceKm,
+                    source: .manual
+                )
+            }
+            await loadSessionsForSelectedDate()
+            await loadCalendar()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Navigate Months
@@ -199,6 +230,13 @@ final class HistoryViewModel: ObservableObject {
 
     var hasCompletedRecords: Bool {
         completedDaySummary.hasCompletedRecords
+    }
+
+    var completedMuscleGroups: [MuscleGroup] {
+        HistoryCompletedAggregator.dominantMuscleGroups(
+            sessions: sessions,
+            library: exerciseLibrary
+        )
     }
 
     var displayedMonthTitle: String {

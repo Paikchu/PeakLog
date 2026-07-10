@@ -95,21 +95,7 @@ struct ProfileScreen: View {
 
     // MARK: - Header
     private var header: some View {
-        HStack {
-            Color.clear.frame(width: 38, height: 38)
-
-            Spacer()
-
-            Text("profile.title")
-                .font(.screenTitle)
-                .foregroundColor(.textPrimary)
-
-            Spacer()
-            Color.clear.frame(width: 38, height: 38)
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        RootPageHeader(title: String(localized: "profile.title"))
     }
 
     // MARK: - Avatar
