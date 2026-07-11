@@ -15,3 +15,12 @@
 - GREEN：`node --test backend/tests/*.test.mjs` 通过。
 - `git diff --check` 通过。
 - Supabase CLI 2.75.0 可用；本机 Docker daemon 未运行，无法执行 `supabase db reset`。
+
+## 远端 Supabase 验收
+
+- `cross_tenant_plan_integrity` 已应用到项目 `fqyurmsuvtdafbnynurg`；六个复合外键均为 `convalidated = true`。
+- 清理后 `training_plan_sets` 与 `exercise_sets` 的跨租户关联计数为 0。
+- 首次 Edge Function 部署复现 #70：旧 `./_shared` import 无法打包；修正并补 RED/GREEN 测试后部署成功。
+- `generate-weekly-plan` 以 `--no-verify-jwt` 部署，由函数内部校验 generation secret 或用户 JWT，兼容现有 cron 请求。
+- 无鉴权 POST 命中函数并返回 HTTP 401 `{"error":"unauthorized"}`；远端函数为 ACTIVE。
+- 远端仅有 1 个真实账号，无法使用生产账号执行 A/B 双用户攻击请求；数据库约束、历史数据扫描及 service-role 查询测试共同覆盖该风险。
