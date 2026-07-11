@@ -16,6 +16,7 @@ actor CloudSyncCoordinator {
 
     private var isPushing = false
     private var pushAgain = false
+    private var hasCompletedInitialPull = false
     private(set) var hasUnpushedChanges = false
     private(set) var lastErrorDescription: String?
     private let onStatusChange: (@Sendable (CloudSyncStatus) -> Void)?
@@ -46,10 +47,19 @@ actor CloudSyncCoordinator {
     /// while still dropping seed rows (non-UUID ids) so a later push can
     /// never send non-cloud rows. See `LocalAppDatabase.mergeFromCloud`
     /// (Issue #1 fix).
-    func start() async {
+    @discardableResult
+    func start() async -> Bool {
+        guard await database.isCloudSyncSafe() else {
+            let message = "Local data needs recovery before cloud sync can start."
+            lastErrorDescription = message
+            onStatusChange?(.pendingRetry(message))
+            return false
+        }
         await database.prepareForCloudUser(userId)
-        await pull()
+        guard await pull() else { return false }
+        hasCompletedInitialPull = true
         await installChangeHook()
+        return true
     }
 
     func stop() async {
@@ -59,6 +69,12 @@ actor CloudSyncCoordinator {
     /// On returning to the foreground: if we owe the cloud a push, retry it;
     /// otherwise pull to pick up anything changed on another device.
     func onForeground() async {
+        guard hasCompletedInitialPull else {
+            guard await pull() else { return }
+            hasCompletedInitialPull = true
+            await installChangeHook()
+            return
+        }
         if hasUnpushedChanges {
             await requestPush()
         } else {
@@ -68,7 +84,14 @@ actor CloudSyncCoordinator {
 
     // MARK: - Pull
 
-    func pull() async {
+    @discardableResult
+    func pull() async -> Bool {
+        guard await database.isCloudSyncSafe() else {
+            let message = "Local data needs recovery before cloud sync can continue."
+            lastErrorDescription = message
+            onStatusChange?(.pendingRetry(message))
+            return false
+        }
         do {
             let snapshot = try await loader.load(userId: userId)
             // Merge (not replace) so offline user records survive the login
@@ -83,8 +106,12 @@ actor CloudSyncCoordinator {
                 goalSpec: snapshot.goalSpec
             )
             lastErrorDescription = nil
+            return true
         } catch {
-            lastErrorDescription = "pull: \(error)"
+            let description = "\(error)"
+            lastErrorDescription = "pull: \(description)"
+            onStatusChange?(.pendingRetry(description))
+            return false
         }
     }
 
@@ -101,6 +128,7 @@ actor CloudSyncCoordinator {
     /// at most one in-flight push plus one queued re-run that captures the
     /// latest snapshot.
     func requestPush() async {
+        guard hasCompletedInitialPull else { return }
         hasUnpushedChanges = true
         if isPushing {
             pushAgain = true
@@ -140,7 +168,7 @@ actor CloudSyncCoordinator {
         // and re-snapshotting picks it up so the push echoes it back intact.
         // See Phase 3 plan §4.2/§4.3.
         if try await serverPlanRevisionAdvanced(beyond: snapshot.activePlan) {
-            await pull()
+            guard await pull() else { throw CloudSyncError.requiredPullFailed }
             snapshot = await database.snapshot()
         }
 
@@ -224,6 +252,17 @@ actor CloudSyncCoordinator {
         ])
         guard let serverRevision = rows.first?.revision else { return false }
         return serverRevision != localPlan.revision
+    }
+}
+
+private enum CloudSyncError: LocalizedError {
+    case requiredPullFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .requiredPullFailed:
+            return "Required cloud pull failed; push was not attempted."
+        }
     }
 }
 
