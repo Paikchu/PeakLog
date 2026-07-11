@@ -27,11 +27,11 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildContext, buildReplanContext, summarizeCurrentWeekDays } from "./_shared/contextBuilder.mjs";
-import { validateWeeklyPlan, validateReplanDays } from "./_shared/validator.mjs";
-import { generateWithDeepSeek, generateWithRetry, LlmError } from "./_shared/llm.mjs";
-import { SYSTEM_PROMPT, PROMPT_VERSION, buildUserMessage, REPLAN_SYSTEM_PROMPT, REPLAN_PROMPT_VERSION, buildReplanUserMessage } from "./_shared/prompt.mjs";
-import { EXERCISE_LIBRARY, EXERCISE_LIBRARY_VERSION } from "./_shared/exerciseLibrary.mjs";
+import { buildContext, buildReplanContext, summarizeCurrentWeekDays } from "../_shared/contextBuilder.mjs";
+import { validateWeeklyPlan, validateReplanDays } from "../_shared/validator.mjs";
+import { generateWithDeepSeek, generateWithRetry, LlmError } from "../_shared/llm.mjs";
+import { SYSTEM_PROMPT, PROMPT_VERSION, buildUserMessage, REPLAN_SYSTEM_PROMPT, REPLAN_PROMPT_VERSION, buildReplanUserMessage } from "../_shared/prompt.mjs";
+import { EXERCISE_LIBRARY, EXERCISE_LIBRARY_VERSION } from "../_shared/exerciseLibrary.mjs";
 import { fetchOwnedActualSets } from "../_shared/ownershipQueries.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;

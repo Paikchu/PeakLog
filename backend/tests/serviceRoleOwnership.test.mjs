@@ -10,6 +10,21 @@ test('ownership query helper import resolves from the function entrypoint to the
   assert.doesNotMatch(source, /from "\.\/_shared\/ownershipQueries\.mjs";/);
 });
 
+test('all shared modules resolve from the function entrypoint to the shared sibling directory', async () => {
+  const source = await readFile(functionUrl, 'utf8');
+  for (const moduleName of [
+    'contextBuilder',
+    'validator',
+    'llm',
+    'prompt',
+    'exerciseLibrary',
+    'ownershipQueries',
+  ]) {
+    assert.match(source, new RegExp(`from "\\.\\.\\/_shared\\/${moduleName}\\.mjs";`));
+    assert.doesNotMatch(source, new RegExp(`from "\\.\\/_shared\\/${moduleName}\\.mjs";`));
+  }
+});
+
 test('per-user inference reads explicitly scope every plan hierarchy table by user_id', async () => {
   const source = await readFile(functionUrl, 'utf8');
   const inferenceGate = source.slice(source.indexOf('async function inferenceGateOpen'), source.indexOf('// MARK: - Weekly generation'));
