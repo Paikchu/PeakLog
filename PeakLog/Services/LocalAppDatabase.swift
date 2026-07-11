@@ -27,6 +27,7 @@ private extension String {
 }
 
 nonisolated private struct LocalAppState: Codable, Sendable {
+    var ownerUserId: String?
     var profile: UserProfile
     var activePlan: TrainingPlan
     var strengthSessions: [WorkoutSession]
@@ -43,6 +44,7 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     var editEventSeq: Int64
 
     init(
+        ownerUserId: String? = nil,
         profile: UserProfile,
         activePlan: TrainingPlan,
         strengthSessions: [WorkoutSession],
@@ -52,6 +54,7 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         pendingEditEvents: [PlanEditEvent] = [],
         editEventSeq: Int64 = 0
     ) {
+        self.ownerUserId = ownerUserId
         self.profile = profile
         self.activePlan = activePlan
         self.strengthSessions = strengthSessions
@@ -65,6 +68,7 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     // Custom decode keeps state files written before newer fields existed loadable.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        ownerUserId = try container.decodeIfPresent(String.self, forKey: .ownerUserId)
         profile = try container.decode(UserProfile.self, forKey: .profile)
         activePlan = try container.decode(TrainingPlan.self, forKey: .activePlan)
         strengthSessions = try container.decode([WorkoutSession].self, forKey: .strengthSessions)
@@ -119,9 +123,23 @@ actor LocalAppDatabase {
         state.pendingEditEvents.removeAll { $0.userId != userId }
     }
 
-    func disarmCloudSync() {
+    func disarmCloudSync(userId: String) {
+        guard armedUserId == userId else { return }
         armedUserId = nil
         onChange = nil
+    }
+
+    /// Enters the signed-in user's local account boundary before any pull or
+    /// push. A different (or legacy unowned) cache is discarded so a failed
+    /// first pull can never expose or upload the previous account's records.
+    func prepareForCloudUser(_ userId: String) {
+        guard state.ownerUserId != userId else { return }
+        var cleanState = Self.makeSeedState()
+        cleanState.ownerUserId = userId
+        state = cleanState
+        armedUserId = nil
+        onChange = nil
+        try? writeStateToDisk()
     }
 
     init(fileURL: URL? = nil) {
@@ -1135,10 +1153,17 @@ actor LocalAppDatabase {
         customExercises: [ExerciseDefinition],
         goalSpec: GoalSpec?
     ) {
+        let ownerUserId = state.ownerUserId
         state.profile = profile
         state.activePlan = mergePlanPreservingCompletions(cloud: activePlan, local: state.activePlan)
-        state.strengthSessions = mergeRecords(cloud: strengthSessions, local: state.strengthSessions)
-        state.runningRecords = mergeRecords(cloud: runningRecords, local: state.runningRecords)
+        state.strengthSessions = mergeRecords(
+            cloud: strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            local: state.strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId }
+        )
+        state.runningRecords = mergeRecords(
+            cloud: runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            local: state.runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId }
+        )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
         state.goalSpec = goalSpec
         sanitizePlanCompletionLinks()

@@ -2,6 +2,146 @@ import XCTest
 @testable import PeakLog
 
 final class PeakLogSmokeTests: XCTestCase {
+    func testSwitchingAccountsClearsPreviousUsersSensitiveLocalData() async throws {
+        let databaseFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("account-isolation-\(UUID().uuidString).json")
+        let database = LocalAppDatabase(fileURL: databaseFileURL)
+        defer { try? FileManager.default.removeItem(at: databaseFileURL) }
+
+        await database.prepareForCloudUser("user-a")
+        let seed = await database.snapshot()
+        let userAProfile = UserProfile(
+            id: "user-a",
+            displayName: seed.profile.displayName,
+            avatarURL: seed.profile.avatarURL,
+            membershipLevel: seed.profile.membershipLevel,
+            stats: seed.profile.stats,
+            preferences: seed.profile.preferences,
+            fitnessGoalSummary: seed.profile.fitnessGoalSummary,
+            exercisePRs: seed.profile.exercisePRs
+        )
+        let now = Date()
+        let session = WorkoutSession(
+            id: UUID().uuidString,
+            userId: "user-a",
+            date: now,
+            durationMinutes: 45,
+            label: "A private workout",
+            exercises: [],
+            createdAt: now,
+            updatedAt: now
+        )
+        let run = RunningWorkoutRecord(
+            id: UUID().uuidString,
+            userId: "user-a",
+            workoutDate: now,
+            durationMinutes: 30,
+            distanceKm: 5,
+            source: .manual,
+            createdAt: now,
+            updatedAt: now
+        )
+        let custom = ExerciseDefinition(
+            id: "custom-\(UUID().uuidString)",
+            nameEN: "A Private Movement",
+            nameZH: "A 私人动作",
+            muscleGroup: .chest,
+            equipment: .other,
+            loadType: .weighted,
+            isCustom: true
+        )
+        await database.replaceAll(
+            profile: userAProfile,
+            activePlan: seed.activePlan,
+            strengthSessions: [session],
+            runningRecords: [run],
+            customExercises: [custom],
+            goalSpec: seed.goalSpec
+        )
+
+        await database.prepareForCloudUser("user-b")
+        let userB = await database.snapshot()
+
+        XCTAssertFalse(userB.strengthSessions.contains(where: { $0.userId == "user-a" }))
+        XCTAssertFalse(userB.runningRecords.contains(where: { $0.userId == "user-a" }))
+        XCTAssertFalse(userB.customExercises.contains(where: { $0.id == custom.id }))
+
+        await database.prepareForCloudUser("user-a")
+        await database.mergeFromCloud(
+            profile: userAProfile,
+            activePlan: seed.activePlan,
+            strengthSessions: [session],
+            runningRecords: [run],
+            customExercises: [custom],
+            goalSpec: seed.goalSpec
+        )
+        let restoredUserA = await database.snapshot()
+
+        XCTAssertEqual(restoredUserA.strengthSessions.map(\.id), [session.id])
+        XCTAssertEqual(restoredUserA.runningRecords.map(\.id), [run.id])
+        XCTAssertTrue(restoredUserA.customExercises.contains(where: { $0.id == custom.id }))
+    }
+
+    func testCloudMapperRejectsDomainRecordsOwnedByAnotherUser() async throws {
+        let databaseFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mapper-account-isolation-\(UUID().uuidString).json")
+        let database = LocalAppDatabase(fileURL: databaseFileURL)
+        defer { try? FileManager.default.removeItem(at: databaseFileURL) }
+        let seed = await database.snapshot()
+        let now = Date()
+        let foreignSession = WorkoutSession(
+            id: UUID().uuidString,
+            userId: "user-a",
+            date: now,
+            durationMinutes: nil,
+            label: nil,
+            exercises: [],
+            createdAt: now,
+            updatedAt: now
+        )
+        let snapshot = LocalDataSnapshot(
+            profile: UserProfile(
+                id: "user-b",
+                displayName: seed.profile.displayName,
+                avatarURL: seed.profile.avatarURL,
+                membershipLevel: seed.profile.membershipLevel,
+                stats: seed.profile.stats,
+                preferences: seed.profile.preferences,
+                fitnessGoalSummary: seed.profile.fitnessGoalSummary,
+                exercisePRs: seed.profile.exercisePRs
+            ),
+            activePlan: seed.activePlan,
+            strengthSessions: [foreignSession],
+            runningRecords: [],
+            customExercises: [],
+            goalSpec: nil,
+            pendingEditEvents: []
+        )
+
+        XCTAssertThrowsError(try CloudMapper.pushBundle(from: snapshot, userId: "user-b"))
+
+        let foreignRun = RunningWorkoutRecord(
+            id: UUID().uuidString,
+            userId: "user-a",
+            workoutDate: now,
+            durationMinutes: 20,
+            distanceKm: 3,
+            source: .manual,
+            createdAt: now,
+            updatedAt: now
+        )
+        let runningSnapshot = LocalDataSnapshot(
+            profile: snapshot.profile,
+            activePlan: snapshot.activePlan,
+            strengthSessions: [],
+            runningRecords: [foreignRun],
+            customExercises: [],
+            goalSpec: nil,
+            pendingEditEvents: []
+        )
+        XCTAssertThrowsError(try CloudMapper.pushBundle(from: runningSnapshot, userId: "user-b"))
+    }
+
     func testWorkoutHistoryAggregatorMergesSessionsForHistory() {
         let now = Date(timeIntervalSince1970: 1_763_545_200)
         let day = ISO8601DateFormatter().date(from: "2026-03-19T00:00:00Z") ?? now

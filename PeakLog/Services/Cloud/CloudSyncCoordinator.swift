@@ -47,12 +47,13 @@ actor CloudSyncCoordinator {
     /// never send non-cloud rows. See `LocalAppDatabase.mergeFromCloud`
     /// (Issue #1 fix).
     func start() async {
+        await database.prepareForCloudUser(userId)
         await pull()
         await installChangeHook()
     }
 
     func stop() async {
-        await database.disarmCloudSync()
+        await database.disarmCloudSync(userId: userId)
     }
 
     /// On returning to the foreground: if we owe the cloud a push, retry it;
@@ -143,7 +144,7 @@ actor CloudSyncCoordinator {
             snapshot = await database.snapshot()
         }
 
-        let bundle = CloudMapper.pushBundle(from: snapshot, userId: userId)
+        let bundle = try CloudMapper.pushBundle(from: snapshot, userId: userId)
 
         // profiles and user_preferences already exist (created by the
         // handle_new_user trigger) and can't be upserted — profiles has no

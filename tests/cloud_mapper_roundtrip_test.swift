@@ -12,7 +12,7 @@ import Foundation
 
 @main
 struct CloudMapperRoundtripTest {
-    static func main() {
+    static func main() throws {
         let userId = "11111111-1111-1111-1111-111111111111"
 
         let planSet = TrainingPlanSet(id: "22222222-0000-0000-0000-000000000001", setIndex: 1,
@@ -64,7 +64,7 @@ struct CloudMapperRoundtripTest {
             goalSpec: goalSpec, pendingEditEvents: [editEvent])
 
         // Push → rows.
-        let bundle = CloudMapper.pushBundle(from: original, userId: userId)
+        let bundle = try CloudMapper.pushBundle(from: original, userId: userId)
 
         // Custom id must lose its "custom-" prefix on the wire.
         precondition(bundle.customExercises[0].id == "aaaaaaaa-0000-0000-0000-000000000001",
