@@ -8,8 +8,6 @@ struct HistoryCompletedTrainingSection: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            HistoryCompletedDaySummaryCard(summary: summary)
-
             if !strengthExercises.isEmpty {
                 sectionHeader(
                     String(localized: "history.completed.strength.title"),
@@ -52,97 +50,6 @@ struct HistoryCompletedTrainingSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
-    }
-}
-
-struct HistoryCompletedDaySummaryCard: View {
-    let summary: CompletedDaySummary
-    @Environment(\.locale) private var locale
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("history.completed.day.title")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.textMuted)
-
-            Text(dayLabel)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.textPrimary)
-
-            Text(summaryLine)
-                .font(.system(size: 14))
-                .foregroundColor(.textSecondary)
-
-            HStack(spacing: 10) {
-                summaryChip(
-                    title: String(localized: "history.completed.summary.strength"),
-                    value: LocalizedPlanText.completedStrengthValue(summary.strengthExerciseCount, locale: locale),
-                    tint: .accentPrimary
-                )
-                summaryChip(
-                    title: String(localized: "history.completed.summary.sets"),
-                    value: LocalizedPlanText.completedSetValue(summary.strengthSetCount, locale: locale),
-                    tint: .green
-                )
-                if summary.cardioRecordCount > 0 {
-                    summaryChip(
-                        title: String(localized: "history.completed.summary.cardio"),
-                        value: LocalizedPlanText.completedCardioValue(summary.cardioRecordCount, locale: locale),
-                        tint: .teal
-                    )
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(Color.appSeparator, lineWidth: 0.5)
-        )
-    }
-
-    private var dayLabel: String {
-        summary.date.formatted(
-            Date.FormatStyle()
-                .locale(locale)
-                .month(.abbreviated)
-                .day()
-        )
-    }
-
-    private var summaryLine: String {
-        var parts: [String] = []
-        if summary.strengthExerciseCount > 0 {
-            parts.append(LocalizedPlanText.completedStrengthLine(summary.strengthExerciseCount, locale: locale))
-        }
-        if summary.cardioRecordCount > 0 {
-            parts.append(LocalizedPlanText.completedCardioLine(summary.cardioRecordCount, locale: locale))
-        }
-        if summary.totalDurationMinutes > 0 {
-            parts.append(LocalizedPlanText.completedDurationLine(summary.totalDurationMinutes, locale: locale))
-        }
-        if summary.totalDistanceKm > 0 {
-            parts.append(LocalizedPlanText.completedDistanceLine(summary.totalDistanceKm.cleanDistance, locale: locale))
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private func summaryChip(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.textMuted)
-            Text(value)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.textPrimary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(tint.opacity(0.08))
-        .cornerRadius(AppRadius.lg)
     }
 }
 

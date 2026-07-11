@@ -110,6 +110,35 @@ enum HistoryCompletedAggregator {
             }
     }
 
+    /// Muscle groups hit by the day's strength work, dominant (most sets) first.
+    /// Exercises that can't be resolved against the library are skipped.
+    static func dominantMuscleGroups(
+        sessions: [WorkoutSession],
+        library: [ExerciseDefinition],
+        limit: Int = 3
+    ) -> [MuscleGroup] {
+        guard !library.isEmpty else { return [] }
+
+        var setCounts: [MuscleGroup: Int] = [:]
+        for exercise in sessions.flatMap(\.exercises) {
+            guard let definition = ExerciseLibraryEngine.resolveDefinition(
+                name: exercise.name,
+                exerciseId: exercise.exerciseId,
+                in: library
+            ) else { continue }
+            setCounts[definition.muscleGroup, default: 0] += max(exercise.sets.count, 1)
+        }
+
+        let rank = { (group: MuscleGroup) in MuscleGroup.allCases.firstIndex(of: group) ?? 0 }
+        return setCounts
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value > rhs.value }
+                return rank(lhs.key) < rank(rhs.key)
+            }
+            .prefix(limit)
+            .map(\.key)
+    }
+
     static func cardioRecords(from runningRecords: [RunningWorkoutRecord]) -> [CompletedCardioRecordViewData] {
         runningRecords.map { record in
             CompletedCardioRecordViewData(

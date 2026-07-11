@@ -55,22 +55,6 @@ enum LocalizedPlanText {
         formatted("history.completed.summary.cardio_value", locale: locale, Int64(count))
     }
 
-    static func completedStrengthLine(_ count: Int, locale: Locale) -> String {
-        formatted("history.completed.line.strength", locale: locale, Int64(count))
-    }
-
-    static func completedCardioLine(_ count: Int, locale: Locale) -> String {
-        formatted("history.completed.line.cardio", locale: locale, Int64(count))
-    }
-
-    static func completedDurationLine(_ minutes: Int, locale: Locale) -> String {
-        formatted("history.completed.line.duration", locale: locale, Int64(minutes))
-    }
-
-    static func completedDistanceLine(_ distance: String, locale: Locale) -> String {
-        formatted("history.completed.line.distance", locale: locale, distance)
-    }
-
     static func completedStrengthBadge(_ setCount: Int, locale: Locale) -> String {
         formatted("history.completed.badge.completed_sets", locale: locale, Int64(setCount))
     }
