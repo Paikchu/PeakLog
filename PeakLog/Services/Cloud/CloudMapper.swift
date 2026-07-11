@@ -21,13 +21,18 @@ nonisolated struct CloudPushBundle: Sendable {
     var editEvents: [PlanEditEventRow]
 }
 
+nonisolated enum CloudMappingError: Error, Equatable {
+    case accountMismatch(expected: String, actual: String, recordType: String, recordId: String)
+}
+
 /// Translates between domain models and PostgREST rows. Pure and static so the
 /// mapping is unit-testable without any network.
 nonisolated enum CloudMapper {
 
     // MARK: - Domain → rows (push)
 
-    static func pushBundle(from snapshot: LocalDataSnapshot, userId: String) -> CloudPushBundle {
+    static func pushBundle(from snapshot: LocalDataSnapshot, userId: String) throws -> CloudPushBundle {
+        try validateOwnership(of: snapshot, userId: userId)
         var exercises: [ExerciseRow] = []
         var exerciseSets: [ExerciseSetRow] = []
         for session in snapshot.strengthSessions {
@@ -117,6 +122,41 @@ nonisolated enum CloudMapper {
             planSets: planSets,
             editEvents: snapshot.pendingEditEvents.map(planEditEventRow(from:))
         )
+    }
+
+    private static func validateOwnership(of snapshot: LocalDataSnapshot, userId: String) throws {
+        guard snapshot.profile.id == userId else {
+            throw CloudMappingError.accountMismatch(
+                expected: userId,
+                actual: snapshot.profile.id,
+                recordType: "profile",
+                recordId: snapshot.profile.id
+            )
+        }
+        for session in snapshot.strengthSessions where session.userId != userId {
+            throw CloudMappingError.accountMismatch(
+                expected: userId,
+                actual: session.userId,
+                recordType: "workoutSession",
+                recordId: session.id
+            )
+        }
+        for record in snapshot.runningRecords where record.userId != userId {
+            throw CloudMappingError.accountMismatch(
+                expected: userId,
+                actual: record.userId,
+                recordType: "runningWorkout",
+                recordId: record.id
+            )
+        }
+        for event in snapshot.pendingEditEvents where event.userId != userId {
+            throw CloudMappingError.accountMismatch(
+                expected: userId,
+                actual: event.userId,
+                recordType: "planEditEvent",
+                recordId: event.id
+            )
+        }
     }
 
     static func goalSpecRow(from spec: GoalSpec, userId: String) -> GoalSpecRow {
