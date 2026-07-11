@@ -850,20 +850,17 @@ async function replanForUser(
       return { status: "dry_run", targetDates, verdictCount: generation.verdicts.length };
     }
 
-    // C25: one retry on an optimistic-lock conflict — re-read the plan's
-    // current revision and try once more before giving up (leaving the
-    // plan as whichever version won the race, never a partial write).
+    // The generated payload is derived from this exact revision. Replaying it
+    // with a newer lock token would overwrite the winner's plan change.
     let installResult = await admin.rpc("replan_plan_days", {
       p_user_id: userId, p_plan_id: target.plan.id, p_days: pDays, p_expected_revision: target.plan.revision,
     });
     if (installResult.error?.message?.includes("revision mismatch")) {
-      const { data: freshPlan } = await admin.from("training_plans").select("revision")
-        .eq("id", target.plan.id).eq("user_id", userId).single();
-      if (freshPlan) {
-        installResult = await admin.rpc("replan_plan_days", {
-          p_user_id: userId, p_plan_id: target.plan.id, p_days: pDays, p_expected_revision: freshPlan.revision,
-        });
-      }
+      await recordGeneration(admin, {
+        userId, planId: target.plan.id, engine: "llm", context, rawResponse: generation.rawResponse, verdicts: generation.verdicts,
+        status: "failed", error: installResult.error.message, kind: "replan", trigger: opts.trigger, signal: opts.signal,
+      });
+      return { status: "conflict", error: installResult.error.message, baseRevision: target.plan.revision };
     }
 
     if (installResult.error) {
