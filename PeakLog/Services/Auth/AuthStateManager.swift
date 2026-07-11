@@ -35,6 +35,7 @@ final class AuthStateManager: ObservableObject {
     private let provider: AuthProviding
     private let store: AuthSessionStoring
     private var session: AuthSession?
+    private var refreshTask: Task<AuthSession, Error>?
 
     init(
         provider: AuthProviding = SupabaseAuthProvider(),
@@ -87,13 +88,26 @@ final class AuthStateManager: ObservableObject {
         if !current.isExpired(now: now) { return current.accessToken }
 
         do {
-            let refreshed = try await provider.refresh(refreshToken: current.refreshToken)
-            persist(refreshed)
-            return refreshed.accessToken
+            if let refreshTask {
+                let refreshed = try await refreshTask.value
+                persist(refreshed)
+                return refreshed.accessToken
+            } else {
+                let provider = provider
+                let token = current.refreshToken
+                let task = Task { try await provider.refresh(refreshToken: token) }
+                refreshTask = task
+                defer { refreshTask = nil }
+                let refreshed = try await task.value
+                persist(refreshed)
+                return refreshed.accessToken
+            }
         } catch {
-            store.clear()
-            session = nil
-            state = .signedOut
+            if session?.refreshToken == current.refreshToken {
+                store.clear()
+                session = nil
+                state = .signedOut
+            }
             throw AuthError.invalidCredentials
         }
     }
