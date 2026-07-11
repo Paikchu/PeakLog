@@ -110,7 +110,11 @@ final class CloudSyncController: ObservableObject {
         isPreparingSession = true
         syncStatus = .idle
         Task {
-            await coordinator.start()   // pulls cloud truth, then arms push-on-change
+            let started = await coordinator.start()
+            guard started else {
+                isPreparingSession = false
+                return
+            }
             await reconcileDeviceTimezone()   // hook is armed by now, so this pushes
             isPreparingSession = false
         }

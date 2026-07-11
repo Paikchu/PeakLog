@@ -80,6 +80,11 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     }
 }
 
+nonisolated enum LocalStateRecoveryStatus: Equatable, Sendable {
+    case healthy
+    case recoveryRequired
+}
+
 actor LocalAppDatabase {
     static let shared = LocalAppDatabase()
 
@@ -87,6 +92,7 @@ actor LocalAppDatabase {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var state: LocalAppState
+    private let recoveryStatus: LocalStateRecoveryStatus
 
     /// Fired after a mutation persists locally, so the cloud syncer can push.
     /// Installed by `CloudSyncCoordinator` only when signed in; nil in DEBUG
@@ -118,6 +124,7 @@ actor LocalAppDatabase {
     /// every pushed row with the *current* signed-in user, so that event
     /// would be silently mis-attributed to B rather than merely rejected.
     func armCloudSync(userId: String, onChange: @escaping @Sendable () -> Void) {
+        guard recoveryStatus == .healthy else { return }
         self.armedUserId = userId
         self.onChange = onChange
         state.pendingEditEvents.removeAll { $0.userId != userId }
@@ -133,6 +140,7 @@ actor LocalAppDatabase {
     /// push. A different (or legacy unowned) cache is discarded so a failed
     /// first pull can never expose or upload the previous account's records.
     func prepareForCloudUser(_ userId: String) {
+        guard recoveryStatus == .healthy else { return }
         guard state.ownerUserId != userId else { return }
         var cleanState = Self.makeSeedState()
         cleanState.ownerUserId = userId
@@ -154,12 +162,20 @@ actor LocalAppDatabase {
         decoder.dateDecodingStrategy = .iso8601
         self.decoder = decoder
 
-        if let data = try? Data(contentsOf: self.fileURL),
-           let loaded = try? decoder.decode(LocalAppState.self, from: data) {
-            self.state = loaded
+        if FileManager.default.fileExists(atPath: self.fileURL.path) {
+            if let data = try? Data(contentsOf: self.fileURL),
+               let loaded = try? decoder.decode(LocalAppState.self, from: data) {
+                self.state = loaded
+                self.recoveryStatus = .healthy
+            } else {
+                self.state = Self.makeSeedState()
+                self.recoveryStatus = .recoveryRequired
+                Self.backUpUnreadableState(at: self.fileURL)
+            }
         } else {
             let seeded = Self.makeSeedState()
             self.state = seeded
+            self.recoveryStatus = .healthy
             try? Self.ensureParentDirectoryExists(for: self.fileURL)
             if let data = try? encoder.encode(seeded) {
                 try? data.write(to: self.fileURL, options: [.atomic])
@@ -1063,6 +1079,7 @@ actor LocalAppDatabase {
     }
 
     private func persist() throws {
+        guard recoveryStatus == .healthy else { throw LocalAppDatabaseError.recoveryRequired }
         try writeStateToDisk()
         onChange?()
     }
@@ -1087,6 +1104,14 @@ actor LocalAppDatabase {
             goalSpec: state.goalSpec,
             pendingEditEvents: state.pendingEditEvents
         )
+    }
+
+    func localStateRecoveryStatus() -> LocalStateRecoveryStatus {
+        recoveryStatus
+    }
+
+    func isCloudSyncSafe() -> Bool {
+        recoveryStatus == .healthy
     }
 
     /// Replace the entire cache with cloud truth. Does not fire `onChange`:
@@ -1277,6 +1302,12 @@ actor LocalAppDatabase {
             withIntermediateDirectories: true,
             attributes: nil
         )
+    }
+
+    private static func backUpUnreadableState(at fileURL: URL) {
+        let backupURL = fileURL.deletingPathExtension()
+            .appendingPathExtension("recovery-\(UUID().uuidString).json")
+        try? FileManager.default.copyItem(at: fileURL, to: backupURL)
     }
 
     private static func defaultFileURL() -> URL {
@@ -1475,6 +1506,7 @@ actor LocalAppDatabase {
 }
 
 enum LocalAppDatabaseError: LocalizedError {
+    case recoveryRequired
     case sessionNotFound
     case exerciseNotFound
     case setNotFound
@@ -1486,6 +1518,8 @@ enum LocalAppDatabaseError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .recoveryRequired:
+            return "Local data needs recovery before it can be changed."
         case .sessionNotFound:
             return "Workout session not found."
         case .exerciseNotFound:
