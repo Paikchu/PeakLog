@@ -27,11 +27,12 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildContext, buildReplanContext, summarizeCurrentWeekDays } from "./_shared/contextBuilder.mjs";
-import { validateWeeklyPlan, validateReplanDays } from "./_shared/validator.mjs";
-import { generateWithDeepSeek, generateWithRetry, LlmError } from "./_shared/llm.mjs";
-import { SYSTEM_PROMPT, PROMPT_VERSION, buildUserMessage, REPLAN_SYSTEM_PROMPT, REPLAN_PROMPT_VERSION, buildReplanUserMessage } from "./_shared/prompt.mjs";
-import { EXERCISE_LIBRARY, EXERCISE_LIBRARY_VERSION } from "./_shared/exerciseLibrary.mjs";
+import { buildContext, buildReplanContext, summarizeCurrentWeekDays } from "../_shared/contextBuilder.mjs";
+import { validateWeeklyPlan, validateReplanDays } from "../_shared/validator.mjs";
+import { generateWithDeepSeek, generateWithRetry, LlmError } from "../_shared/llm.mjs";
+import { SYSTEM_PROMPT, PROMPT_VERSION, buildUserMessage, REPLAN_SYSTEM_PROMPT, REPLAN_PROMPT_VERSION, buildReplanUserMessage } from "../_shared/prompt.mjs";
+import { EXERCISE_LIBRARY, EXERCISE_LIBRARY_VERSION } from "../_shared/exerciseLibrary.mjs";
+import { fetchOwnedActualSets } from "../_shared/ownershipQueries.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -260,13 +261,14 @@ async function inferenceGateOpen(
 
   const { data: dayRow } = await admin
     .from("training_plan_days").select("id")
-    .eq("plan_id", plan.id).eq("plan_date", today)
+    .eq("plan_id", plan.id).eq("user_id", userId).eq("plan_date", today)
     .maybeSingle();
   if (!dayRow) return false; // no plan for today at all
 
   // Must have planned exercises today (a rest day is not a "missed" day).
   const { data: exercises } = await admin
-    .from("training_plan_exercises").select("id").eq("plan_day_id", dayRow.id);
+    .from("training_plan_exercises").select("id")
+    .eq("plan_day_id", dayRow.id).eq("user_id", userId);
   const exerciseIds = (exercises ?? []).map((e: { id: string }) => e.id);
   if (exerciseIds.length === 0) return false;
 
@@ -274,6 +276,7 @@ async function inferenceGateOpen(
   const { count: completedToday } = await admin
     .from("training_plan_sets").select("id", { count: "exact", head: true })
     .in("plan_exercise_id", exerciseIds)
+    .eq("user_id", userId)
     .or("completed_at.not.is.null,linked_exercise_set_id.not.is.null");
   if ((completedToday ?? 0) > 0) return false;
 
@@ -489,10 +492,10 @@ async function fetchSharedFactInputs(admin: ReturnType<typeof createClient>, use
   const planIds = (plans ?? []).map((p) => p.id);
   const [{ data: planExerciseRows }, { data: planSetRows }, { data: editEventRows }] = await Promise.all([
     planIds.length
-      ? admin.from("training_plan_exercises").select("*").in("plan_id", planIds)
+      ? admin.from("training_plan_exercises").select("*").in("plan_id", planIds).eq("user_id", userId)
       : Promise.resolve({ data: [] as unknown[] }),
     planIds.length
-      ? admin.from("training_plan_sets").select("*").in("plan_id", planIds)
+      ? admin.from("training_plan_sets").select("*").in("plan_id", planIds).eq("user_id", userId)
       : Promise.resolve({ data: [] as unknown[] }),
     admin.from("plan_edit_events").select("*")
       .eq("user_id", userId).eq("source", "user").gte("occurred_at", eventLookbackDate.toISOString()),
@@ -503,8 +506,8 @@ async function fetchSharedFactInputs(admin: ReturnType<typeof createClient>, use
     .filter((id: string | null): id is string => id != null);
   const actualSetsById: Record<string, unknown> = {};
   if (linkedSetIds.length) {
-    const { data: actualSets } = await admin.from("exercise_sets").select("*").in("id", linkedSetIds);
-    for (const row of actualSets ?? []) actualSetsById[(row as { id: string }).id] = row;
+    const actualSets = await fetchOwnedActualSets(admin, userId, linkedSetIds);
+    for (const row of actualSets) actualSetsById[(row as { id: string }).id] = row;
   }
 
   // planExerciseRows must be oldest-week-first for buildExerciseHistory's
@@ -543,7 +546,7 @@ async function buildContextForUser(admin: ReturnType<typeof createClient>, userI
     .filter((p) => p.week_start_date < weekStartDate)
     .sort((a, b) => String(b.week_start_date).localeCompare(String(a.week_start_date)))[0];
   const currentWeekPlan = currentWeekPlanRow
-    ? await fetchNestedPlan(admin, currentWeekPlanRow.id)
+    ? await fetchNestedPlan(admin, userId, currentWeekPlanRow.id)
     : null;
 
   return { context, currentWeekPlan };
@@ -569,9 +572,9 @@ async function buildReplanContextForUser(
   if (!plan) return null;
 
   const [{ data: dayRows }, { data: exerciseRows }, { data: setRows }] = await Promise.all([
-    admin.from("training_plan_days").select("*").eq("plan_id", plan.id).order("day_index"),
-    admin.from("training_plan_exercises").select("*").eq("plan_id", plan.id),
-    admin.from("training_plan_sets").select("*").eq("plan_id", plan.id),
+    admin.from("training_plan_days").select("*").eq("plan_id", plan.id).eq("user_id", userId).order("day_index"),
+    admin.from("training_plan_exercises").select("*").eq("plan_id", plan.id).eq("user_id", userId),
+    admin.from("training_plan_sets").select("*").eq("plan_id", plan.id).eq("user_id", userId),
   ]);
 
   const shared = await fetchSharedFactInputs(admin, userId);
@@ -585,11 +588,11 @@ async function buildReplanContextForUser(
   };
 }
 
-async function fetchNestedPlan(admin: ReturnType<typeof createClient>, planId: string) {
+async function fetchNestedPlan(admin: ReturnType<typeof createClient>, userId: string, planId: string) {
   const [{ data: days }, { data: exercises }, { data: sets }] = await Promise.all([
-    admin.from("training_plan_days").select("*").eq("plan_id", planId).order("day_index"),
-    admin.from("training_plan_exercises").select("*").eq("plan_id", planId).order("order_index"),
-    admin.from("training_plan_sets").select("*").eq("plan_id", planId).order("set_index"),
+    admin.from("training_plan_days").select("*").eq("plan_id", planId).eq("user_id", userId).order("day_index"),
+    admin.from("training_plan_exercises").select("*").eq("plan_id", planId).eq("user_id", userId).order("order_index"),
+    admin.from("training_plan_sets").select("*").eq("plan_id", planId).eq("user_id", userId).order("set_index"),
   ]);
   const exercisesByDay = new Map<string, unknown[]>();
   for (const ex of exercises ?? []) {
@@ -854,7 +857,8 @@ async function replanForUser(
       p_user_id: userId, p_plan_id: target.plan.id, p_days: pDays, p_expected_revision: target.plan.revision,
     });
     if (installResult.error?.message?.includes("revision mismatch")) {
-      const { data: freshPlan } = await admin.from("training_plans").select("revision").eq("id", target.plan.id).single();
+      const { data: freshPlan } = await admin.from("training_plans").select("revision")
+        .eq("id", target.plan.id).eq("user_id", userId).single();
       if (freshPlan) {
         installResult = await admin.rpc("replan_plan_days", {
           p_user_id: userId, p_plan_id: target.plan.id, p_days: pDays, p_expected_revision: freshPlan.revision,
