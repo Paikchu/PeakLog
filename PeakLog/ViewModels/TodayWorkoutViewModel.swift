@@ -459,14 +459,12 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
-    func addPlanExercises(_ drafts: [PlanExerciseDraft]) async {
-        guard !drafts.isEmpty else { return }
-        do {
-            let updatedDay = try await trainingPlanService.addPlannedExercises(drafts)
-            todayPlan = updatedDay
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    @discardableResult
+    func addPlanExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay {
+        guard !drafts.isEmpty else { throw NSError(domain: "TodayWorkout", code: 1) }
+        let updatedDay = try await trainingPlanService.addPlannedExercises(drafts)
+        todayPlan = updatedDay
+        return updatedDay
     }
 
     /// 训练进行中（专注模式或最小化态）时不生效；UI 层已阻止长按进入重排模式，此处只做兜底。
@@ -617,37 +615,31 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
-    func addRunningRecord(durationMinutes: Int, distanceKm: Double) async {
-        do {
-            let record = try await workoutService.createRunningRecord(
-                workoutDate: Date(),
-                durationMinutes: durationMinutes,
-                distanceKm: distanceKm,
-                source: .manual
-            )
-            runningRecords.append(record)
-            runningRecords.sort { $0.createdAt < $1.createdAt }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    @discardableResult
+    func addRunningRecord(durationMinutes: Int, distanceKm: Double) async throws -> RunningWorkoutRecord {
+        let record = try await workoutService.createRunningRecord(
+            workoutDate: Date(),
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            source: .manual
+        )
+        runningRecords.append(record)
+        runningRecords.sort { $0.createdAt < $1.createdAt }
+        return record
     }
 
-    func addDailyRecord(_ draft: DailyRecordDraft) async {
+    func addDailyRecord(_ draft: DailyRecordDraft) async throws {
         switch draft {
         case .strength(let strengthDraft):
-            await addStrengthRecord(strengthDraft)
+            try await addStrengthRecord(strengthDraft)
         case .cardio(let durationMinutes, let distanceKm):
-            await addRunningRecord(durationMinutes: durationMinutes, distanceKm: distanceKm)
+            try await addRunningRecord(durationMinutes: durationMinutes, distanceKm: distanceKm)
         }
         await refreshTodayRecordOnly()
     }
 
-    private func addStrengthRecord(_ draft: StrengthSessionDraft) async {
-        do {
-            _ = try await workoutService.createStrengthSession(draft)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    private func addStrengthRecord(_ draft: StrengthSessionDraft) async throws {
+        _ = try await workoutService.createStrengthSession(draft)
     }
 
     private func mergeSessionsIntoRecord(_ sessions: [WorkoutSession]) -> WorkoutRecord? {

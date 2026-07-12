@@ -35,14 +35,13 @@ final class ProfileViewModel: ObservableObject {
         goalSpec = try? await profileService.fetchGoalSpec()
     }
 
-    func saveGoalSpec(_ spec: GoalSpec) async {
+    @discardableResult
+    func saveGoalSpec(_ spec: GoalSpec) async throws -> GoalSpec {
         isSaving = true
-        do {
-            goalSpec = try await profileService.updateGoalSpec(spec)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isSaving = false
+        defer { isSaving = false }
+        let saved = try await profileService.updateGoalSpec(spec)
+        goalSpec = saved
+        return saved
     }
 
     // MARK: - Preferences

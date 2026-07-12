@@ -255,7 +255,7 @@ struct TodayWorkoutScreen: View {
         }
         .sheet(isPresented: $isPresentingAddPlanExercise) {
             AddPlanExerciseSheet { drafts in
-                await viewModel.addPlanExercises(drafts)
+                try await viewModel.addPlanExercises(drafts)
             }
         }
         .confirmationDialog(
