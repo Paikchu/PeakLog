@@ -819,6 +819,20 @@
         }
       }
     },
+    "plan.delete_completed.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delete completed exercise?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除已完成动作？" } }
+      }
+    },
+    "plan.delete_completed.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Deleting %@ will also remove %lld linked training records. This cannot be undone." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "删除 %@ 也会删除 %lld 条关联训练记录，且无法撤销。" } }
+      }
+    },
     "common.done": {
       "extractionState": "manual",
       "localizations": {

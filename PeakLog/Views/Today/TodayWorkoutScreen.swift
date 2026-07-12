@@ -10,6 +10,7 @@ struct TodayWorkoutScreen: View {
     @State private var isPresentingAddPlanExercise = false
     @State private var isPresentingFinishDialog = false
     @State private var isPresentingCancelDialog = false
+    @State private var pendingPlanExerciseDeletion: PendingPlanExerciseDeletion?
     @State private var replanToast: ReplanToast?
     // 专注模式滚动编排：scrolledExerciseId 追踪屏幕中心的卡片，displayedExerciseId 决定哪张卡展开。
     @State private var scrolledExerciseId: String?
@@ -117,9 +118,24 @@ struct TodayWorkoutScreen: View {
                                 Task { await viewModel.reorderTodayPlanExercises(orderedExerciseIds: orderedIds) }
                             },
                             onDeleteExercise: { exerciseId in
-                                Task { await viewModel.deletePlanExercise(planExerciseId: exerciseId) }
+                                requestPlanExerciseDeletion(exerciseId)
                             }
                         )
+                        .confirmationDialog(
+                            "plan.delete_completed.title",
+                            isPresented: Binding(
+                                get: { pendingPlanExerciseDeletion != nil },
+                                set: { if !$0 { pendingPlanExerciseDeletion = nil } }
+                            ),
+                            titleVisibility: .visible
+                        ) {
+                            Button("common.delete", role: .destructive) {
+                                guard let pending = pendingPlanExerciseDeletion else { return }
+                                Task { await viewModel.deletePlanExercise(planExerciseId: pending.exerciseId) }
+                            }
+                        } message: {
+                            Text(pendingDeletionMessage)
+                        }
                     }
                     if !isFocusMode {
                         TodayInlineAddRow(onAddPlanExercise: { isPresentingAddPlanExercise = true })
@@ -267,11 +283,7 @@ struct TodayWorkoutScreen: View {
                 Task { await viewModel.confirmPlanLiveWorkout() }
             }
         } message: {
-            Text(LocalizedPlanText.formatted(
-                "training_session.finish_incomplete.message",
-                locale: locale,
-                Int64(remainingSetsCount)
-            ))
+            Text("training_session.finish_incomplete.message")
         }
         .confirmationDialog(
             "training_session.cancel_confirm.title",
@@ -292,7 +304,7 @@ struct TodayWorkoutScreen: View {
         )) {
             Button("common.ok", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
-            Text(viewModel.errorMessage ?? "")
+            Text(errorMessageText)
         }
     }
 
@@ -301,7 +313,44 @@ struct TodayWorkoutScreen: View {
         return session.totalSetsCount - session.completedSetsCount
     }
 
+    private var errorMessageText: String {
+        viewModel.errorMessage ?? ""
+    }
+
+    private var pendingDeletionMessage: String {
+        guard let pending = pendingPlanExerciseDeletion else {
+            return LocalizedPlanText.localized("plan.delete_completed.message")
+        }
+        return LocalizedPlanText.formatted(
+            "plan.delete_completed.message",
+            locale: locale,
+            pending.exerciseName,
+            Int64(pending.completedSetCount)
+        )
+    }
+
+    private func requestPlanExerciseDeletion(_ exerciseId: String) {
+        guard let exercise = viewModel.todayPlan?.exercises.first(where: { $0.id == exerciseId }) else { return }
+        if PlanExerciseDeletionPolicy.requiresConfirmation(for: exercise) {
+            pendingPlanExerciseDeletion = PendingPlanExerciseDeletion(
+                exerciseId: exercise.id,
+                exerciseName: exercise.exerciseName,
+                completedSetCount: PlanExerciseDeletionPolicy.completedSetCount(for: exercise)
+            )
+        } else {
+            Task { await viewModel.deletePlanExercise(planExerciseId: exercise.id) }
+        }
+    }
+
 }
+
+private struct PendingPlanExerciseDeletion: Identifiable {
+    let exerciseId: String
+    let exerciseName: String
+    let completedSetCount: Int
+    var id: String { exerciseId }
+}
+
 
 // MARK: - One-tap mid-week replan (Phase 3)
 
