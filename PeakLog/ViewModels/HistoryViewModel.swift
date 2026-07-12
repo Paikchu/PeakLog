@@ -23,6 +23,7 @@ final class HistoryViewModel: ObservableObject {
     private let workoutService: WorkoutServiceProtocol
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let exerciseLibraryService: ExerciseLibraryServiceProtocol?
+    private var sessionsLoadGeneration = 0
 
     init(
         workoutService: WorkoutServiceProtocol,
@@ -78,20 +79,31 @@ final class HistoryViewModel: ObservableObject {
 
     // MARK: - Load Sessions for Day
     func loadSessionsForSelectedDate() async {
+        sessionsLoadGeneration += 1
+        let requestGeneration = sessionsLoadGeneration
+        let requestedDate = selectedDate
         isLoadingSessions = true
         errorMessage = nil
         do {
-            async let loadedSessions = workoutService.sessionsForDay(selectedDate)
-            async let loadedRuns = workoutService.runningRecordsForDay(selectedDate)
+            async let loadedSessions = workoutService.sessionsForDay(requestedDate)
+            async let loadedRuns = workoutService.runningRecordsForDay(requestedDate)
             let (strengthSessions, runs) = try await (loadedSessions, loadedRuns)
+            guard requestGeneration == sessionsLoadGeneration,
+                  Calendar.current.isDate(requestedDate, inSameDayAs: selectedDate)
+            else { return }
             sessions = WorkoutHistoryAggregator.mergeSessionsForHistory(strengthSessions)
             runningRecords = runs
         } catch {
+            guard requestGeneration == sessionsLoadGeneration,
+                  Calendar.current.isDate(requestedDate, inSameDayAs: selectedDate)
+            else { return }
             errorMessage = error.localizedDescription
             runningRecords = []
             sessions = []
         }
-        isLoadingSessions = false
+        if requestGeneration == sessionsLoadGeneration {
+            isLoadingSessions = false
+        }
     }
 
     // MARK: - Navigate Months
