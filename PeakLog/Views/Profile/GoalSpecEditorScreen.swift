@@ -10,10 +10,11 @@ struct GoalSpecEditorScreen: View {
 
     @State private var spec: GoalSpec
     @State private var isSaving = false
+    @State private var saveError: String?
 
-    let onSave: (GoalSpec) async -> Void
+    let onSave: (GoalSpec) async throws -> Void
 
-    init(initial: GoalSpec?, legacyGoalSummary: String?, onSave: @escaping (GoalSpec) async -> Void) {
+    init(initial: GoalSpec?, legacyGoalSummary: String?, onSave: @escaping (GoalSpec) async throws -> Void) {
         var seed = initial ?? .default
         // G1: a first-ever open with no structured goal yet inherits the old
         // free-text summary as a starting note, rather than discarding it.
@@ -43,6 +44,15 @@ struct GoalSpecEditorScreen: View {
             .dismissKeyboardOnTap()
             .navigationTitle("goal_spec.title")
             .navigationBarTitleDisplayMode(.inline)
+            .overlay(alignment: .bottom) {
+                if let saveError {
+                    Text(saveError)
+                        .font(.footnote)
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("common.cancel") { dismiss() }
@@ -59,11 +69,18 @@ struct GoalSpecEditorScreen: View {
     }
 
     private func save() {
+        guard !isSaving else { return }
         isSaving = true
+        saveError = nil
         Task {
-            await onSave(spec)
-            isSaving = false
-            dismiss()
+            do {
+                try await onSave(spec)
+                isSaving = false
+                dismiss()
+            } catch {
+                isSaving = false
+                saveError = error.localizedDescription
+            }
         }
     }
 

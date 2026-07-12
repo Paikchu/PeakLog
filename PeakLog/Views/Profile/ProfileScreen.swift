@@ -53,7 +53,7 @@ struct ProfileScreen: View {
                 initial: viewModel.goalSpec,
                 legacyGoalSummary: viewModel.profile?.fitnessGoalSummary
             ) { spec in
-                await viewModel.saveGoalSpec(spec)
+                try await viewModel.saveGoalSpec(spec)
             }
         }
     }

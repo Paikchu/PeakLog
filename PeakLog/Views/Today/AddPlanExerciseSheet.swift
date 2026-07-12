@@ -18,8 +18,10 @@ struct AddPlanExerciseSheet: View {
     @State private var exercises: [DailyRecordExerciseInput] = []
     @State private var path: [Route] = []
     @State private var appearedCardIds: Set<UUID> = []
+    @State private var isSaving = false
+    @State private var saveError: String?
 
-    let onSave: ([PlanExerciseDraft]) async -> Void
+    let onSave: ([PlanExerciseDraft]) async throws -> Void
 
     private var formSpring: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
@@ -66,6 +68,13 @@ struct AddPlanExerciseSheet: View {
                     .onAppear { revealCard(exercise.id) }
                 }
 
+                if let saveError {
+                    Text(saveError)
+                        .font(.footnote)
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 AddExerciseDashedButton {
                     path.removeLast(path.count)
                 }
@@ -83,7 +92,7 @@ struct AddPlanExerciseSheet: View {
                 Button("daily_record.save", action: save)
                     .fontWeight(.semibold)
                     .foregroundColor(drafts == nil ? .textMuted : .accentPrimary)
-                    .disabled(drafts == nil)
+                    .disabled(drafts == nil || isSaving)
             }
         }
         .onChange(of: exercises.isEmpty) { _, isEmpty in
@@ -117,9 +126,18 @@ struct AddPlanExerciseSheet: View {
 
     private func save() {
         guard let drafts else { return }
+        guard !isSaving else { return }
+        isSaving = true
+        saveError = nil
         Task {
-            await onSave(drafts)
-            dismiss()
+            do {
+                try await onSave(drafts)
+                isSaving = false
+                dismiss()
+            } catch {
+                isSaving = false
+                saveError = error.localizedDescription
+            }
         }
     }
 }

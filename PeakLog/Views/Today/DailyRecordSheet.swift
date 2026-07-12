@@ -36,8 +36,10 @@ struct DailyRecordSheet: View {
     @State private var durationMinutes = ""
     @State private var distanceKm = ""
     @State private var path: [Route] = []
+    @State private var isSaving = false
+    @State private var saveError: String?
 
-    let onSave: (DailyRecordDraft) async -> Void
+    let onSave: (DailyRecordDraft) async throws -> Void
 
     private var formSpring: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
@@ -72,7 +74,16 @@ struct DailyRecordSheet: View {
                     Button("daily_record.save", action: save)
                         .fontWeight(.semibold)
                         .foregroundColor(recordDraft == nil ? .textMuted : .accentPrimary)
-                        .disabled(recordDraft == nil)
+                        .disabled(recordDraft == nil || isSaving)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let saveError {
+                    Text(saveError)
+                        .font(.footnote)
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                 }
             }
             .navigationDestination(for: Route.self) { route in
@@ -228,9 +239,18 @@ struct DailyRecordSheet: View {
 
     private func save() {
         guard let recordDraft else { return }
+        guard !isSaving else { return }
+        isSaving = true
+        saveError = nil
         Task {
-            await onSave(recordDraft)
-            dismiss()
+            do {
+                try await onSave(recordDraft)
+                isSaving = false
+                dismiss()
+            } catch {
+                isSaving = false
+                saveError = error.localizedDescription
+            }
         }
     }
 }
