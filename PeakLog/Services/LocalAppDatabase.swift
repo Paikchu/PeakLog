@@ -92,6 +92,10 @@ actor LocalAppDatabase {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private var state: LocalAppState
+    /// Last state known to be coherent with the local cache. Mutations are
+    /// applied to `state` before encoding; this baseline lets `persist()` roll
+    /// back an in-memory mutation when the write fails.
+    private var lastPersistedState: LocalAppState
     private let recoveryStatus: LocalStateRecoveryStatus
 
     /// Fired after a mutation persists locally, so the cloud syncer can push.
@@ -128,6 +132,7 @@ actor LocalAppDatabase {
         self.armedUserId = userId
         self.onChange = onChange
         state.pendingEditEvents.removeAll { $0.userId != userId }
+        lastPersistedState = state
     }
 
     func disarmCloudSync(userId: String) {
@@ -147,7 +152,11 @@ actor LocalAppDatabase {
         state = cleanState
         armedUserId = nil
         onChange = nil
-        try? writeStateToDisk()
+        if (try? writeStateToDisk()) != nil {
+            lastPersistedState = state
+        } else {
+            state = lastPersistedState
+        }
     }
 
     init(fileURL: URL? = nil) {
@@ -166,15 +175,18 @@ actor LocalAppDatabase {
             if let data = try? Data(contentsOf: self.fileURL),
                let loaded = try? decoder.decode(LocalAppState.self, from: data) {
                 self.state = loaded
+                self.lastPersistedState = loaded
                 self.recoveryStatus = .healthy
             } else {
                 self.state = Self.makeSeedState()
+                self.lastPersistedState = self.state
                 self.recoveryStatus = .recoveryRequired
                 Self.backUpUnreadableState(at: self.fileURL)
             }
         } else {
             let seeded = Self.makeSeedState()
             self.state = seeded
+            self.lastPersistedState = seeded
             self.recoveryStatus = .healthy
             try? Self.ensureParentDirectoryExists(for: self.fileURL)
             if let data = try? encoder.encode(seeded) {
@@ -1080,8 +1092,14 @@ actor LocalAppDatabase {
 
     private func persist() throws {
         guard recoveryStatus == .healthy else { throw LocalAppDatabaseError.recoveryRequired }
-        try writeStateToDisk()
-        onChange?()
+        do {
+            try writeStateToDisk()
+            lastPersistedState = state
+            onChange?()
+        } catch {
+            state = lastPersistedState
+            throw error
+        }
     }
 
     private func writeStateToDisk() throws {
@@ -1144,7 +1162,11 @@ actor LocalAppDatabase {
         state.goalSpec = goalSpec
         sanitizePlanCompletionLinks()
         recalculateDerivedProfile()
-        try? writeStateToDisk()
+        if (try? writeStateToDisk()) != nil {
+            lastPersistedState = state
+        } else {
+            state = lastPersistedState
+        }
     }
 
     /// Merge a cloud snapshot into the cache, preserving real offline user
@@ -1194,7 +1216,11 @@ actor LocalAppDatabase {
         sanitizePlanCompletionLinks()
         // pendingEditEvents / editEventSeq deliberately untouched (EV1).
         recalculateDerivedProfile()
-        try? writeStateToDisk()
+        if (try? writeStateToDisk()) != nil {
+            lastPersistedState = state
+        } else {
+            state = lastPersistedState
+        }
     }
 
     private func sanitizePlanCompletionLinks() {
