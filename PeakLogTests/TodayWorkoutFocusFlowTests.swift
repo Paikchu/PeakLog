@@ -112,13 +112,40 @@ final class TodayWorkoutFocusFlowTests: XCTestCase {
         viewModel.completeCurrentLiveSet()
         let sessionId = viewModel.activeLiveWorkout?.id
 
-        // 模拟 App 被杀后重新启动
+        // completeCurrentLiveSet 之后的落盘现在是去抖的（见 #18），等去抖窗口过去
+        // 再模拟 App 被杀后重新启动，确保读到的是去抖写盘之后的最新状态。
+        try? await Task.sleep(for: .milliseconds(600))
+
         let restored = makeViewModel()
         await restored.refresh()
 
         XCTAssertEqual(restored.activeLiveWorkout?.id, sessionId)
         XCTAssertEqual(restored.activeLiveWorkout?.completedSetIds.contains("ex-1-set-1"), true)
         XCTAssertFalse(restored.isTrainingFocusActive)
+    }
+
+    // #18 follow-up: the debounced write must be forceable to land immediately
+    // (e.g. when the app is about to be backgrounded/killed) rather than only
+    // eventually landing after the debounce window elapses.
+    func testFlushPendingLiveWorkoutPersistenceLandsDebouncedWriteImmediately() async {
+        let viewModel = makeViewModel()
+        await startSession(viewModel)
+        viewModel.completeCurrentLiveSet()
+        let sessionId = viewModel.activeLiveWorkout?.id
+
+        // No sleep here — this proves the flush itself forces the pending
+        // debounced write to disk synchronously, without waiting out the
+        // debounce window like testSessionPersistsAndRestoresMinimizedOnSameDay
+        // does. This is what ContentView calls when scenePhase goes
+        // .inactive/.background, so a set completion isn't lost if the app is
+        // killed inside the debounce window.
+        viewModel.flushPendingLiveWorkoutPersistence()
+
+        let restored = makeViewModel()
+        await restored.refresh()
+
+        XCTAssertEqual(restored.activeLiveWorkout?.id, sessionId)
+        XCTAssertEqual(restored.activeLiveWorkout?.completedSetIds.contains("ex-1-set-1"), true)
     }
 
     func testCancelClearsPersistedSessionAndFocusState() async {
