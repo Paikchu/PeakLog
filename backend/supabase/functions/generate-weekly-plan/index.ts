@@ -33,6 +33,7 @@ import { generateWithDeepSeek, generateWithRetry, LlmError } from "../_shared/ll
 import { SYSTEM_PROMPT, PROMPT_VERSION, buildUserMessage, REPLAN_SYSTEM_PROMPT, REPLAN_PROMPT_VERSION, buildReplanUserMessage } from "../_shared/prompt.mjs";
 import { EXERCISE_LIBRARY, EXERCISE_LIBRARY_VERSION } from "../_shared/exerciseLibrary.mjs";
 import { fetchOwnedActualSets } from "../_shared/ownershipQueries.mjs";
+import { localDayUtcRange } from "../_shared/timezone.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -281,10 +282,14 @@ async function inferenceGateOpen(
   if ((completedToday ?? 0) > 0) return false;
 
   // Not already replanned today (stricter than the shared 3/day quota).
-  const startOfTodayUtc = new Date(`${today}T00:00:00.000Z`).toISOString();
+  // Bounded to the user's own local calendar day — both ends derived from
+  // their actual timezone offset, not a UTC-midnight approximation (#71).
+  const { start: startOfTodayUtc, end: endOfTodayUtc } = localDayUtcRange(today, timezone);
   const { count: replanToday } = await admin
     .from("plan_generations").select("id", { count: "exact", head: true })
-    .eq("user_id", userId).eq("kind", "replan").gte("generated_at", startOfTodayUtc);
+    .eq("user_id", userId).eq("kind", "replan")
+    .gte("generated_at", startOfTodayUtc.toISOString())
+    .lt("generated_at", endOfTodayUtc.toISOString());
   if ((replanToday ?? 0) > 0) return false;
 
   return true;
@@ -764,11 +769,16 @@ async function replanForUser(
     // Shared daily quota across one-tap + inference (plan §3.2/C27) — the
     // check happens before any LLM call or plan lookup, so a caller who's
     // already hit the limit costs nothing beyond this one count query.
-    const startOfTodayUtc = new Date(`${today}T00:00:00.000Z`).toISOString();
+    // Window is the user's own local calendar day, both bounds derived from
+    // their actual timezone offset rather than a UTC-midnight approximation
+    // that drifts by the offset for every non-UTC user (#71).
+    const { start: startOfTodayUtc, end: endOfTodayUtc } = localDayUtcRange(today, timezone);
     const { count, error: countError } = await admin
       .from("plan_generations")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", userId).eq("kind", "replan").gte("generated_at", startOfTodayUtc);
+      .eq("user_id", userId).eq("kind", "replan")
+      .gte("generated_at", startOfTodayUtc.toISOString())
+      .lt("generated_at", endOfTodayUtc.toISOString());
     if (countError) throw countError;
     if ((count ?? 0) >= MAX_REPLAN_PER_DAY) {
       return { status: "rate_limited", reason: `daily replan limit (${MAX_REPLAN_PER_DAY}) reached` };
