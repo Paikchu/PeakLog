@@ -54,8 +54,11 @@ final class AuthStateManager: ObservableObject {
 
     // MARK: - Launch restore
 
-    /// Restore a persisted session. Valid → straight in; expired → refresh;
-    /// refresh failure or nothing stored → signed out.
+    /// Restore a persisted session. Valid → straight in; expired → refresh.
+    /// A refresh that fails because the refresh token was rejected
+    /// (`invalidCredentials`) → signed out. A refresh that fails for any other
+    /// reason (network/server/transport) → keep the cached session rather than
+    /// force a logout while offline. Nothing stored → signed out.
     func restore(now: Date = Date()) async {
         guard let stored = store.load() else {
             state = .signedOut
@@ -71,10 +74,19 @@ final class AuthStateManager: ObservableObject {
         do {
             let refreshed = try await provider.refresh(refreshToken: stored.refreshToken)
             persist(refreshed)
-        } catch {
+        } catch AuthError.invalidCredentials {
+            // The refresh token itself was rejected (revoked/expired server-side).
+            // This is the only case where forcing a sign-out is correct.
             store.clear()
             session = nil
             state = .signedOut
+        } catch {
+            // Network/server/transport failure: we can't confirm the session is
+            // actually invalid, so don't clear it or kick the user to the login
+            // screen. Keep the last-known session and surface the app as signed
+            // in; the next `validToken()` call naturally retries the refresh.
+            session = stored
+            state = .signedIn(stored.user)
         }
     }
 
@@ -115,6 +127,8 @@ final class AuthStateManager: ObservableObject {
     // MARK: - Sign in / out
 
     func signIn(email: String, password: String) async {
+        guard !isBusy else { return }
+
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEmail.isEmpty, !password.isEmpty else {
             errorMessage = String(localized: "auth.error.missing_fields")
