@@ -50,60 +50,119 @@ final class HistoryViewModel: ObservableObject {
 
     // MARK: - Load Calendar
     func loadCalendar() async {
+        errorMessage = nil
+        if let error = await loadCalendarSilently() {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Core of `loadCalendar()`, but returns the failure instead of writing
+    /// `errorMessage` directly. Used by `loadInitialScreenData()`, which
+    /// runs all four loaders concurrently and needs a single, deterministic
+    /// place to decide what `errorMessage` ends up as — see that method's
+    /// doc comment.
+    private func loadCalendarSilently() async -> Error? {
         let cal = Calendar.current
         let year = cal.component(.year, from: displayedMonth)
         let month = cal.component(.month, from: displayedMonth)
         let workoutDateFormatter = WorkoutDateFormatter()
 
         isLoadingCalendar = true
-        errorMessage = nil
+        defer { isLoadingCalendar = false }
         do {
             let activeDays = try await workoutService.activeDaysInMonth(year: year, month: month)
             activeDates = Set(activeDays.map { workoutDateFormatter.string(from: $0) })
+            return nil
         } catch {
-            errorMessage = error.localizedDescription
+            return error
         }
-        isLoadingCalendar = false
     }
 
     func loadPlan() async {
+        if let error = await loadPlanSilently() {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Core of `loadPlan()`, but returns the failure instead of writing
+    /// `errorMessage` directly — see `loadCalendarSilently()`.
+    private func loadPlanSilently() async -> Error? {
         isLoadingPlan = true
+        defer { isLoadingPlan = false }
         do {
             activePlan = try await trainingPlanService.fetchActiveWeeklyPlan()
             selectedPlanDay = planDay(for: selectedDate, in: activePlan)
+            return nil
         } catch {
-            errorMessage = error.localizedDescription
+            return error
         }
-        isLoadingPlan = false
     }
 
     // MARK: - Load Sessions for Day
     func loadSessionsForSelectedDate() async {
+        errorMessage = nil
+        if let error = await loadSessionsForSelectedDateSilently() {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Core of `loadSessionsForSelectedDate()`, but returns the failure
+    /// instead of writing `errorMessage` directly — see
+    /// `loadCalendarSilently()`. The stale-request guards (`requestGeneration`
+    /// / selected-date checks) are unrelated to that and preserved as-is.
+    private func loadSessionsForSelectedDateSilently() async -> Error? {
         sessionsLoadGeneration += 1
         let requestGeneration = sessionsLoadGeneration
         let requestedDate = selectedDate
         isLoadingSessions = true
-        errorMessage = nil
+        var resultError: Error?
         do {
             async let loadedSessions = workoutService.sessionsForDay(requestedDate)
             async let loadedRuns = workoutService.runningRecordsForDay(requestedDate)
             let (strengthSessions, runs) = try await (loadedSessions, loadedRuns)
             guard requestGeneration == sessionsLoadGeneration,
                   Calendar.current.isDate(requestedDate, inSameDayAs: selectedDate)
-            else { return }
+            else { return nil }
             sessions = WorkoutHistoryAggregator.mergeSessionsForHistory(strengthSessions)
             runningRecords = runs
         } catch {
             guard requestGeneration == sessionsLoadGeneration,
                   Calendar.current.isDate(requestedDate, inSameDayAs: selectedDate)
-            else { return }
-            errorMessage = error.localizedDescription
+            else { return nil }
             runningRecords = []
             sessions = []
+            resultError = error
         }
         if requestGeneration == sessionsLoadGeneration {
             isLoadingSessions = false
         }
+        return resultError
+    }
+
+    /// Concurrently loads everything the History screen needs on first
+    /// appear: plan, exercise library, calendar markers, and the selected
+    /// day's sessions (issue #54 — these four are independent, so running
+    /// them serially just added latency).
+    ///
+    /// Each loader only touches its own slice of published state — except
+    /// `errorMessage`, which all of them also write on failure. Doing that
+    /// from within four concurrent tasks would race: whichever loader
+    /// happens to finish last in wall-clock time wins, not whichever the
+    /// caller would expect (issue found in review of the #54 fix). Instead,
+    /// the "silently" variants return their failure without touching
+    /// `errorMessage`, and this function makes the single, deterministic
+    /// write after all four have finished — ties resolve by fixed source
+    /// order (plan, then calendar, then sessions) rather than by timing.
+    func loadInitialScreenData() async {
+        async let planError = loadPlanSilently()
+        async let libraryLoad: () = loadExerciseLibrary()
+        async let calendarError = loadCalendarSilently()
+        async let sessionsError = loadSessionsForSelectedDateSilently()
+
+        let (plan, calendar, sessions) = await (planError, calendarError, sessionsError)
+        await libraryLoad
+
+        errorMessage = [plan, calendar, sessions].compactMap { $0 }.first?.localizedDescription
     }
 
     // MARK: - Navigate Months
