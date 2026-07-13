@@ -21,10 +21,15 @@ struct HistoryScreen: View {
             CalendarPopupSheet(viewModel: viewModel)
         }
         .task {
-            await viewModel.loadPlan()
-            await viewModel.loadExerciseLibrary()
-            await viewModel.loadCalendar()
-            await viewModel.loadSessionsForSelectedDate()
+            // The four loads write to disjoint published state (plan,
+            // library, calendar activeDates, selected-day sessions) and none
+            // reads another's result, so they can run concurrently instead
+            // of paying for four sequential round-trips.
+            async let plan: () = viewModel.loadPlan()
+            async let library: () = viewModel.loadExerciseLibrary()
+            async let calendar: () = viewModel.loadCalendar()
+            async let sessions: () = viewModel.loadSessionsForSelectedDate()
+            _ = await (plan, library, calendar, sessions)
         }
     }
 
