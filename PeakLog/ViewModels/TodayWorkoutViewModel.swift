@@ -712,6 +712,15 @@ final class TodayWorkoutViewModel: ObservableObject {
         persistActiveLiveWorkout()
     }
 
+    /// App 即将失活/进入后台时调用：若组勾选去抖窗口内还有待落盘的写入，立即执行，
+    /// 避免用户刚勾选完一个组、App 恰好在 400ms 窗口内被系统挂起/杀掉导致这次变更
+    /// 丢失——这正是去抖优化本身要小心避免引入的回归。调用方是 `ContentView` 对
+    /// `scenePhase` 转为 `.background`/`.inactive` 的观察（`TodayWorkoutViewModel`
+    /// 自身不持有/观察 `scenePhase`，遵循现有由承载视图转发场景事件的模式）。
+    func flushPendingLiveWorkoutPersistence() {
+        persistActiveLiveWorkoutImmediately()
+    }
+
     /// Session 随每次变更写盘，App 被杀后同一天可恢复；confirm/cancel 置 nil 即清除。
     private func persistActiveLiveWorkout() {
         guard let session = activeLiveWorkout else {

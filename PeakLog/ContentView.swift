@@ -33,8 +33,16 @@ struct ContentView: View {
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active else { return }
-            localizationManager.refreshFromSystem()
+            switch newPhase {
+            case .active:
+                localizationManager.refreshFromSystem()
+            case .inactive, .background:
+                // 训练集勾选去抖窗口内 App 若被系统挂起/杀掉，待写入的最新状态会丢失
+                // （见 #18）；失活/进入后台时立即把它冲刷落盘。
+                todayViewModel.flushPendingLiveWorkoutPersistence()
+            @unknown default:
+                break
+            }
         }
     }
 
