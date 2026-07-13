@@ -123,7 +123,11 @@ final class TodayWorkoutViewModel: ObservableObject {
     #endif
 
     func onAppear() async {
-        guard todayPlan == nil, todayRecord == nil, runningRecords.isEmpty else { return }
+        // Always refresh: the previous guard only loaded once per view
+        // lifetime, so switching away and back (or a partial first load
+        // where only one of plan/record/runningRecords came back non-empty)
+        // left the screen showing stale data forever. `.task` only re-fires
+        // when the screen re-enters the hierarchy, so this isn't a hot path.
         await refresh()
     }
 
