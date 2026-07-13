@@ -88,6 +88,13 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var restEndDate: Date?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Flips true after the first successful `refresh()`. Gates the
+    /// full-page `ProgressView` swap in `TodayWorkoutScreen` to the initial
+    /// load only — once the screen has real content, a background refresh
+    /// (e.g. re-entering the tab, or an error-recovery reload) updates
+    /// `todayPlan`/`todayRecord`/`runningRecords` in place instead of
+    /// flashing the whole page back to a spinner.
+    private(set) var hasLoadedOnce = false
 
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let workoutService: WorkoutServiceProtocol
@@ -132,8 +139,21 @@ final class TodayWorkoutViewModel: ObservableObject {
     }
 
     func refresh() async {
-        isLoading = true
-        defer { isLoading = false }
+        // Only the very first (successful-or-not) load shows the full-page
+        // spinner. Once `hasLoadedOnce` is true, every later refresh —
+        // triggered by re-entering the screen or by an error-recovery path
+        // — updates state in place without toggling `isLoading`, so
+        // `TodayWorkoutScreen` keeps rendering the already-loaded content
+        // instead of flashing back to `ProgressView`.
+        let isInitialLoad = !hasLoadedOnce
+        if isInitialLoad {
+            isLoading = true
+        }
+        defer {
+            if isInitialLoad {
+                isLoading = false
+            }
+        }
 
         do {
             async let plan = trainingPlanService.fetchTodayPlan()
@@ -144,6 +164,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             todayPlan = loadedPlan
             todayRecord = mergeSessionsIntoRecord(loadedSessions)
             restoreLiveWorkoutSessionIfNeeded()
+            hasLoadedOnce = true
         } catch {
             errorMessage = error.localizedDescription
         }
