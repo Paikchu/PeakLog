@@ -9,6 +9,11 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
     private let config: SupabaseConfig
     private let session: URLSession
 
+    /// `URLRequest`'s default `timeoutInterval` is 60s; on a flaky/absent
+    /// connection that leaves sign-in, refresh, and sign-out hanging far
+    /// longer than a user will wait before assuming the app is frozen.
+    private static let requestTimeout: TimeInterval = 30
+
     init(config: SupabaseConfig = .current, session: URLSession = .shared) {
         self.config = config
         self.session = session
@@ -38,6 +43,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.requestTimeout
         request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         // Revocation is best-effort; local teardown proceeds regardless.
@@ -56,6 +62,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.requestTimeout
         request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
