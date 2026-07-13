@@ -59,7 +59,10 @@ schema_paths = []
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
-enabled = true
+# Disabled (#72): no seed.sql exists in the repo and no dev-data spec has
+# been agreed on, so leaving this on breaks `supabase db reset` on any clean
+# checkout. Re-enable once an idempotent ./seed.sql is committed.
+enabled = false
 # Specifies an ordered list of seed files to load during db reset.
 # Supports glob patterns relative to supabase directory: "./seeds/*.sql"
 sql_paths = ["./seed.sql"]
