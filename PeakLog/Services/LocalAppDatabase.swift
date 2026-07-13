@@ -98,6 +98,16 @@ actor LocalAppDatabase {
     private var lastPersistedState: LocalAppState
     private let recoveryStatus: LocalStateRecoveryStatus
 
+    /// Set whenever a mutation invalidates `state.profile.stats` /
+    /// `exercisePRs` (streak, volume, PRs) instead of eagerly recomputing
+    /// them. `recalculateDerivedProfile()` is an O(N) walk over every session
+    /// and set, so running it on every single mutation makes each write
+    /// (and the full-state JSON re-encode that follows) cost more as
+    /// training history grows. Deferring the recompute to the next read
+    /// (`fetchProfile()` / `snapshot()`) collapses a burst of mutations into
+    /// a single recompute (Issue #17).
+    private var derivedProfileIsStale = false
+
     /// Fired after a mutation persists locally, so the cloud syncer can push.
     /// Installed by `CloudSyncCoordinator` only when signed in; nil in DEBUG
     /// local mode, which keeps that mode fully offline. A full `replaceAll`
@@ -196,7 +206,8 @@ actor LocalAppDatabase {
     }
 
     func fetchProfile() -> UserProfile {
-        state.profile
+        refreshDerivedProfileIfNeeded()
+        return state.profile
     }
 
     func updatePreferences(_ prefs: UpdatePreferencesRequest) throws -> UserPreferences {
@@ -367,7 +378,7 @@ actor LocalAppDatabase {
             updatedAt: now
         )
         state.runningRecords.append(record)
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
         return record
     }
@@ -402,7 +413,7 @@ actor LocalAppDatabase {
             updatedAt: now
         )
         state.strengthSessions.append(session)
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
         return session
     }
@@ -423,7 +434,7 @@ actor LocalAppDatabase {
         state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets[setIndex].weightUnit = weightUnit
         state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets[setIndex].reps = reps
         state.strengthSessions[sessionIndex].updatedAt = Date()
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
         return state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets[setIndex]
     }
@@ -453,7 +464,7 @@ actor LocalAppDatabase {
         )
         state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.append(newSet)
         state.strengthSessions[sessionIndex].updatedAt = Date()
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
         return newSet
     }
@@ -466,7 +477,7 @@ actor LocalAppDatabase {
         state.strengthSessions[sessionIndex].exercises[exerciseIndex].sets.remove(at: setIndex)
         normalizeSetIndices(for: sessionIndex, exerciseIndex: exerciseIndex)
         state.strengthSessions[sessionIndex].updatedAt = Date()
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
     }
 
@@ -518,7 +529,7 @@ actor LocalAppDatabase {
         day.exercises[planLocation.exerciseIndex].sets[planLocation.setIndex].linkedExerciseSetId = linkedSet.id
         state.activePlan.days[planLocation.dayIndex] = day
 
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
 
         var result = state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex]
@@ -643,7 +654,7 @@ actor LocalAppDatabase {
                 hadCompletedSets: exercise.sets.contains(where: \.isCompleted)
             ))
         )
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
     }
 
@@ -666,7 +677,7 @@ actor LocalAppDatabase {
             state.strengthSessions[sessionIndex].updatedAt = Date()
         }
         clearPlanCompletionLinks(to: removedSetIds)
-        recalculateDerivedProfile()
+        derivedProfileIsStale = true
         try persist()
     }
 
@@ -928,6 +939,15 @@ actor LocalAppDatabase {
         }
     }
 
+    /// Recomputes `state.profile.stats` / `exercisePRs` if a mutation marked
+    /// them stale since the last read. Call before any read path that
+    /// exposes derived profile data (`fetchProfile()`, `snapshot()`).
+    private func refreshDerivedProfileIfNeeded() {
+        guard derivedProfileIsStale else { return }
+        recalculateDerivedProfile()
+        derivedProfileIsStale = false
+    }
+
     private func recalculateDerivedProfile() {
         let calendar = Calendar.current
         let activeDays = Array(Set((state.strengthSessions.map(\.date) + state.runningRecords.map(\.workoutDate)).map { calendar.startOfDay(for: $0) })).sorted()
@@ -1113,7 +1133,8 @@ actor LocalAppDatabase {
     /// A copy of everything the cloud syncer needs to reconcile. Reads are cheap
     /// (value types), so callers snapshot rather than hold the actor.
     func snapshot() -> LocalDataSnapshot {
-        LocalDataSnapshot(
+        refreshDerivedProfileIfNeeded()
+        return LocalDataSnapshot(
             profile: state.profile,
             activePlan: state.activePlan,
             strengthSessions: state.strengthSessions,
