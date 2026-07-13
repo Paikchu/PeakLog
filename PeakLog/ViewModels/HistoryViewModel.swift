@@ -25,6 +25,17 @@ final class HistoryViewModel: ObservableObject {
     private let exerciseLibraryService: ExerciseLibraryServiceProtocol?
     private var sessionsLoadGeneration = 0
 
+    /// `WorkoutDateFormatter` rebuilds a `Calendar` + `DateFormatter` on
+    /// construction/use; `currentWeekDays()`/`calendarDays()` used to build
+    /// a fresh one per call (and per day within a call, via `hasWorkout`),
+    /// which adds up while scrolling the calendar. Cached as an instance
+    /// property (not `static`/a global singleton) so it's naturally scoped
+    /// to this view model's lifetime and stays easy to invalidate later —
+    /// e.g. by reassigning it — once the formatter honors the user's
+    /// timezone preference instead of always `TimeZone.current` (#29, still
+    /// open).
+    private lazy var workoutDateFormatter = WorkoutDateFormatter()
+
     init(
         workoutService: WorkoutServiceProtocol,
         trainingPlanService: TrainingPlanServiceProtocol,
@@ -65,7 +76,6 @@ final class HistoryViewModel: ObservableObject {
         let cal = Calendar.current
         let year = cal.component(.year, from: displayedMonth)
         let month = cal.component(.month, from: displayedMonth)
-        let workoutDateFormatter = WorkoutDateFormatter()
 
         isLoadingCalendar = true
         defer { isLoadingCalendar = false }
@@ -259,8 +269,7 @@ final class HistoryViewModel: ObservableObject {
 
     // MARK: - Helpers
     func hasWorkout(on date: Date) -> Bool {
-        let workoutDateFormatter = WorkoutDateFormatter()
-        return activeDates.contains(workoutDateFormatter.string(from: date))
+        activeDates.contains(workoutDateFormatter.string(from: date))
     }
 
     var completedDaySummary: CompletedDaySummary {
@@ -393,7 +402,6 @@ final class HistoryViewModel: ObservableObject {
 
     private func planDay(for date: Date, in plan: TrainingPlan?) -> TrainingPlanDay? {
         guard let plan else { return nil }
-        let formatter = WorkoutDateFormatter()
-        return plan.days.first(where: { $0.planDate == formatter.string(from: date) })
+        return plan.days.first(where: { $0.planDate == workoutDateFormatter.string(from: date) })
     }
 }
