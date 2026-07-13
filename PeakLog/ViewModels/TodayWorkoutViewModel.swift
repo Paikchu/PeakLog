@@ -80,7 +80,7 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var todayPlan: TrainingPlanDay?
     @Published var todayRecord: WorkoutRecord?
     @Published var activeLiveWorkout: PlanLiveWorkoutSession? {
-        didSet { persistActiveLiveWorkout() }
+        didSet { schedulePersistActiveLiveWorkout() }
     }
     // 专注模式开关：session 存在但该值为 false 时是“最小化”状态（浏览模式 + 顶部训练横幅）。
     @Published var isTrainingFocusActive = false
@@ -95,10 +95,14 @@ final class TodayWorkoutViewModel: ObservableObject {
 
     private var liveActivityObservationTask: Task<Void, Never>?
     private var restCountdownTask: Task<Void, Never>?
+    private var persistDebounceTask: Task<Void, Never>?
     private let sessionDefaults: UserDefaults
 
     static let restDurationSeconds: TimeInterval = 90
     private static let persistedSessionKey = "today.live_workout_session.v1"
+    // 训练集频繁勾选/取消时，避免每次都在主线程同步做 JSONEncoder + UserDefaults.set。
+    // 中途的每次变更都重新计时，写盘只在变更停止这段延迟后发生一次。
+    private static let persistDebounceDelay: Duration = .milliseconds(400)
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
@@ -199,6 +203,8 @@ final class TodayWorkoutViewModel: ObservableObject {
         )
         moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
         activeLiveWorkout = session
+        // 关键节点：立即落盘，不经过去抖延迟。
+        persistActiveLiveWorkoutImmediately()
         isTrainingFocusActive = true
         Task { await liveActivityManager.start(session: session) }
         observeLiveActivityCompletions(sessionId: session.id)
@@ -315,6 +321,8 @@ final class TodayWorkoutViewModel: ObservableObject {
         liveActivityObservationTask?.cancel()
         liveActivityObservationTask = nil
         activeLiveWorkout = nil
+        // 关键节点：立即落盘，不经过去抖延迟。
+        persistActiveLiveWorkoutImmediately()
         isTrainingFocusActive = false
         skipRest()
         Task { await liveActivityManager.end() }
@@ -361,6 +369,8 @@ final class TodayWorkoutViewModel: ObservableObject {
             liveActivityObservationTask?.cancel()
             liveActivityObservationTask = nil
             activeLiveWorkout = nil
+            // 关键节点：立即落盘，不经过去抖延迟。
+            persistActiveLiveWorkoutImmediately()
             isTrainingFocusActive = false
             skipRest()
             await liveActivityManager.end()
@@ -679,6 +689,27 @@ final class TodayWorkoutViewModel: ObservableObject {
     private struct PersistedLiveWorkout: Codable {
         let planDate: String
         let session: PlanLiveWorkoutSession
+    }
+
+    /// 去抖：取消前一次待执行的写入并重新计时，真正的落盘发生在连续变更停止之后。
+    /// `activeLiveWorkout` 的类型未显式声明 `Sendable`，所以这里刻意不把编码/写盘挪
+    /// 到后台队列——`Task { }` 在 `@MainActor` 方法里创建时继承调用方的 Main Actor
+    /// 隔离，编码与写盘仍在主线程完成，只是被去抖延迟，不再阻塞式地随每次勾选执行。
+    private func schedulePersistActiveLiveWorkout() {
+        persistDebounceTask?.cancel()
+        persistDebounceTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.persistDebounceDelay)
+            guard !Task.isCancelled else { return }
+            self?.persistActiveLiveWorkout()
+        }
+    }
+
+    /// 关键节点（开始/确认/取消训练）绕过去抖立即落盘：这些操作本就低频，且如果 App
+    /// 恰好在去抖延迟窗口内被杀，用户不该丢失"已开始/已确认/已取消"这类状态。
+    private func persistActiveLiveWorkoutImmediately() {
+        persistDebounceTask?.cancel()
+        persistDebounceTask = nil
+        persistActiveLiveWorkout()
     }
 
     /// Session 随每次变更写盘，App 被杀后同一天可恢复；confirm/cancel 置 nil 即清除。
