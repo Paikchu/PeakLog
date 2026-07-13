@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import os
 
 /// Where a signed-in session lives between launches. Tokens are credentials, so
 /// they belong in the Keychain, not `UserDefaults`. The protocol lets tests and
@@ -15,6 +16,16 @@ protocol AuthSessionStoring: Sendable {
 nonisolated struct KeychainAuthSessionStore: AuthSessionStoring {
     private let service: String
     private let account = "current-session"
+
+    /// Serializes `save` across every instance that targets the Keychain (the
+    /// service/account pair is effectively a single logical resource for this
+    /// app). Delete-then-add is not atomic as far as the Keychain is
+    /// concerned, so without this lock two concurrent `save` calls can both
+    /// observe "not found" and both `SecItemAdd`, with the loser silently
+    /// failing on `errSecDuplicateItem`.
+    private static let lock = NSLock()
+
+    private static let logger = Logger(subsystem: "com.max.PeakLog", category: "AuthSessionStore")
 
     init(service: String = "com.max.PeakLog.auth") {
         self.service = service
@@ -32,21 +43,39 @@ nonisolated struct KeychainAuthSessionStore: AuthSessionStoring {
         return try? JSONDecoder().decode(AuthSession.self, from: data)
     }
 
+    /// Upsert via delete-then-add: simpler and more robust than update-else-
+    /// insert, and — combined with `lock` — avoids the double-insert race
+    /// where two concurrent saves both hit `errSecItemNotFound` and both
+    /// `SecItemAdd`. Any unexpected `OSStatus` is logged rather than
+    /// swallowed, so a save that silently drops the session is visible in
+    /// device logs instead of just manifesting as "user got logged out".
     func save(_ session: AuthSession) {
-        guard let data = try? JSONEncoder().encode(session) else { return }
+        guard let data = try? JSONEncoder().encode(session) else {
+            Self.logger.error("save: failed to encode AuthSession, nothing persisted")
+            return
+        }
 
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(baseQuery() as CFDictionary, attributes as CFDictionary)
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
 
-        if status == errSecItemNotFound {
-            var insert = baseQuery()
-            insert[kSecValueData as String] = data
-            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            SecItemAdd(insert as CFDictionary, nil)
+        let deleteStatus = SecItemDelete(baseQuery() as CFDictionary)
+        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+            Self.logger.error("save: SecItemDelete failed with status \(deleteStatus, privacy: .public)")
+            return
+        }
+
+        var insert = baseQuery()
+        insert[kSecValueData as String] = data
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        let addStatus = SecItemAdd(insert as CFDictionary, nil)
+        if addStatus != errSecSuccess {
+            Self.logger.error("save: SecItemAdd failed with status \(addStatus, privacy: .public)")
         }
     }
 
     func clear() {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         SecItemDelete(baseQuery() as CFDictionary)
     }
 
