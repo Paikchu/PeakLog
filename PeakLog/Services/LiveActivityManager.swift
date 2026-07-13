@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 #if canImport(ActivityKit)
 import ActivityKit
@@ -31,8 +32,16 @@ final class NoOpPlanLiveActivityManager: PlanLiveActivityManaging {
 
 #if canImport(ActivityKit)
 @available(iOS 16.2, *)
+@MainActor
 final class LiveActivityManager: PlanLiveActivityManaging {
     static let shared = LiveActivityManager()
+
+    /// `Activity.request` counts `attributes` + the initial `ContentState` together
+    /// against Apple's ~4KB payload budget. Leave headroom under the hard limit so a
+    /// day with many exercises/sets doesn't tip over it.
+    private static let attributesSizeBudgetBytes = 3_500
+
+    private static let logger = Logger(subsystem: "com.max.PeakLog", category: "LiveActivityManager")
 
     private var activity: Activity<PlanLiveActivityAttributes>?
 
@@ -40,6 +49,15 @@ final class LiveActivityManager: PlanLiveActivityManaging {
 
     func start(session: PlanLiveWorkoutSession) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+        // 防御：调用方本应确保 session 数据在调用前已是最新（例如 App 被杀后重启，
+        // 等本地数据库恢复当日计划后再调用 start），但这里再兜底一次——如果传入的
+        // session 还没有动作数据，直接跳过，避免清空并用空快照重建系统里已存在、
+        // 可能仍然有效的 Activity。
+        guard !session.exercises.isEmpty else {
+            Self.logger.error("start(session:) called with no exercises (sessionID \(session.id, privacy: .private)); skipping to avoid clobbering an existing Live Activity with stale/empty data")
+            return
+        }
 
         let attributes = attributes(from: session)
         PlanLiveActivitySharedStore.storeFocusedExerciseID(session.manualFocusExerciseId, sessionID: session.id)
@@ -49,13 +67,13 @@ final class LiveActivityManager: PlanLiveActivityManaging {
             focusedExerciseID: session.manualFocusExerciseId
         )
 
-        do {
-            // 结束系统里所有残留的计划 Activity（含 App 被杀前创建的），避免重复。
-            for existing in Activity<PlanLiveActivityAttributes>.activities {
-                await existing.end(nil, dismissalPolicy: .immediate)
-            }
-            activity = nil
+        // 结束系统里所有残留的计划 Activity（含 App 被杀前创建的），避免重复。
+        for existing in Activity<PlanLiveActivityAttributes>.activities {
+            await existing.end(nil, dismissalPolicy: .immediate)
+        }
+        activity = nil
 
+        do {
             activity = try Activity.request(
                 attributes: attributes,
                 content: ActivityContent(state: state, staleDate: nil, relevanceScore: 1),
@@ -63,6 +81,10 @@ final class LiveActivityManager: PlanLiveActivityManaging {
             )
         } catch {
             activity = nil
+            // 曾经在这里静默吞掉：灵动岛/锁屏不显示且后续 update 全部因 activeActivity(for:)
+            // 找不到匹配而 return，用户毫无感知。现在至少上报到统一日志，便于用 Console.app
+            // 或 sysdiagnose 定位大计划导致的启动失败。
+            Self.logger.error("Activity.request failed for sessionID \(session.id, privacy: .private): \(String(describing: error))")
         }
     }
 
@@ -117,25 +139,64 @@ final class LiveActivityManager: PlanLiveActivityManaging {
     }
 
     private func attributes(from session: PlanLiveWorkoutSession) -> PlanLiveActivityAttributes {
-        PlanLiveActivityAttributes(
+        let exercises = session.exercises.map { exercise in
+            PlanLiveActivityExerciseSnapshot(
+                id: exercise.id,
+                name: exercise.name,
+                sets: exercise.sets.map { set in
+                    PlanLiveActivitySetSnapshot(
+                        id: set.id,
+                        setIndex: set.setIndex,
+                        targetLoadText: liveActivityLoadText(for: set, loadType: exercise.loadType),
+                        targetReps: set.targetReps
+                    )
+                }
+            )
+        }
+
+        return trimmedAttributes(
             sessionID: session.id,
             title: session.title,
             focus: session.focus,
-            exercises: session.exercises.map { exercise in
-                PlanLiveActivityExerciseSnapshot(
-                    id: exercise.id,
-                    name: exercise.name,
-                    sets: exercise.sets.map { set in
-                        PlanLiveActivitySetSnapshot(
-                            id: set.id,
-                            setIndex: set.setIndex,
-                            targetLoadText: liveActivityLoadText(for: set, loadType: exercise.loadType),
-                            targetReps: set.targetReps
-                        )
-                    }
-                )
-            }
+            exercises: exercises
         )
+    }
+
+    /// Drops trailing exercises — the ones least likely to be "current" soonest —
+    /// one at a time until the encoded attributes fit under `attributesSizeBudgetBytes`.
+    /// Always keeps at least the first exercise so `contentState(for:...)` still has
+    /// something to compute against; if that alone doesn't fit, ships it anyway (a
+    /// slightly-oversized Activity beats none, and `Activity.request` failing is now
+    /// logged rather than silently swallowed).
+    private func trimmedAttributes(
+        sessionID: String,
+        title: String,
+        focus: String?,
+        exercises: [PlanLiveActivityExerciseSnapshot]
+    ) -> PlanLiveActivityAttributes {
+        var candidateExercises = exercises
+        while true {
+            let candidate = PlanLiveActivityAttributes(
+                sessionID: sessionID,
+                title: title,
+                focus: focus,
+                exercises: candidateExercises
+            )
+
+            let encodedSize = (try? JSONEncoder().encode(candidate).count) ?? 0
+            let fitsBudget = encodedSize <= Self.attributesSizeBudgetBytes
+
+            if fitsBudget || candidateExercises.count <= 1 {
+                if !fitsBudget {
+                    Self.logger.warning("Live Activity attributes still ~\(encodedSize) bytes after trimming to \(candidateExercises.count) exercise(s) for sessionID \(sessionID, privacy: .private); Activity.request may still fail")
+                } else if candidateExercises.count < exercises.count {
+                    Self.logger.info("Trimmed Live Activity attributes from \(exercises.count) to \(candidateExercises.count) exercise(s) to stay under the size budget for sessionID \(sessionID, privacy: .private)")
+                }
+                return candidate
+            }
+
+            candidateExercises.removeLast()
+        }
     }
 
     private func liveActivityLoadText(for set: PlanLiveWorkoutSet, loadType: ExerciseLoadType) -> String {
@@ -149,6 +210,7 @@ final class LiveActivityManager: PlanLiveActivityManaging {
 #endif
 
 enum PlanLiveActivityManagerFactory {
+    @MainActor
     static func make() -> PlanLiveActivityManaging {
         #if canImport(ActivityKit)
         if #available(iOS 16.2, *) {
