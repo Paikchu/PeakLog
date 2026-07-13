@@ -88,6 +88,13 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var restEndDate: Date?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Flips true after the first successful `refresh()`. Gates the
+    /// full-page `ProgressView` swap in `TodayWorkoutScreen` to the initial
+    /// load only — once the screen has real content, a background refresh
+    /// (e.g. re-entering the tab, or an error-recovery reload) updates
+    /// `todayPlan`/`todayRecord`/`runningRecords` in place instead of
+    /// flashing the whole page back to a spinner.
+    private(set) var hasLoadedOnce = false
 
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let workoutService: WorkoutServiceProtocol
@@ -127,13 +134,30 @@ final class TodayWorkoutViewModel: ObservableObject {
     #endif
 
     func onAppear() async {
-        guard todayPlan == nil, todayRecord == nil, runningRecords.isEmpty else { return }
+        // Always refresh: the previous guard only loaded once per view
+        // lifetime, so switching away and back (or a partial first load
+        // where only one of plan/record/runningRecords came back non-empty)
+        // left the screen showing stale data forever. `.task` only re-fires
+        // when the screen re-enters the hierarchy, so this isn't a hot path.
         await refresh()
     }
 
     func refresh() async {
-        isLoading = true
-        defer { isLoading = false }
+        // Only the very first (successful-or-not) load shows the full-page
+        // spinner. Once `hasLoadedOnce` is true, every later refresh —
+        // triggered by re-entering the screen or by an error-recovery path
+        // — updates state in place without toggling `isLoading`, so
+        // `TodayWorkoutScreen` keeps rendering the already-loaded content
+        // instead of flashing back to `ProgressView`.
+        let isInitialLoad = !hasLoadedOnce
+        if isInitialLoad {
+            isLoading = true
+        }
+        defer {
+            if isInitialLoad {
+                isLoading = false
+            }
+        }
 
         do {
             async let plan = trainingPlanService.fetchTodayPlan()
@@ -144,6 +168,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             todayPlan = loadedPlan
             todayRecord = mergeSessionsIntoRecord(loadedSessions)
             restoreLiveWorkoutSessionIfNeeded()
+            hasLoadedOnce = true
         } catch {
             errorMessage = error.localizedDescription
         }
