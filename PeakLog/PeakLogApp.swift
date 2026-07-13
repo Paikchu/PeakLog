@@ -30,6 +30,14 @@ struct PeakLogApp: App {
                 .onChange(of: scenePhase, initial: true) { _, newPhase in
                     guard newPhase == .active else { return }
                     localizationManager.refreshFromSystem()
+                    // `initial: true` fires this immediately on cold launch, which can
+                    // race ahead of the `.task`'s `await authManager.restore()` above.
+                    // Only kick off a foreground sync tick once the auth gate has
+                    // actually resolved to a signed-in session — otherwise this tick is
+                    // silently dropped (CloudSyncController.onForeground() no-ops until
+                    // its coordinator exists) and the first foreground reconciliation
+                    // after launch is lost rather than merely deferred.
+                    guard case .signedIn = authManager.state else { return }
                     syncController.onForeground()
                 }
         }
