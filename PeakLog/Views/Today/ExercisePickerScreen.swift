@@ -451,9 +451,15 @@ struct ExercisePickerScreen: View {
     }
 
     private func refreshRecommendations() async {
-        let currentLibrary = await AppServices.exerciseLibraryService.fetchLibrary()
+        // Reuse the cached library instead of re-fetching the whole catalog
+        // on every selection change (this task reruns per `recommendationKey`
+        // edit). `loadLibrary()` populates `library` on first appear; only
+        // fall back to a fetch here if it hasn't landed yet.
+        if library.isEmpty {
+            library = await AppServices.exerciseLibraryService.fetchLibrary()
+        }
         let addedDefinitions = alreadyAddedIds.compactMap { id in
-            currentLibrary.first { $0.id == id }
+            library.first { $0.id == id }
         }
         let result = await AppServices.exerciseLibraryService.fetchRecommendations(
             todaysSelections: selection + addedDefinitions,
