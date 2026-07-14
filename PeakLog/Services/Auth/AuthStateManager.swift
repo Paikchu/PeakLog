@@ -94,7 +94,10 @@ final class AuthStateManager: ObservableObject {
 
     /// A valid access token, refreshed if the cached one is within the skew
     /// window. Throws `.invalidCredentials` if there is no session or the
-    /// refresh token is dead — the caller should treat that as signed-out.
+    /// refresh token was rejected — the caller should treat that as
+    /// signed-out. A network/server/transport failure keeps the cached
+    /// session intact and rethrows the original error so the caller can
+    /// retry later instead of being forced out.
     func validToken(now: Date = Date()) async throws -> String {
         guard let current = session else { throw AuthError.invalidCredentials }
         if !current.isExpired(now: now) { return current.accessToken }
@@ -114,13 +117,21 @@ final class AuthStateManager: ObservableObject {
                 persist(refreshed)
                 return refreshed.accessToken
             }
-        } catch {
+        } catch AuthError.invalidCredentials {
+            // The refresh token itself was rejected (revoked/expired
+            // server-side). This is the only case where forcing a sign-out
+            // is correct.
             if session?.refreshToken == current.refreshToken {
                 store.clear()
                 session = nil
                 state = .signedOut
             }
             throw AuthError.invalidCredentials
+        } catch {
+            // Network/server/transport failure: we can't confirm the
+            // session is actually invalid, so don't clear it or sign the
+            // user out. Keep the cached session and let the caller retry.
+            throw error
         }
     }
 

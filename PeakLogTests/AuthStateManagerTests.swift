@@ -111,6 +111,59 @@ final class AuthStateManagerTests: XCTestCase {
         XCTAssertNil(store.load(), "Local session must be cleared when the refresh token is rejected")
     }
 
+    // MARK: - validToken() network-vs-invalidCredentials handling
+
+    func testValidTokenKeepsSessionOnNetworkFailure() async throws {
+        // expiresAt is chosen so the session is still valid at `restore`'s
+        // `now` (avoiding restore's own, separately-tracked refresh path)
+        // but expired by the time `validToken` is called.
+        let expired = session(accessToken: "expired", refreshToken: "refresh-1", expiresAt: 5_000)
+        let store = InMemoryAuthSessionStore(seed: expired)
+        let manager = await AuthStateManager(
+            provider: FailingRefreshProvider(error: AuthError.network),
+            store: store
+        )
+
+        await manager.restore(now: Date(timeIntervalSince1970: 0))
+
+        do {
+            _ = try await manager.validToken(now: Date(timeIntervalSince1970: 10_000))
+            XCTFail("Expected validToken to rethrow the network failure")
+        } catch AuthError.network {
+            // Expected.
+        }
+
+        let state = await manager.state
+        guard case .signedIn(let user) = state else {
+            XCTFail("Expected signedIn state to be preserved on a network failure")
+            return
+        }
+        XCTAssertEqual(user.id, "user-1")
+        XCTAssertNotNil(store.load(), "Local session must not be cleared on a network failure")
+    }
+
+    func testValidTokenSignsOutOnInvalidCredentials() async throws {
+        let expired = session(accessToken: "expired", refreshToken: "refresh-1", expiresAt: 5_000)
+        let store = InMemoryAuthSessionStore(seed: expired)
+        let manager = await AuthStateManager(
+            provider: FailingRefreshProvider(error: AuthError.invalidCredentials),
+            store: store
+        )
+
+        await manager.restore(now: Date(timeIntervalSince1970: 0))
+
+        do {
+            _ = try await manager.validToken(now: Date(timeIntervalSince1970: 10_000))
+            XCTFail("Expected validToken to throw invalidCredentials")
+        } catch AuthError.invalidCredentials {
+            // Expected.
+        }
+
+        let state = await manager.state
+        XCTAssertEqual(state, .signedOut)
+        XCTAssertNil(store.load(), "Local session must be cleared when the refresh token is rejected")
+    }
+
     private func session(accessToken: String, refreshToken: String, expiresAt: TimeInterval) -> AuthSession {
         AuthSession(
             accessToken: accessToken,
