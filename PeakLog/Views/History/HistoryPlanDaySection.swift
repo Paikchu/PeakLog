@@ -3,9 +3,11 @@ import SwiftUI
 struct HistoryPlanDaySection: View {
     let day: TrainingPlanDay
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(day.planDate == WorkoutDateFormatter().string(from: Date()) ? String(localized: "Today") : day.planDate)
+            Text(dayLabel)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.textMuted)
 
@@ -35,6 +37,23 @@ struct HistoryPlanDaySection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var dayLabel: String {
+        let formatter = WorkoutDateFormatter()
+        if day.planDate == formatter.string(from: Date()) {
+            return String(localized: "history.day.today")
+        }
+        guard let date = formatter.date(from: day.planDate) else {
+            return day.planDate
+        }
+        return date.formatted(
+            Date.FormatStyle()
+                .locale(locale)
+                .month(.abbreviated)
+                .day()
+                .weekday(.abbreviated)
+        )
     }
 
     private func setDisplayText(_ set: TrainingPlanSet, loadType: ExerciseLoadType) -> String {
