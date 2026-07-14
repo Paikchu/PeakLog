@@ -120,8 +120,11 @@ struct ProfileScreen: View {
     private var avatarSection: some View {
         HStack(spacing: 14) {
             if viewModel.isLoading {
+                // Skeleton fill must contrast with the enclosing appSurface
+                // card in BOTH themes: appSurface would vanish into the card,
+                // and appBackground is darker than the card in dark mode.
                 Circle()
-                    .fill(Color.appBackground)
+                    .fill(Color.appSeparator)
                     .frame(width: 52, height: 52)
                     .overlay(ProgressView())
             } else {
