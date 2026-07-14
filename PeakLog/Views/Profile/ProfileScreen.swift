@@ -9,6 +9,16 @@ struct ProfileScreen: View {
     @Environment(\.openURL) private var openURL
     @State private var showingWeightUnitPicker = false
     @State private var showingGoalSpecEditor = false
+    // Local optimistic mirrors for the preference toggles. SwiftUI's Toggle
+    // needs the Binding's `get` to reflect the new value the instant the
+    // user taps, but the real source of truth (`viewModel.profile?.preferences`)
+    // only updates after the async save round-trips. Mirroring it locally lets
+    // the switch flip immediately; `onChange` below resyncs these mirrors
+    // whenever the real preference changes (successful save, load, or a
+    // change from elsewhere), and the toggle `set` closures roll the mirror
+    // back if a save fails.
+    @State private var notificationsOptimistic = false
+    @State private var darkModeOptimistic = false
 
     init() {
         _viewModel = StateObject(
@@ -38,6 +48,16 @@ struct ProfileScreen: View {
             await viewModel.loadGoalSpec()
             if let preferences = viewModel.profile?.preferences {
                 themeManager.isDarkMode = preferences.darkModeEnabled
+            }
+        }
+        .onChange(of: viewModel.profile?.preferences.notificationsEnabled, initial: true) { _, newValue in
+            if let newValue {
+                notificationsOptimistic = newValue
+            }
+        }
+        .onChange(of: viewModel.profile?.preferences.darkModeEnabled, initial: true) { _, newValue in
+            if let newValue {
+                darkModeOptimistic = newValue
             }
         }
         .alert("common.error_title", isPresented: Binding(
@@ -278,8 +298,20 @@ struct ProfileScreen: View {
                     icon: "bell",
                     title: "profile.preferences.notifications",
                     isOn: Binding(
-                        get: { prefs.notificationsEnabled },
-                        set: { _ in Task { await viewModel.toggleNotifications() } }
+                        get: { notificationsOptimistic },
+                        set: { newValue in
+                            let previous = notificationsOptimistic
+                            notificationsOptimistic = newValue
+                            Task {
+                                await viewModel.toggleNotifications()
+                                // If the save didn't actually land on the value we
+                                // optimistically showed (failure, or a race with
+                                // another update), roll the switch back.
+                                if viewModel.profile?.preferences.notificationsEnabled != newValue {
+                                    notificationsOptimistic = previous
+                                }
+                            }
+                        }
                     ),
                     isLoading: viewModel.isSaving
                 )
@@ -292,10 +324,21 @@ struct ProfileScreen: View {
                     icon: "moon",
                     title: "profile.preferences.dark_mode",
                     isOn: Binding(
-                        get: { prefs.darkModeEnabled },
+                        get: { darkModeOptimistic },
                         set: { newValue in
+                            let previous = darkModeOptimistic
+                            darkModeOptimistic = newValue
                             themeManager.isDarkMode = newValue
-                            Task { await viewModel.toggleDarkMode() }
+                            Task {
+                                await viewModel.toggleDarkMode()
+                                if viewModel.profile?.preferences.darkModeEnabled != newValue {
+                                    // Save failed (or lost a race) — roll back both the
+                                    // optimistic mirror and the theme so they don't
+                                    // drift from the persisted preference.
+                                    darkModeOptimistic = previous
+                                    themeManager.isDarkMode = previous
+                                }
+                            }
                         }
                     ),
                     isLoading: viewModel.isSaving
