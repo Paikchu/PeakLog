@@ -101,19 +101,30 @@ final class ProfileViewModel: ObservableObject {
     // MARK: - Display Helpers
     var volumeDisplay: String {
         guard let stats = profile?.stats else { return "—" }
+        let unit = profile?.preferences.weightUnit ?? .kg
         let kg = stats.totalVolumeKg
-        if kg >= 1000 {
-            return String(format: "%.0ft", kg / 1000)
+
+        switch unit {
+        case .kg:
+            if kg >= 1000 {
+                return String(format: "%.1ft", kg / 1000)
+            }
+            return String(format: "%.0fkg", kg)
+        case .lbs:
+            let lbs = kg / WeightUnit.lbs.toKilogramsFactor
+            if lbs >= 1000 {
+                return String(format: "%.1fk lbs", lbs / 1000)
+            }
+            return String(format: "%.0flbs", lbs)
         }
-        return String(format: "%.0fkg", kg)
     }
 
     var sortedExercisePRs: [ExercisePR] {
         (profile?.exercisePRs ?? []).sorted {
-            if $0.maxWeight == $1.maxWeight {
+            if $0.maxWeightKg == $1.maxWeightKg {
                 return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
             }
-            return $0.maxWeight > $1.maxWeight
+            return $0.maxWeightKg > $1.maxWeightKg
         }
     }
 }
