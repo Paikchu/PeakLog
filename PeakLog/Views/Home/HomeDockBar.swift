@@ -92,26 +92,17 @@ struct HomeDockBar: View {
 
     private func tabButton(_ tab: HomeTab) -> some View {
         let isSelected = selectedTab == tab
-        let showsTitle = isSelected || (showsPlanAction && tab == .calendar)
 
         return Button {
             withAnimation(Self.dockSpring) {
                 selectedTab = tab
             }
         } label: {
-            VStack(spacing: 2) {
-                Image(systemName: tab.symbolName)
-                    .font(.system(size: 20, weight: .semibold))
-                    .symbolVariant(isSelected ? .fill : .none)
-                    .frame(height: 26)
-                if showsTitle {
-                    Text(tab.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-            }
-            .foregroundColor(isSelected ? Color.accentPrimary : Color.textSecondary)
+            Image(systemName: tab.symbolName)
+                .font(.system(size: 20, weight: .semibold))
+                .symbolVariant(isSelected ? .fill : .none)
+                .frame(height: 26)
+                .foregroundColor(isSelected ? Color.accentPrimary : Color.textSecondary)
             .frame(width: HomeDockMetrics.slotWidth, height: HomeDockMetrics.slotHeight)
             .background {
                 if isSelected {
