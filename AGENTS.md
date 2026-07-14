@@ -46,9 +46,112 @@
 
 ## Issue Fix 流程
 
-1. **Issue 分诊**：拉取并按 High → Low 排序 Issue；为每个 Issue 记录复现条件、影响范围、优先级、关联模块和可验证的修复标准，询问本轮要处理的范围。
+1. **Issue 分诊**：按 Priority Label 排序：`P0 Critical` → `P1 High` → `P2 Medium` → `P3 Low`。标题不写优先级；每个 Issue 记录复现条件、影响范围、关联模块和可验证的修复标准，询问本轮要处理的范围。
 2. **根因定位**：在改动前稳定复现问题，检查 iOS 日志、Supabase 日志、RLS 策略、迁移历史和 Edge Function 版本；区分客户端、数据、权限、网络与并发问题。
 3. **修复计划确认**：说明根因证据、最小修复范围、回归风险、测试方案和是否需要线上 Supabase 变更。用户确认后开始修复。
 4. **并行实施**：仅将无共享文件、无共享迁移和无部署依赖的 Issue 放入独立 worktree 并行处理；涉及同一数据契约或同一 Edge Function 的修复串行处理。
 5. **验收与 PR**：每个 Issue 单独复现验证并覆盖回归路径；创建关联 Issue 的 PR，记录根因、修复、验证证据和迁移/部署影响。
 6. **审查与合并**：完成 code review、CI 和模拟器验收后，逐个合并已获授权的 PR 到 `main`；合并后关闭 Issue，并记录残余风险或后续事项。
+
+## 并行 Worktree 下 xcodebuild test 卡顿排查
+
+多个 worktree/agent 并行跑 `xcodebuild test` 时，本机沙箱环境会出现两类间歇性失败，根因是 `Simulator.app` 的 GUI 进程默认不常驻，且模拟器启动服务（`SBMainWorkspace`）按 host 而非按模拟器隔离：
+
+1. **快速失败**：`Simulator device failed to launch ... SBMainWorkspace ... Busy ("Application failed preflight checks")`，几十秒内报错。触发条件是两个 `xcodebuild test` 进程在相近时间启动同一个 bundle id，哪怕用的是不同模拟器 UDID。
+2. **无限期卡死**：不报错，日志停在某个测试用例 "started" 后再无输出，可能卡几十分钟。**卡住的通常是整个测试套件里第一个执行的用例**——卡点在"app 启动/attach test host"这一步，不是该测试自身的代码逻辑问题；不要因为卡在某条并发测试上就误判该测试有并发 bug，先排除环境因素。
+
+**排查步骤：**
+
+1. 判断是真卡死还是仍在编译：`ps -o pid,etime,stat,command -p <xcodebuild PID>`，看 `ELAPSED` 是否远超正常编译+测试耗时；日志（`| tee` 出的文件）若几分钟无新增行，视为卡死。
+2. 确认 `Simulator.app` 是否常驻：`ps aux | grep "Simulator.app/Contents/MacOS/Simulator"`；不在则 `open -a Simulator` 并等待其常驻后再重试。
+3. 确认没有并发争抢：`xcrun simctl list devices booted` 与 `ps aux | grep xcodebuild`，若发现多个模拟器或多个 `xcodebuild test` 进程同时存在，先让它们排队而不是同时跑。
+4. 确认卡死后直接 `kill -9` 该 `xcodebuild` 进程，清空残留模拟器/进程，重新确认 `Simulator.app` 仍在跑，再重试；不要无限等待同一个卡死进程恢复。
+
+**避免复发：**
+
+- 开始并行任务前先手动 `open -a Simulator` 一次并确认常驻。
+- 每个 `xcodebuild test` 调用固定加 `-parallel-testing-enabled NO -disable-concurrent-destination-testing`，并指定一个已 boot 好的具体模拟器 UDID，禁止 Xcode 自动生成并行 clone。
+- 多个 worktree 并行改代码没问题，但**实际执行 `xcodebuild test` 的那一步在 host 级别串行**，同一时刻全局只跑一个测试进程。
+
+## Code Review 模板
+
+```md
+## 审查范围
+
+- PR：#<编号>
+- 关联需求 / Issue：#<编号>
+- 变更摘要：<一句话说明>
+
+## 审查结论
+
+- 结论：Approve / Request changes / Comment
+- 阻塞项：<无 / 关联 Issue Priority Label、文件路径、行号、问题、建议修复>
+- 非阻塞项：<无 / 问题与建议>
+
+## iOS 检查
+
+- [ ] 状态流、并发隔离和主线程更新正确。
+- [ ] 空态、加载态、错误态、重复操作和离线场景可用。
+- [ ] iPhone 17 Pro Max Simulator 已覆盖主路径与回归路径。
+- [ ] 相关单元测试、回归测试和构建通过。
+
+## Supabase 检查
+
+- [ ] 迁移只新增，具备向前兼容性与回滚方案。
+- [ ] RLS、RPC、Storage 和 Edge Function 的用户归属校验正确。
+- [ ] 未暴露 Secret、Service Role Key 或用户数据。
+- [ ] 已验证部署步骤、失败处理和线上影响。
+```
+
+## GitHub Issue 模板
+
+```md
+## 标题
+
+<模块>：<用户可感知的问题或目标>
+
+> 标题不得包含 `P0`、`P1`、`P2` 或 `P3`；优先级仅使用 GitHub Label 标记。
+
+## 元数据
+
+- Priority Label：`P0 Critical` / `P1 High` / `P2 Medium` / `P3 Low`
+- Labels：<Priority Label>、<类型>、<模块>
+- 类型：Bug / Feature / Tech Debt / Security
+- 模块：iOS / Supabase Database / RLS / Edge Function / Sync / Auth
+- 影响版本：<版本号或 commit>
+
+## 背景与影响
+
+<谁在什么场景下受到什么影响；量化范围或说明未知。>
+
+## 复现步骤
+
+1. <前置条件>
+2. <操作>
+3. <操作>
+
+## 实际结果
+
+<可观察到的结果、错误信息、日志或截图。>
+
+## 预期结果
+
+<正确结果。>
+
+## 验收标准
+
+- [ ] <可验证行为>
+- [ ] <回归场景>
+- [ ] iOS / Supabase 测试或模拟器验证证据已附上。
+
+## 排查线索
+
+- 相关代码：<路径、类、函数或迁移>
+- 相关日志 / 请求 ID：<链接或脱敏内容>
+- 数据与权限影响：<无 / 表、RLS、RPC、Storage、Edge Function>
+
+## 上线与回滚
+
+- 部署步骤：<无 / migration、function deploy、App 发布>
+- 回滚方案：<无 / 具体命令或恢复策略>
+```
