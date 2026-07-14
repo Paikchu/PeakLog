@@ -4,9 +4,8 @@ struct ProfileScreen: View {
     @StateObject private var viewModel: ProfileViewModel
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
-    @EnvironmentObject private var authManager: AuthStateManager
-    @EnvironmentObject private var syncController: CloudSyncController
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showingWeightUnitPicker = false
     @State private var showingGoalSpecEditor = false
     // Local optimistic mirrors for the preference toggles. SwiftUI's Toggle
@@ -32,7 +31,6 @@ struct ProfileScreen: View {
             ScrollView {
                 VStack(spacing: 24) {
                     avatarSection
-                    syncStatusRow
                     goalSection
                     statsSection
                     prSection
@@ -120,11 +118,11 @@ struct ProfileScreen: View {
 
     // MARK: - Avatar
     private var avatarSection: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 14) {
             if viewModel.isLoading {
                 Circle()
-                    .fill(Color.appSurface)
-                    .frame(width: 80, height: 80)
+                    .fill(Color.appBackground)
+                    .frame(width: 52, height: 52)
                     .overlay(ProgressView())
             } else {
                 AsyncImage(url: viewModel.profile?.avatarURL) { phase in
@@ -135,69 +133,43 @@ struct ProfileScreen: View {
                             .aspectRatio(contentMode: .fill)
                     default:
                         Image(systemName: "person.circle.fill")
-                            .font(.system(size: 60))
+                            .font(.system(size: 40))
                             .foregroundColor(.textMuted)
                     }
                 }
-                .frame(width: 80, height: 80)
+                .frame(width: 52, height: 52)
                 .clipShape(Circle())
                 .overlay(Circle().strokeBorder(Color.accentBorder.opacity(0.5), lineWidth: 2))
             }
 
-            Text(viewModel.profile?.displayName ?? String(localized: "common.placeholder"))
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.textPrimary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.profile?.displayName ?? String(localized: "common.placeholder"))
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.textPrimary)
 
-            Text(viewModel.profile?.membershipLevel.localizedDisplayName ?? "")
-                .font(.system(size: 13))
-                .foregroundColor(.textMuted)
-        }
-        .padding(.top, 16)
-    }
-
-    // MARK: - Cloud sync status
-    // Hidden outside a signed-in cloud session (DEBUG local mode has nothing
-    // to report). The write path is local-first — a mutation's UI update
-    // never waits on the network — so without this, a background push
-    // failure (e.g. offline) would be invisible and a user could go days
-    // without realizing their training data wasn't backed up.
-    @ViewBuilder
-    private var syncStatusRow: some View {
-        if case .signedIn = authManager.state {
-            HStack(spacing: 6) {
-                syncStatusIcon
-                Text(syncStatusText)
-                    .font(.system(size: 12))
+                Text(viewModel.profile?.membershipLevel.localizedDisplayName ?? "")
+                    .font(.system(size: 13))
                     .foregroundColor(.textMuted)
             }
+
+            Spacer()
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color.appSurface)
+        .cornerRadius(AppRadius.xl)
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.xl)
+                .strokeBorder(Color.appSeparator, lineWidth: 0.5)
+        )
+        .shadow(
+            color: colorScheme == .light ? Color.black.opacity(0.06) : .clear,
+            radius: 3, x: 0, y: 1
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
-    @ViewBuilder
-    private var syncStatusIcon: some View {
-        switch syncController.syncStatus {
-        case .idle:
-            Image(systemName: "checkmark.icloud")
-                .foregroundColor(.textMuted)
-        case .syncing:
-            ProgressView()
-                .scaleEffect(0.6)
-                .frame(width: 12, height: 12)
-        case .pendingRetry:
-            Image(systemName: "exclamationmark.icloud")
-                .foregroundColor(Color.accentValue)
-        }
-    }
-
-    private var syncStatusText: LocalizedStringKey {
-        switch syncController.syncStatus {
-        case .idle: return "profile.sync.idle"
-        case .syncing: return "profile.sync.syncing"
-        case .pendingRetry: return "profile.sync.pending_retry"
-        }
-    }
-
-    @ViewBuilder
     private var goalSection: some View {
         SettingsSection(title: "goal_spec.section.goal") {
             PreferenceNavRow(
@@ -207,19 +179,6 @@ struct ProfileScreen: View {
             ) {
                 showingGoalSpecEditor = true
             }
-        }
-        .padding(.horizontal, 16)
-
-        if let goal = viewModel.profile?.fitnessGoalSummary, !goal.isEmpty {
-            SettingsSection(title: "Fitness Goal") {
-                Text(goal)
-                    .font(.system(size: 14))
-                    .foregroundColor(.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-            }
-            .padding(.horizontal, 16)
         }
     }
 
