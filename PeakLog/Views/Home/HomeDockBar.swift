@@ -42,7 +42,8 @@ struct HomeDockBar: View {
 
     @Namespace private var dockNamespace
 
-    // One curve for every dock change so slot content and page transitions move together.
+    // One curve for every dock change; animation is scoped to the dock so
+    // switching tabs never animates the screens themselves.
     static let dockSpring = Animation.spring(response: 0.35, dampingFraction: 0.82)
 
     // The plan slot doubles as the start-training CTA while the plan tab is
@@ -56,6 +57,7 @@ struct HomeDockBar: View {
             .padding(HomeDockMetrics.contentPadding)
             .background(dockBackground)
             .padding(.horizontal, HomeDockMetrics.outerHorizontalPadding)
+            .animation(Self.dockSpring, value: selectedTab)
             .animation(Self.dockSpring, value: showsPlanAction)
             .accessibilityIdentifier("homeDockBar")
     }
@@ -94,9 +96,7 @@ struct HomeDockBar: View {
         let isSelected = selectedTab == tab
 
         return Button {
-            withAnimation(Self.dockSpring) {
-                selectedTab = tab
-            }
+            selectedTab = tab
         } label: {
             Image(systemName: tab.symbolName)
                 .font(.system(size: 20, weight: .semibold))

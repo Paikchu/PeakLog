@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
 
@@ -46,29 +45,18 @@ struct ContentView: View {
         }
     }
 
-    // Tab switches are driven by withAnimation in HomeDockBar, so the screens
-    // crossfade in the ZStack instead of hard-swapping while the dock animates.
+    // Screens hard-swap on tab change; only the dock animates its own
+    // selection capsule (scoped inside HomeDockBar).
     @ViewBuilder
     private var currentScreen: some View {
         switch selectedTab {
         case .calendar:
             HistoryScreen()
-                .transition(pageTransition)
         case .plan:
             TodayWorkoutScreen(viewModel: todayViewModel)
-                .transition(pageTransition)
         case .settings:
             ProfileScreen()
-                .transition(pageTransition)
         }
-    }
-
-    private var pageTransition: AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        return .asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal: .move(edge: .leading).combined(with: .opacity)
-        )
     }
 
     private var planDockAction: DockPlanAction? {
