@@ -15,6 +15,10 @@ nonisolated struct ExercisePR: Codable, Equatable, Identifiable, Sendable {
     let maxWeight: Double
     let weightUnit: WeightUnit
     let achievedAt: Date
+
+    /// `maxWeight` normalized to kilograms so PRs can be compared/sorted
+    /// consistently regardless of the unit each set was recorded in.
+    var maxWeightKg: Double { maxWeight * weightUnit.toKilogramsFactor }
 }
 
 // MARK: - User Preferences

@@ -13,6 +13,41 @@ nonisolated protocol CloudMergeableRecord: Sendable {
 extension WorkoutSession: CloudMergeableRecord {}
 extension RunningWorkoutRecord: CloudMergeableRecord {}
 
+// MARK: - Exercise PR computation
+
+/// Computes each exercise's personal record (heaviest set) across the given
+/// sessions. Weights are compared normalized to kilograms (`maxWeightKg`) so
+/// that mixed kg/lbs sets are judged correctly — e.g. a 150lbs set (~68kg)
+/// must not be treated as a PR over a 90kg set just because 150 > 90.
+nonisolated func makeExercisePRs(from sessions: [WorkoutSession]) -> [String: ExercisePR] {
+    var prsByExercise: [String: ExercisePR] = [:]
+    for session in sessions {
+        for exercise in session.exercises {
+            let normalizedName = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard let maxSet = exercise.sets.compactMap({ set -> (Double, WeightUnit)? in
+                guard let weight = set.weight else { return nil }
+                return (weight, set.weightUnit)
+            }).max(by: { $0.0 * $0.1.toKilogramsFactor < $1.0 * $1.1.toKilogramsFactor }) else {
+                continue
+            }
+
+            let candidate = ExercisePR(
+                normalizedName: normalizedName,
+                displayName: exercise.name,
+                maxWeight: maxSet.0,
+                weightUnit: maxSet.1,
+                achievedAt: session.date
+            )
+
+            if let existing = prsByExercise[normalizedName], existing.maxWeightKg >= candidate.maxWeightKg {
+                continue
+            }
+            prsByExercise[normalizedName] = candidate
+        }
+    }
+    return prsByExercise
+}
+
 /// A row id is "user-generated" (and thus worth preserving across a login
 /// pull) when — after stripping the `custom-` prefix used by custom exercises
 /// — it parses as a UUID. Seed/demo rows use deterministic non-UUID ids
@@ -970,33 +1005,9 @@ actor LocalAppDatabase {
             }
         }
 
-        var prsByExercise: [String: ExercisePR] = [:]
-        for session in state.strengthSessions {
-            for exercise in session.exercises {
-                let normalizedName = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard let maxSet = exercise.sets.compactMap({ set -> (Double, WeightUnit)? in
-                    guard let weight = set.weight else { return nil }
-                    return (weight, set.weightUnit)
-                }).max(by: { $0.0 < $1.0 }) else {
-                    continue
-                }
+        let prsByExercise = makeExercisePRs(from: state.strengthSessions)
 
-                let candidate = ExercisePR(
-                    normalizedName: normalizedName,
-                    displayName: exercise.name,
-                    maxWeight: maxSet.0,
-                    weightUnit: maxSet.1,
-                    achievedAt: session.date
-                )
-
-                if let existing = prsByExercise[normalizedName], existing.maxWeight >= candidate.maxWeight {
-                    continue
-                }
-                prsByExercise[normalizedName] = candidate
-            }
-        }
-
-        state.profile.exercisePRs = prsByExercise.values.sorted { $0.maxWeight > $1.maxWeight }
+        state.profile.exercisePRs = prsByExercise.values.sorted { $0.maxWeightKg > $1.maxWeightKg }
         state.profile.stats = UserStats(
             workoutsCount: state.strengthSessions.count + state.runningRecords.count,
             streakDays: streak,
@@ -1603,25 +1614,7 @@ nonisolated private struct LocalAppDatabasePreviewDriver: Sendable {
             }
         }
 
-        var prsByExercise: [String: ExercisePR] = [:]
-        for session in state.strengthSessions {
-            for exercise in session.exercises {
-                let normalizedName = exercise.name.lowercased()
-                guard let maxSet = exercise.sets.compactMap({ set -> (Double, WeightUnit)? in
-                    guard let weight = set.weight else { return nil }
-                    return (weight, set.weightUnit)
-                }).max(by: { $0.0 < $1.0 }) else {
-                    continue
-                }
-                prsByExercise[normalizedName] = ExercisePR(
-                    normalizedName: normalizedName,
-                    displayName: exercise.name,
-                    maxWeight: maxSet.0,
-                    weightUnit: maxSet.1,
-                    achievedAt: session.date
-                )
-            }
-        }
+        let prsByExercise = makeExercisePRs(from: state.strengthSessions)
 
         let streak = activeDays.contains(calendar.startOfDay(for: Date())) ? 1 : 0
         self.stats = UserStats(
@@ -1630,7 +1623,7 @@ nonisolated private struct LocalAppDatabasePreviewDriver: Sendable {
             totalVolumeKg: totalVolume,
             prCount: prsByExercise.count
         )
-        self.exercisePRs = prsByExercise.values.sorted { $0.maxWeight > $1.maxWeight }
+        self.exercisePRs = prsByExercise.values.sorted { $0.maxWeightKg > $1.maxWeightKg }
     }
 }
 
