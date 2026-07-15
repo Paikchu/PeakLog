@@ -11,12 +11,12 @@ struct PreferenceToggleRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .appFont(size: 16)
                 .foregroundColor(.textSecondary)
                 .frame(width: 24)
 
             Text(title)
-                .font(.settingTitle)
+                .appFont(.settingTitle)
                 .foregroundColor(.textPrimary)
 
             Spacer()
@@ -26,11 +26,11 @@ struct PreferenceToggleRow: View {
                     .scaleEffect(0.7)
             } else {
                 Text(isOn ? "common.on" : "common.off")
-                    .font(.settingValue)
+                    .appFont(.settingValue)
                     .foregroundColor(.textMuted)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(size: 12, weight: .semibold)
                     .foregroundColor(.textDarkMuted)
             }
         }
@@ -55,24 +55,24 @@ struct PreferenceNavRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .appFont(size: 16)
                     .foregroundColor(.textSecondary)
                     .frame(width: 24)
 
                 Text(title)
-                    .font(.settingTitle)
+                    .appFont(.settingTitle)
                     .foregroundColor(.textPrimary)
 
                 Spacer()
 
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.settingValue)
+                        .appFont(.settingValue)
                         .foregroundColor(.textMuted)
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(size: 12, weight: .semibold)
                     .foregroundColor(.textDarkMuted)
             }
             .padding(.horizontal, 16)
@@ -93,7 +93,7 @@ struct SettingsSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .appFont(size: 11, weight: .semibold)
                 .foregroundColor(.textMuted)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 6)

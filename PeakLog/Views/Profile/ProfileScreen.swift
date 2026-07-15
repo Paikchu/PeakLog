@@ -86,17 +86,17 @@ struct ProfileScreen: View {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(pr.displayName)
-                                .font(.system(size: 15, weight: .semibold))
+                                .appFont(size: 15, weight: .semibold)
                                 .foregroundColor(.textPrimary)
                             Text(pr.achievedAt, style: .date)
-                                .font(.system(size: 12))
+                                .appFont(size: 12)
                                 .foregroundColor(.textMuted)
                         }
 
                         Spacer()
 
                         Text("\(formatPRWeight(pr.maxWeight)) \(pr.weightUnit.display)")
-                            .font(.system(size: 14, weight: .bold))
+                            .appFont(size: 14, weight: .bold)
                             .foregroundColor(Color.accentValue)
                     }
                     .padding(.horizontal, 16)
@@ -137,7 +137,7 @@ struct ProfileScreen: View {
                             .aspectRatio(contentMode: .fill)
                     default:
                         Image(systemName: "person.circle.fill")
-                            .font(.system(size: 40))
+                            .appFont(size: 40)
                             .foregroundColor(.textMuted)
                     }
                 }
@@ -148,11 +148,11 @@ struct ProfileScreen: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.profile?.displayName ?? String(localized: "common.placeholder"))
-                    .font(.system(size: 17, weight: .bold))
+                    .appFont(size: 17, weight: .bold)
                     .foregroundColor(.textPrimary)
 
                 Text(viewModel.profile?.membershipLevel.localizedDisplayName ?? "")
-                    .font(.system(size: 13))
+                    .appFont(size: 13)
                     .foregroundColor(.textMuted)
             }
 

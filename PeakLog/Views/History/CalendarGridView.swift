@@ -91,7 +91,7 @@ struct CalendarGridView: View {
                 .fill(tint)
                 .frame(width: 5, height: 5)
             Text(value)
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(size: 12, weight: .semibold)
                 .foregroundColor(.textPrimary)
         }
         .padding(.horizontal, 10)
@@ -114,7 +114,7 @@ struct CalendarGridView: View {
                 }
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(size: 14, weight: .semibold)
                     .foregroundColor(.textSecondary)
                     .frame(width: 32, height: 32)
             }
@@ -122,7 +122,7 @@ struct CalendarGridView: View {
             Spacer()
 
             Text(displayedMonthTitle)
-                .font(.system(size: 15, weight: .bold))
+                .appFont(size: 15, weight: .bold)
                 .foregroundColor(.textPrimary)
 
             Spacer()
@@ -138,7 +138,7 @@ struct CalendarGridView: View {
                 }
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(size: 14, weight: .semibold)
                     .foregroundColor(.textSecondary)
                     .frame(width: 32, height: 32)
             }
@@ -150,7 +150,7 @@ struct CalendarGridView: View {
         HStack(spacing: 0) {
             ForEach(weekdays, id: \.self) { day in
                 Text(day)
-                    .font(.system(size: 11, weight: .medium))
+                    .appFont(size: 11, weight: .medium)
                     .foregroundColor(.textMuted)
                     .frame(maxWidth: .infinity)
             }
@@ -187,7 +187,7 @@ struct CalendarGridView: View {
             }
         } label: {
             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(size: 12, weight: .semibold)
                 .foregroundColor(.textMuted)
                 .frame(maxWidth: .infinity)
                 .frame(height: 22)
@@ -220,7 +220,7 @@ private struct DayCell: View {
 
                 VStack(spacing: 3) {
                     Text(dayNumber(day.date))
-                        .font(.system(size: 14, weight: day.isToday || day.isSelected ? .bold : .regular))
+                        .appFont(size: 14, weight: day.isToday || day.isSelected ? .bold : .regular)
                         .foregroundColor(textColor)
 
                     if day.showsWorkoutIndicator {

@@ -15,16 +15,16 @@ struct StatCardView: View {
                     .fill(iconColor.opacity(0.15))
                     .frame(width: 36, height: 36)
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .appFont(size: 16, weight: .semibold)
                     .foregroundColor(iconColor)
             }
 
             Text(value)
-                .font(.statValue)
+                .appFont(.statValue)
                 .foregroundColor(.textPrimary)
 
             Text(label)
-                .font(.statLabel)
+                .appFont(.statLabel)
                 .foregroundColor(.textMuted)
         }
         .frame(maxWidth: .infinity)

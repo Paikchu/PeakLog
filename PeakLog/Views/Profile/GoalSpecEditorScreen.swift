@@ -157,7 +157,7 @@ struct GoalSpecEditorScreen: View {
             ))
             .frame(minHeight: 90)
             .scrollContentBackground(.hidden)
-            .font(.system(size: 14))
+            .appFont(size: 14)
             .foregroundColor(.textPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -178,14 +178,14 @@ struct GoalSpecEditorScreen: View {
     private func stepperRow(title: LocalizedStringKey, value: String, onDecrement: @escaping () -> Void, onIncrement: @escaping () -> Void) -> some View {
         HStack {
             Text(title)
-                .font(.settingTitle)
+                .appFont(.settingTitle)
                 .foregroundColor(.textPrimary)
             Spacer()
             Button(action: onDecrement) {
                 Image(systemName: "minus.circle")
             }
             Text(value)
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(size: 15, weight: .semibold)
                 .foregroundColor(.textPrimary)
                 .frame(minWidth: 28)
             Button(action: onIncrement) {
@@ -212,7 +212,7 @@ struct GoalSpecEditorScreen: View {
     private func chip(label: Text, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             label
-                .font(.system(size: 12, weight: .medium))
+                .appFont(size: 12, weight: .medium)
                 .foregroundColor(isSelected ? .accentValue : .textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)

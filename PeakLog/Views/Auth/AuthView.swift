@@ -18,7 +18,7 @@ struct AuthView: View {
 
             VStack(spacing: 8) {
                 Text("auth.title")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .appFont(size: 34, weight: .bold, design: .rounded)
                     .foregroundStyle(Color.textPrimary)
                 Text("auth.subtitle")
                     .font(.subheadline)

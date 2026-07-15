@@ -39,9 +39,9 @@ struct SwipeToDeleteRow<Content: View>: View {
         Button(action: triggerDelete) {
             VStack(spacing: 4) {
                 Image(systemName: "trash.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .appFont(size: 17, weight: .semibold)
                 Text("common.delete")
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(size: 11, weight: .semibold)
             }
             .foregroundColor(.white)
             .frame(width: actionWidth)

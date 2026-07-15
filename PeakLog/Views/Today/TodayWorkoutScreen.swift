@@ -116,9 +116,9 @@ struct TodayWorkoutScreen: View {
     private var completedChip: some View {
         HStack(spacing: 3) {
             Image(systemName: "checkmark")
-                .font(.system(size: 9, weight: .bold))
+                .appFont(size: 9, weight: .bold)
             Text("today.header.completed")
-                .font(.system(size: 11, weight: .bold))
+                .appFont(size: 11, weight: .bold)
         }
         .foregroundColor(.green)
         .padding(.horizontal, 8)
@@ -525,7 +525,7 @@ private struct TodayFocusHeader: View {
                     withAnimation(flowAnimation, onMinimize)
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(size: 14, weight: .semibold)
                         .foregroundColor(.textSecondary)
                         .frame(width: 32, height: 32)
                         .glassChip(cornerRadius: AppRadius.full)
@@ -538,14 +538,14 @@ private struct TodayFocusHeader: View {
                     focus: session.focus,
                     fallbackTitle: String(localized: "today.header.default_title")
                 ).title)
-                    .font(.system(size: 17, weight: .bold))
+                    .appFont(size: 17, weight: .bold)
                     .foregroundColor(.textPrimary)
                     .lineLimit(1)
 
                 Spacer()
 
                 Text("\(session.completedSetsCount)/\(session.totalSetsCount)")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .appFont(size: 14, weight: .bold, design: .rounded)
                     .foregroundColor(.textPrimary)
                     .contentTransition(.numericText())
                     .animation(flowAnimation, value: session.completedSetsCount)
@@ -563,7 +563,7 @@ private struct TodayFocusHeader: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(size: 14, weight: .semibold)
                         .foregroundColor(.textSecondary)
                         .frame(width: 32, height: 32)
                         .glassChip(cornerRadius: AppRadius.full)
@@ -632,8 +632,8 @@ private struct TodaySummarySection: View {
                 Int64(plan.completedSetsCount),
                 Int64(plan.totalSetsCount)
             ))
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
             .monospacedDigit()
+            .appFont(size: 13, weight: .semibold, design: .rounded)
             .foregroundColor(.textSecondary)
             .contentTransition(.numericText())
         }
@@ -649,7 +649,7 @@ private struct TodaySummarySection: View {
                 count: state.runningRecords.count,
                 locale: locale
             ))
-            .font(.system(size: 13, weight: .medium))
+            .appFont(size: 13, weight: .medium)
             .foregroundColor(.textSecondary)
             .padding(.horizontal, 4)
         }
@@ -799,12 +799,12 @@ private struct ReorderableExerciseList: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("today.plan.reorder.title")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(size: 15, weight: .semibold)
                     .foregroundColor(.textSecondary)
                 Spacer()
                 Button(action: onDone) {
                     Text("common.done")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(size: 15, weight: .bold)
                         .foregroundColor(.accentPrimary)
                 }
                 .accessibilityIdentifier("today.plan.reorderDone")
@@ -905,7 +905,7 @@ private struct ReorderableExerciseRow: View {
                 .frame(width: 5, height: 22)
 
             Text(name)
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(size: 15, weight: .semibold)
                 .foregroundColor(.textPrimary)
                 .lineLimit(1)
 
@@ -917,11 +917,11 @@ private struct ReorderableExerciseRow: View {
                 Int64(completedSets),
                 Int64(totalSets)
             ))
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .appFont(size: 13, weight: .semibold, design: .rounded)
                 .foregroundColor(.textSecondary)
 
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(size: 15, weight: .semibold)
                 .foregroundColor(.textMuted)
         }
         .padding(.horizontal, 14)
@@ -944,9 +944,9 @@ private struct TodayInlineAddRow: View {
         Button(action: onAddPlanExercise) {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(size: 15, weight: .bold)
                 Text("today.add_menu.plan_exercise")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(size: 15, weight: .semibold)
             }
             .foregroundColor(.accentPrimary)
             .frame(maxWidth: .infinity)
@@ -1017,11 +1017,11 @@ private struct TodayRecordsSection: View {
     private func sectionHeader(title: String, subtitle: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 18, weight: .bold))
+                .appFont(size: 18, weight: .bold)
                 .foregroundColor(.textPrimary)
             if let subtitle, !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.system(size: 13))
+                    .appFont(size: 13)
                     .foregroundColor(.textMuted)
             }
         }
@@ -1054,14 +1054,14 @@ private struct TodayPlannedExerciseCard: View {
                         .frame(width: 5, height: 22)
 
                     Text(exercise.exerciseName)
-                        .font(.exerciseName)
+                        .appFont(.exerciseName)
                         .foregroundColor(.textPrimary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
 
                     if let previous = exercise.previousPerformanceSummary, !previous.isEmpty {
                         Text(previous)
-                            .font(.system(size: 12, weight: .medium))
+                            .appFont(size: 12, weight: .medium)
                             .foregroundColor(.textMuted)
                     }
                 }
@@ -1073,20 +1073,20 @@ private struct TodayPlannedExerciseCard: View {
                 if exercise.sets.count > 1 {
                     Button(action: onDeleteLastSet) {
                         Image(systemName: "minus.circle")
-                            .font(.system(size: 16, weight: .semibold))
+                            .appFont(size: 16, weight: .semibold)
                             .foregroundColor(.textMuted)
                     }
                 }
 
                 Button(action: onAddSet) {
                     Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .appFont(size: 17, weight: .semibold)
                         .foregroundColor(.accentPrimary)
                 }
             }
             if let suggestion = exercise.aiSuggestion, !suggestion.isEmpty {
                 Text(suggestion)
-                    .font(.system(size: 12))
+                    .appFont(size: 12)
                     .foregroundColor(.accentPrimary.opacity(0.92))
             }
 
@@ -1146,7 +1146,7 @@ private struct TodayPlannedSetRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Text("\(set.setIndex)")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(.textSecondary)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.workoutIndexFill))
@@ -1169,7 +1169,7 @@ private struct TodayPlannedSetRow: View {
             }
 
             Text("×")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
             Button {
@@ -1177,10 +1177,10 @@ private struct TodayPlannedSetRow: View {
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(set.targetReps)")
-                        .font(.exerciseValue)
+                        .appFont(.exerciseValue)
                         .foregroundColor(.accentValue)
                     Text("chat.exercise.reps")
-                        .font(.exerciseUnit)
+                        .appFont(.exerciseUnit)
                         .foregroundColor(.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -1198,7 +1198,7 @@ private struct TodayPlannedSetRow: View {
 #endif
             }) {
                 Image(systemName: showsCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 21, weight: .semibold))
+                    .appFont(size: 21, weight: .semibold)
                     .foregroundColor(showsCompleted ? .green : .textMuted)
             }
             .disabled(showsCompleted)

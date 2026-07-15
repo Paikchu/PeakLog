@@ -117,7 +117,7 @@ struct DailyRecordSheet: View {
                     }
                 } label: {
                     Text(candidate.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(size: 14, weight: .semibold)
                         .foregroundColor(mode == candidate ? .white : .textSecondary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 36)
@@ -140,7 +140,7 @@ struct DailyRecordSheet: View {
     private var strengthContent: some View {
         VStack(spacing: 14) {
             TextField(String(localized: "daily_record.session_title"), text: $title)
-                .font(.chatBodyMedium)
+                .appFont(.chatBodyMedium)
                 .foregroundColor(.textPrimary)
                 .padding(.horizontal, 14)
                 .frame(height: 46)
@@ -201,14 +201,14 @@ struct DailyRecordSheet: View {
     ) -> some View {
         HStack(spacing: 12) {
             Text(String(localized: labelKey))
-                .font(.chatBodyMedium)
+                .appFont(.chatBodyMedium)
                 .foregroundColor(.textSecondary)
 
             Spacer()
 
             TextField(placeholder, text: text)
                 .keyboardType(keyboardType)
-                .font(.exerciseValue)
+                .appFont(.exerciseValue)
                 .foregroundColor(.accentValue)
                 .multilineTextAlignment(.center)
                 .frame(width: 120, height: 42)

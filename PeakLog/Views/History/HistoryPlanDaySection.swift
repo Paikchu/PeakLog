@@ -8,28 +8,28 @@ struct HistoryPlanDaySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(dayLabel)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(size: 14, weight: .semibold)
                 .foregroundColor(.textMuted)
 
             Text(day.title)
-                .font(.system(size: 20, weight: .bold))
+                .appFont(size: 20, weight: .bold)
                 .foregroundColor(.textPrimary)
 
             if let focus = day.focus, !focus.isEmpty {
                 Text(focus)
-                    .font(.system(size: 13))
+                    .appFont(size: 13)
                     .foregroundColor(.textSecondary)
             }
 
             ForEach(day.exercises) { exercise in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(exercise.exerciseName)
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(size: 15, weight: .semibold)
                         .foregroundColor(.textPrimary)
 
                     ForEach(exercise.sets) { set in
                         Text(setDisplayText(set, loadType: exercise.exerciseLoadType))
-                            .font(.system(size: 13))
+                            .appFont(size: 13)
                             .foregroundColor(.textSecondary)
                     }
                 }

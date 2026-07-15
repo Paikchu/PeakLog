@@ -115,32 +115,74 @@ extension LinearGradient {
 
 // MARK: - Font Tokens
 // Numeric styles use the rounded design so weights/reps read like gym plates.
-extension Font {
+// Sizes are the design reference at the default (Large) content size; rendering
+// goes through `.appFont(...)`, which scales them with Dynamic Type. `relativeTo`
+// picks the system text style whose scaling curve the token follows.
+struct AppFont {
+    var size: CGFloat
+    var weight: Font.Weight = .regular
+    var design: Font.Design = .default
+    var relativeTo: Font.TextStyle = .body
+
     // Headers
-    static let headerTitle = Font.system(size: 17, weight: .semibold)
-    static let screenTitle = Font.system(size: 17, weight: .semibold)
+    static let headerTitle = AppFont(size: 17, weight: .semibold, relativeTo: .headline)
+    static let screenTitle = AppFont(size: 17, weight: .semibold, relativeTo: .headline)
 
     // Body
-    static let chatBody = Font.system(size: 14.5, weight: .regular)
-    static let chatBodyMedium = Font.system(size: 14.5, weight: .medium)
+    static let chatBody = AppFont(size: 14.5, relativeTo: .subheadline)
+    static let chatBodyMedium = AppFont(size: 14.5, weight: .medium, relativeTo: .subheadline)
 
     // Exercise
-    static let exerciseName = Font.system(size: 14, weight: .bold)
-    static let exerciseValue = Font.system(size: 15, weight: .bold, design: .rounded)
-    static let exerciseUnit = Font.system(size: 11, weight: .medium, design: .rounded)
+    static let exerciseName = AppFont(size: 14, weight: .bold, relativeTo: .subheadline)
+    static let exerciseValue = AppFont(size: 15, weight: .bold, design: .rounded, relativeTo: .subheadline)
+    static let exerciseUnit = AppFont(size: 11, weight: .medium, design: .rounded, relativeTo: .caption2)
 
     // Labels
-    static let setIndex = Font.system(size: 12, weight: .medium, design: .rounded)
-    static let dateLabel = Font.system(size: 12, weight: .medium)
-    static let recordHeader = Font.system(size: 13, weight: .semibold)
+    static let setIndex = AppFont(size: 12, weight: .medium, design: .rounded, relativeTo: .caption)
+    static let dateLabel = AppFont(size: 12, weight: .medium, relativeTo: .caption)
+    static let recordHeader = AppFont(size: 13, weight: .semibold, relativeTo: .footnote)
 
     // Stats
-    static let statValue = Font.system(size: 16, weight: .bold, design: .rounded)
-    static let statLabel = Font.system(size: 11, weight: .medium)
+    static let statValue = AppFont(size: 16, weight: .bold, design: .rounded, relativeTo: .callout)
+    static let statLabel = AppFont(size: 11, weight: .medium, relativeTo: .caption2)
 
     // Settings
-    static let settingTitle = Font.system(size: 15, weight: .medium)
-    static let settingValue = Font.system(size: 13, weight: .regular)
+    static let settingTitle = AppFont(size: 15, weight: .medium, relativeTo: .subheadline)
+    static let settingValue = AppFont(size: 13, relativeTo: .footnote)
+}
+
+private struct ScaledAppFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    private let design: Font.Design
+
+    init(_ token: AppFont) {
+        _size = ScaledMetric(wrappedValue: token.size, relativeTo: token.relativeTo)
+        weight = token.weight
+        design = token.design
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight, design: design))
+    }
+}
+
+extension View {
+    /// Applies a theme font token, scaled with the user's Dynamic Type setting.
+    func appFont(_ token: AppFont) -> some View {
+        modifier(ScaledAppFont(token))
+    }
+
+    /// Applies a one-off font that scales with Dynamic Type, replacing fixed
+    /// `Font.system(size:)` usages.
+    func appFont(
+        size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default,
+        relativeTo textStyle: Font.TextStyle = .body
+    ) -> some View {
+        modifier(ScaledAppFont(AppFont(size: size, weight: weight, design: design, relativeTo: textStyle)))
+    }
 }
 
 // MARK: - Spacing & Corner Radius
