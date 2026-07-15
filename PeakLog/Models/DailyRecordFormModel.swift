@@ -79,7 +79,7 @@ enum DailyRecordDraftBuilder {
                 guard set.reps > 0 else { return nil }
                 if exercise.isBodyweight {
                     // nil means pure bodyweight; a non-negative value is added weight on top of it.
-                    guard set.weight ?? 0 >= 0 else { return nil }
+                    guard (set.weight ?? 0) >= 0 else { return nil }
                     setDrafts.append(.init(weight: set.weight, weightUnit: .kg, reps: set.reps, rpe: nil))
                 } else {
                     guard let weight = set.weight, weight > 0 else { return nil }

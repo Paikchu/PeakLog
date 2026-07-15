@@ -3156,23 +3156,6 @@
         }
       }
     },
-    "plan.weekday.unknown": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Day"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日"
-          }
-        }
-      }
-    },
     "plan.weekly_summary": {
       "extractionState": "manual",
       "localizations": {

@@ -32,7 +32,7 @@ struct ProfileScreen: View {
             VStack(spacing: 0) {
                 // Header 随信息流上滑收起，回到顶部时复位，把滚动后的空间让给内容。
                 header
-                if viewModel.profile == nil && !viewModel.isLoading {
+                if viewModel.profile == nil && !viewModel.isLoading && viewModel.errorMessage != nil {
                     emptyState
                         .padding(.bottom, 40)
                 } else {
@@ -83,13 +83,13 @@ struct ProfileScreen: View {
             }
         }
         .sheet(isPresented: $showingHelp) {
-            InfoSheet(
+            ProfileInfoSheet(
                 titleKey: "profile.support.help",
                 bodyKey: "profile.support.help.body"
             )
         }
         .sheet(isPresented: $showingPrivacy) {
-            InfoSheet(
+            ProfileInfoSheet(
                 titleKey: "profile.support.privacy",
                 bodyKey: "profile.support.privacy.body"
             )
@@ -392,7 +392,7 @@ struct ProfileScreen: View {
 /// Minimal in-app info sheet used by the Profile support rows (Help / Privacy).
 /// Replace the placeholder body copy with the finalized FAQ / policy text or a
 /// deep link once those resources are available.
-struct InfoSheet: View {
+private struct ProfileInfoSheet: View {
     let titleKey: String
     let bodyKey: String
 

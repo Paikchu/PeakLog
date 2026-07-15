@@ -63,7 +63,7 @@ enum PlanExerciseDraftBuilder {
                 guard set.reps > 0 else { return nil }
                 if exercise.isBodyweight {
                     // nil means pure bodyweight; a non-negative value is added weight on top of it.
-                    guard set.weight ?? 0 >= 0 else { return nil }
+                    guard (set.weight ?? 0) >= 0 else { return nil }
                     setDrafts.append(.init(targetWeight: set.weight, targetWeightUnit: .kg, targetReps: set.reps))
                 } else {
                     guard let weight = set.weight, weight > 0 else { return nil }
