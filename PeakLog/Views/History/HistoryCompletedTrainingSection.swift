@@ -235,9 +235,6 @@ struct HistoryCompletedCardioRecordCard: View {
                 if let paceText = record.paceText {
                     metricChip(title: String(localized: "history.completed.metric.pace"), value: paceText)
                 }
-                if let rpe = record.rpe {
-                    metricChip(title: "RPE", value: rpe.cleanRPE)
-                }
             }
 
             Text(dateLabel)

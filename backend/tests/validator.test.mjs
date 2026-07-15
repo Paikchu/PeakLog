@@ -50,7 +50,6 @@ function validCardio(overrides = {}) {
     cardioActivityType: 'running',
     targetDurationMinutes: 30,
     targetDistanceKm: 5,
-    targetRPE: 6,
     notes: null,
     sets: [],
     ...overrides,
@@ -154,20 +153,19 @@ test('bodyweight exercise with null weight is fine', () => {
   assert.equal(result.ok, true);
 });
 
-test('running and cycling accept duration with optional distance and RPE', () => {
+test('running and cycling accept duration with optional distance', () => {
   const plan = validSevenDayPlan();
   plan.days[0].exercises.push(validCardio());
   plan.days[2].exercises = [validCardio({
     exerciseName: 'Cycling',
     cardioActivityType: 'cycling',
     targetDistanceKm: null,
-    targetRPE: null,
   })];
   const result = validateWeeklyPlan(plan, baseContext());
   assert.equal(result.ok, true, result.structuralViolations.join('\n'));
 });
 
-test('elliptical and stair climber reject distance but accept duration and RPE', () => {
+test('elliptical and stair climber reject distance but accept duration', () => {
   const validPlan = validSevenDayPlan();
   validPlan.days[0].exercises = [validCardio({
     exerciseName: 'Elliptical',
@@ -192,7 +190,6 @@ test('cardio contract rejects unknown type, invalid metrics, and strength sets',
     [validCardio({ cardioActivityType: 'swimming' }), 'unknown cardioActivityType'],
     [validCardio({ targetDurationMinutes: 0 }), 'duration'],
     [validCardio({ targetDistanceKm: -1 }), 'distance'],
-    [validCardio({ targetRPE: 11 }), 'RPE'],
     [validCardio({ sets: validExercise().sets }), 'must not contain strength sets'],
     [validCardio({ exerciseId: 'bench_press' }), 'exerciseId must be null'],
     [validCardio({ loadType: 'weighted' }), 'loadType must be null'],
@@ -204,6 +201,14 @@ test('cardio contract rejects unknown type, invalid metrics, and strength sets',
     assert.equal(result.ok, false, message);
     assert.ok(result.structuralViolations.some((v) => v.includes(message)), result.structuralViolations.join('\n'));
   }
+});
+
+test('legacy cardio targetRPE is normalized away', () => {
+  const plan = validSevenDayPlan();
+  plan.days[0].exercises = [validCardio({ targetRPE: 8 })];
+  const result = validateWeeklyPlan(plan, baseContext());
+  assert.equal(result.ok, true, result.structuralViolations.join('\n'));
+  assert.equal(result.clampedPlan.days[0].exercises[0].targetRPE, null);
 });
 
 test('strength items reject cardio-only fields', () => {

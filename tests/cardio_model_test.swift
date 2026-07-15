@@ -5,8 +5,36 @@ struct CardioModelTestRunner {
     static func main() throws {
         try legacyPlanExerciseDefaultsToStrength()
         try legacyRunningRecordDefaultsToRunning()
+        try legacyCardioRPEStillDecodes()
+        try unknownActivityDefaultsToRunning()
+        try newCardioMetricsDefaultToNoRPE()
         try cardioMetricsValidateByActivityType()
         print("cardio_model_test passed")
+    }
+
+    private static func unknownActivityDefaultsToRunning() throws {
+        let json = #"{"id":"run-3","userId":"user-1","workoutDate":0,"activityType":"future_cardio","durationMinutes":30,"distanceKm":5,"source":"manual","createdAt":0,"updatedAt":0}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let record = try decoder.decode(CardioWorkoutRecord.self, from: Data(json.utf8))
+        precondition(record.activityType == .running, "Unknown persisted activity must use the legacy running fallback")
+    }
+
+    private static func legacyCardioRPEStillDecodes() throws {
+        let json = #"{"id":"run-2","userId":"user-1","workoutDate":0,"activityType":"cycling","durationMinutes":30,"distanceKm":5,"rpe":7,"source":"manual","createdAt":0,"updatedAt":0}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let record = try decoder.decode(CardioWorkoutRecord.self, from: Data(json.utf8))
+        precondition(record.rpe == 7, "Legacy cardio RPE must remain decodable")
+    }
+
+    private static func newCardioMetricsDefaultToNoRPE() throws {
+        let metrics = try CardioMetrics(
+            activityType: .running,
+            durationMinutes: 30,
+            distanceKm: 5
+        )
+        precondition(metrics.rpe == nil)
     }
 
     private static func legacyPlanExerciseDefaultsToStrength() throws {

@@ -6,8 +6,23 @@ struct PlanExerciseDraftBuilderTestRunner {
         buildsDraftsWithMultipleExercisesAndPerSetTargets()
         preservesOptionalAddedWeightForBodyweightExercises()
         rejectsNegativeAddedWeightForBodyweightExercises()
+        buildsCardioDraftWithoutRPE()
         rejectsIncompleteForms()
         print("plan_exercise_draft_builder_test passed")
+    }
+
+    private static func buildsCardioDraftWithoutRPE() {
+        let draft = try! PlanExerciseDraft.cardio(
+            activityType: .cycling,
+            targetDurationMinutes: 40,
+            targetDistanceKm: 15
+        )
+
+        precondition(draft.itemType == .cardio)
+        precondition(draft.cardioActivityType == .cycling)
+        precondition(draft.targetDurationMinutes == 40)
+        precondition(draft.targetDistanceKm == 15)
+        precondition(draft.targetRPE == nil, "New cardio plan drafts must not collect RPE")
     }
 
     private static func buildsDraftsWithMultipleExercisesAndPerSetTargets() {

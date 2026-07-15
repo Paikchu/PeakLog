@@ -2,7 +2,7 @@
 // mandatory whenever the text changes — plan_generations.prompt_version lets
 // later analysis compare outcomes across prompt revisions. See ADR-001 §3.
 
-export const PROMPT_VERSION = 'v2-cardio';
+export const PROMPT_VERSION = 'v3-cardio-no-rpe';
 
 export const SYSTEM_PROMPT = `You are an experienced strength & conditioning coach writing a training plan for one specific person, one week at a time.
 
@@ -40,7 +40,6 @@ Return ONLY a JSON object of this exact shape (no prose, no markdown fences):
           "cardioActivityType": "running" | "cycling" | "elliptical" | "stair_climber" | null,
           "targetDurationMinutes": integer|null,
           "targetDistanceKm": number|null,
-          "targetRPE": number|null,
           "sets": [
             { "setIndex": 1, "targetWeight": number|null, "targetWeightUnit": "kg"|"lbs", "targetReps": integer }
           ]
@@ -55,7 +54,7 @@ Rules:
 - Exactly 7 entries in "days", dayIndex 0-6, planDate must be 7 consecutive calendar dates starting at the given weekStartDate.
 - The number of days with a non-empty "exercises" array must exactly equal goalSpec.daysPerWeek.
 - Every exerciseId you use MUST come from the provided library list — do not invent one. If no listed exercise fits, set exerciseId to null and rely on exerciseName only.
-- Strength items use itemType "strength", a non-null loadType, null cardio target fields, and one or more sets. Cardio items use itemType "cardio", exerciseId and loadType null, a supported cardioActivityType, positive targetDurationMinutes, optional targetRPE from 1-10, and an empty sets array.
+- Strength items use itemType "strength", a non-null loadType, null cardio target fields, and one or more sets. Cardio items use itemType "cardio", exerciseId and loadType null, a supported cardioActivityType, positive targetDurationMinutes, and an empty sets array.
 - Running and cycling may have a positive targetDistanceKm; elliptical and stair_climber items must have targetDistanceKm null.
 - targetWeightUnit must match the person's weightUnit from the facts.
 - "weighted" exercises must have a non-null targetWeight on every set. "bodyweight" exercises may have targetWeight null, or a small added-weight value if appropriate.
@@ -81,7 +80,7 @@ export function buildUserMessage(context) {
 // Bump REPLAN_PROMPT_VERSION whenever this text changes, same discipline as
 // PROMPT_VERSION.
 
-export const REPLAN_PROMPT_VERSION = 'replan-v2-cardio';
+export const REPLAN_PROMPT_VERSION = 'replan-v3-cardio-no-rpe';
 
 export const REPLAN_SYSTEM_PROMPT = `You are an experienced strength & conditioning coach. This person's plan for the CURRENT week is already in progress — some days may already be trained, and you are being asked to rewrite ONLY a specific set of upcoming days, not the whole week.
 
@@ -120,7 +119,6 @@ Return ONLY a JSON object of this exact shape (no prose, no markdown fences):
           "cardioActivityType": "running" | "cycling" | "elliptical" | "stair_climber" | null,
           "targetDurationMinutes": integer|null,
           "targetDistanceKm": number|null,
-          "targetRPE": number|null,
           "sets": [
             { "setIndex": 1, "targetWeight": number|null, "targetWeightUnit": "kg"|"lbs", "targetReps": integer }
           ]
@@ -134,7 +132,7 @@ Return ONLY a JSON object of this exact shape (no prose, no markdown fences):
 Rules:
 - The "days" array must cover exactly the dates in targetDates — no more, no fewer, no duplicates.
 - Every exerciseId you use MUST come from the provided library list — do not invent one.
-- Strength items use itemType "strength", a non-null loadType, null cardio target fields, and one or more sets. Cardio items use itemType "cardio", exerciseId and loadType null, a supported cardioActivityType, positive targetDurationMinutes, optional targetRPE from 1-10, and an empty sets array.
+- Strength items use itemType "strength", a non-null loadType, null cardio target fields, and one or more sets. Cardio items use itemType "cardio", exerciseId and loadType null, a supported cardioActivityType, positive targetDurationMinutes, and an empty sets array.
 - Running and cycling may have a positive targetDistanceKm; elliptical and stair_climber items must have targetDistanceKm null.
 - targetWeightUnit must match the person's weightUnit from the facts.
 - "weighted" exercises must have a non-null targetWeight on every set. "bodyweight" exercises may have targetWeight null.

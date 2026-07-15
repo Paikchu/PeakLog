@@ -1995,13 +1995,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose Exercises"
+            "value": "Choose Activity"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择动作"
+            "value": "选择运动"
           }
         }
       }

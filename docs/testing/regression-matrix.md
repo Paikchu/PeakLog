@@ -27,6 +27,7 @@
 | 训练数据写入本地的防抖，避免高频保存 | `tests/today_workout_persist_debounce_test.swift` | 主路径 |
 | 训练页浮层/overlay 在不同屏幕尺寸下的布局 | `tests/today_workout_screen_overlay_layout_test.swift` | 主路径 |
 | 训练日期格式化在跨时区/跨语言下一致 | `tests/workout_date_formatter_test.swift` | 主路径、迁移后兼容性 |
+| 有氧新增、完成、手动记录和卡片均无 RPE，力量组级 RPE 保留 | `tests/cardio_plan_ui_contract_test.swift`、`PeakLogTests/CardioPlanCompletionTests.swift` | 主路径、重复提交 |
 
 ## Plan
 
@@ -38,6 +39,7 @@
 | 计划内动作重新排序后持久化正确 | `tests/plan_exercise_reorder_test.swift` | 主路径、重复提交 |
 | 专注训练模式下的计划展示与交互 | `tests/plan_focus_training_mode_test.swift` | 主路径 |
 | 计划文案的多语言本地化 | `tests/localized_plan_text_test.swift` | 主路径、迁移后兼容性 |
+| 新增有氧计划只保存时长/距离，编辑事件和生成器输出不含 RPE | `tests/plan_exercise_draft_builder_test.swift`、`tests/plan_edit_event_recording_test.swift`、`backend/tests/` | 主路径、迁移后兼容性 |
 
 ## Home
 
@@ -56,6 +58,7 @@
 | 云端数据模型与本地模型的双向映射（roundtrip） | `tests/cloud_mapper_roundtrip_test.swift` | 主路径、迁移后兼容性 |
 | 云端拉取数据与本地状态的合并策略 | `tests/cloud_pull_merge_test.swift` | 主路径、网络失败 |
 | 本地状态在 Schema 迁移后仍可解码 | `tests/local_state_decode_compat_test.swift` | 迁移后兼容性 |
+| 旧有氧 RPE 与未知活动类型可兼容解码，新记录的 RPE 为 nil | `tests/cardio_model_test.swift`、`tests/cloud_mapper_roundtrip_test.swift`、`tests/local_state_decode_compat_test.swift` | 主路径、迁移后兼容性 |
 | Service 层 mock 边界不泄漏到生产路径 | `tests/service_layer_mock_boundary_test.swift` | 主路径 |
 
 ## Profile
@@ -73,6 +76,7 @@
 | 动作库搜索匹配与排序 | `tests/exercise_library_search_test.swift` | 主路径、空态 |
 | 最近使用动作的选取器展示 | `tests/exercise_picker_recent_test.swift` | 主路径、空态 |
 | 动作推荐逻辑 | `tests/exercise_recommendation_test.swift` | 主路径 |
+| 添加训练计划直接进入统一选择器，有氧分类提供四种活动 | `tests/cardio_plan_ui_contract_test.swift` | 主路径、空态 |
 
 ## Localization（跨模块）
 

@@ -15,6 +15,16 @@ struct CloudMapperRoundtripTest {
     static func main() throws {
         let userId = "11111111-1111-1111-1111-111111111111"
 
+        let legacyRowJSON = #"{"id":"legacy-run","user_id":"11111111-1111-1111-1111-111111111111","workout_date":"2026-07-01","duration_minutes":20,"distance_km":3.0,"source":"manual","created_at":null,"updated_at":null}"#
+        let legacyRow = try JSONDecoder().decode(RunningWorkoutRow.self, from: Data(legacyRowJSON.utf8))
+        precondition(legacyRow.activity_type == nil)
+        precondition(legacyRow.rpe == nil)
+        precondition(CloudMapper.running(from: legacyRow).activityType == .running)
+
+        var unknownRow = legacyRow
+        unknownRow.activity_type = "future_cardio"
+        precondition(CloudMapper.running(from: unknownRow).activityType == .running)
+
         let planSet = TrainingPlanSet(id: "22222222-0000-0000-0000-000000000001", setIndex: 1,
             targetWeight: 62.5, targetWeightUnit: .kg, targetReps: 8, completedAt: nil, linkedExerciseSetId: nil)
         let planExercise = TrainingPlanExercise(id: "33333333-0000-0000-0000-000000000001", orderIndex: 0,

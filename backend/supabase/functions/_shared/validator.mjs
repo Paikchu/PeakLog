@@ -67,18 +67,12 @@ function clampDayExercises(day, dayIndex, context, structuralViolations, verdict
           `day ${dayIndex} exercise "${exercise.exerciseName}": ${activityType} does not support distance`
         );
       }
-      if (exercise.targetRPE != null &&
-          (typeof exercise.targetRPE !== 'number' || exercise.targetRPE < 1 || exercise.targetRPE > 10)) {
-        structuralViolations.push(
-          `day ${dayIndex} exercise "${exercise.exerciseName}": RPE must be between 1 and 10`
-        );
-      }
       if (Array.isArray(exercise.sets) && exercise.sets.length > 0) {
         structuralViolations.push(
           `day ${dayIndex} exercise "${exercise.exerciseName}": cardio item must not contain strength sets`
         );
       }
-      return { ...exercise, itemType, sets: [] };
+      return { ...exercise, itemType, targetRPE: null, sets: [] };
     }
 
     if (itemType !== 'strength') {
