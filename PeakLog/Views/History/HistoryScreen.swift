@@ -53,14 +53,9 @@ struct HistoryScreen: View {
         }
     }
 
+    // “7月15日 · 周三”样式的日期标题，与计划页头部文字风格保持一致。
     private var selectedDateLabel: String {
-        viewModel.selectedDate.formatted(
-            Date.FormatStyle()
-                .locale(locale)
-                .month(.abbreviated)
-                .day()
-                .weekday(.abbreviated)
-        )
+        TodayHeaderDateText.eyebrow(for: viewModel.selectedDate, locale: locale)
     }
 
     private var muscleFocusLine: String {

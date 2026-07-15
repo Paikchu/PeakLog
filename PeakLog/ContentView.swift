@@ -18,17 +18,22 @@ struct ContentView: View {
             currentScreen
         }
         .safeAreaInset(edge: .bottom) {
-            Group {
+            VStack(spacing: 10) {
+                if let actionState = trainingActionState {
+                    TrainingActionLayer(state: actionState, action: handleTrainingAction)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 if isTrainingFocusVisible {
                     TrainingFocusBar(viewModel: todayViewModel)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
-                    HomeDockBar(selectedTab: $selectedTab, planAction: planDockAction)
+                    HomeDockBar(selectedTab: $selectedTab)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .padding(.bottom, 8)
             .animation(HomeDockBar.dockSpring, value: isTrainingFocusVisible)
+            .animation(HomeDockBar.dockSpring, value: trainingActionState)
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         .onChange(of: scenePhase) { _, newPhase in
@@ -59,22 +64,29 @@ struct ContentView: View {
         }
     }
 
-    private var planDockAction: DockPlanAction? {
-        // 有最小化的活跃 session 时，槽位变成「继续训练」。
-        if todayViewModel.activeLiveWorkout != nil {
-            return DockPlanAction(
-                title: String(localized: "training_session.resume"),
-                isEnabled: true,
-                action: { todayViewModel.resumeTrainingFocus() }
-            )
+    // Dock 上方的训练动作层状态：有最小化的活跃 session 时全局显示「训练进行中」；
+    // 否则仅在计划页、今日有可训练计划时显示「开始训练」。
+    private var trainingActionState: TrainingActionLayer.State? {
+        guard !isTrainingFocusVisible else { return nil }
+        if let session = todayViewModel.activeLiveWorkout {
+            return .resume(completed: session.completedSetsCount, total: session.totalSetsCount)
         }
+        guard selectedTab == .plan,
+              let plan = todayViewModel.todayPlan,
+              plan.totalSetsCount > 0 else { return nil }
+        return .start
+    }
 
-        guard let plan = todayViewModel.todayPlan, plan.totalSetsCount > 0 else { return nil }
-        return DockPlanAction(
-            title: String(localized: "today.start_training"),
-            isEnabled: todayViewModel.activeLiveWorkout == nil,
-            action: { todayViewModel.startPlanLiveWorkout() }
-        )
+    private func handleTrainingAction() {
+        withAnimation(HomeDockBar.dockSpring) {
+            if todayViewModel.activeLiveWorkout != nil {
+                // 从任意 tab 一键回到训练：先切回计划页再恢复专注模式。
+                selectedTab = .plan
+                todayViewModel.resumeTrainingFocus()
+            } else {
+                todayViewModel.startPlanLiveWorkout()
+            }
+        }
     }
 }
 

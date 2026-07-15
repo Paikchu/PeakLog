@@ -58,23 +58,94 @@ struct TodayWorkoutScreen: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if !isFocusMode {
+                pinnedHeader
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            scrollContent
+        }
+        .background(Color.appBackground.ignoresSafeArea())
+        .animation(flowAnimation, value: isFocusMode)
+    }
+
+    // 钉在 ScrollView 之外的页面大标题：滚动时保持可见，专注模式下让位给 TodayFocusHeader。
+    @ViewBuilder
+    private var pinnedHeader: some View {
+        let header = resolvedHeader
+        RootPageHeader(
+            title: header.title,
+            subtitle: header.subtitle
+        ) {
+            if isPlanComplete { completedChip } else { Color.clear }
+        }
+    }
+
+    /// 标题降级链：计划标题 → 加载占位 → 自由记录 → 仅跑步 → 空状态。
+    private var resolvedHeader: TodayPlanHeader {
+        if let plan = viewModel.todayPlan {
+            return TodayPlanHeader.resolve(
+                planTitle: plan.title,
+                focus: plan.focus,
+                fallbackTitle: String(localized: "today.header.default_title")
+            )
+        }
+        if viewModel.isLoading {
+            return TodayPlanHeader(title: String(localized: "today.header.default_title"), subtitle: nil)
+        }
+        if viewModel.todayRecord != nil {
+            return TodayPlanHeader(
+                title: String(localized: "today.summary.free_record_day.title"),
+                subtitle: String(localized: "today.summary.free_record_day.subtitle")
+            )
+        }
+        if !viewModel.runningRecords.isEmpty {
+            return TodayPlanHeader(
+                title: String(localized: "today.summary.running_only.title"),
+                subtitle: LocalizedPlanText.todayRunningRecordsSummary(
+                    distance: summaryState.totalDistance.cleanDistance,
+                    durationMinutes: summaryState.totalDuration,
+                    count: viewModel.runningRecords.count,
+                    locale: locale
+                )
+            )
+        }
+        return TodayPlanHeader(
+            title: String(localized: "today.summary.empty.title"),
+            subtitle: String(localized: "today.summary.empty.subtitle")
+        )
+    }
+
+    private var isPlanComplete: Bool {
+        guard let plan = viewModel.todayPlan else { return false }
+        return plan.totalSetsCount > 0 && plan.completedSetsCount >= plan.totalSetsCount
+    }
+
+    private var completedChip: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+            Text("today.header.completed")
+                .font(.system(size: 11, weight: .bold))
+        }
+        .foregroundColor(.green)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.green.opacity(0.14)))
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    private var scrollContent: some View {
         ScrollView {
             VStack(spacing: 18) {
                 if viewModel.isLoading {
                     ProgressView().padding(.top, 40)
                 } else {
                     if !isFocusMode {
-                        if let session = viewModel.activeLiveWorkout {
-                            TodayActiveSessionBanner(
-                                session: session,
-                                locale: locale,
-                                flowAnimation: flowAnimation,
-                                onResume: viewModel.resumeTrainingFocus
-                            )
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        if summaryState.hasScrollContent {
+                            TodaySummarySection(state: summaryState, locale: locale)
+                                .transition(.opacity)
                         }
-                        TodaySummarySection(state: summaryState, locale: locale)
-                            .transition(.opacity)
                         if showReplanMenu {
                             replanMenu
                                 .transition(.opacity)
@@ -512,54 +583,7 @@ private struct TodayFocusHeader: View {
     }
 }
 
-private struct TodayActiveSessionBanner: View {
-    let session: PlanLiveWorkoutSession
-    let locale: Locale
-    let flowAnimation: Animation?
-    let onResume: () -> Void
-
-    var body: some View {
-        Button {
-            withAnimation(flowAnimation, onResume)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.accentPrimary)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("training_session.in_progress")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.textPrimary)
-                    Text(LocalizedPlanText.setsCompleted(
-                        completed: session.completedSetsCount,
-                        total: session.totalSetsCount,
-                        locale: locale
-                    ))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.textSecondary)
-                }
-
-                Spacer()
-
-                Text("training_session.resume")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .glassActionBackground(cornerRadius: AppRadius.full, tint: Color.accentPrimary.opacity(0.45))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .glassPanel(cornerRadius: AppRadius.xl)
-        .accessibilityIdentifier("training_focus.resumeBanner")
-    }
-}
-
+// 页面大标题移到钉顶 header 后，这里只承载滚动区顶部的进度条和跑步摘要。
 private struct TodaySummarySection: View {
     struct State {
         let plan: TrainingPlanDay?
@@ -573,6 +597,13 @@ private struct TodaySummarySection: View {
         var totalDistance: Double {
             runningRecords.reduce(0) { $0 + $1.distanceKm }
         }
+
+        /// 仅跑步/空状态的信息都在钉顶 header 的副标题里，此时本区不渲染，
+        /// 由外层直接跳过以免在父 VStack 里占一格间距。
+        var hasScrollContent: Bool {
+            if let plan, plan.totalSetsCount > 0 { return true }
+            return !runningRecords.isEmpty && (plan != nil || todayRecord != nil)
+        }
     }
 
     let state: State
@@ -580,54 +611,36 @@ private struct TodaySummarySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let plan = state.plan {
-                planSummary(plan)
-            } else if state.todayRecord != nil {
-                freeRecordSummary
-            } else if !state.runningRecords.isEmpty {
-                runningOnlySummary
-            } else {
-                emptySummary
+            if let plan = state.plan, plan.totalSetsCount > 0 {
+                planProgress(plan)
+            }
+            if state.plan != nil || state.todayRecord != nil {
+                runningPlanSummary
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func planSummary(_ plan: TrainingPlanDay) -> some View {
-        let header = TodayPlanHeader.resolve(
-            planTitle: plan.title,
-            focus: plan.focus,
-            fallbackTitle: String(localized: "today.header.default_title")
-        )
-        let isPlanComplete = plan.totalSetsCount > 0 && plan.completedSetsCount >= plan.totalSetsCount
+    private func planProgress(_ plan: TrainingPlanDay) -> some View {
+        let isPlanComplete = plan.completedSetsCount >= plan.totalSetsCount
 
-        return VStack(alignment: .leading, spacing: 10) {
-            RootPageHeader(eyebrow: TodayHeaderDateText.eyebrow(locale: locale), title: header.title, subtitle: header.subtitle) {
-                if isPlanComplete { completedChip } else { Color.clear }
-            }
-            if plan.totalSetsCount > 0 {
-                HStack(spacing: 10) {
-                    PlanProgressBar(
-                        progress: Double(plan.completedSetsCount) / Double(plan.totalSetsCount),
-                        isComplete: isPlanComplete
-                    )
-                    Text(LocalizedPlanText.formatted(
-                        "today.header.sets_progress",
-                        locale: locale,
-                        Int64(plan.completedSetsCount),
-                        Int64(plan.totalSetsCount)
-                    ))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.textSecondary)
-                    .contentTransition(.numericText())
-                }
-                .padding(.horizontal, RootPageHeaderMetrics.horizontalPadding)
-                .padding(.top, 2)
-            }
-
-            runningPlanSummary
+        return HStack(spacing: 10) {
+            PlanProgressBar(
+                progress: Double(plan.completedSetsCount) / Double(plan.totalSetsCount),
+                isComplete: isPlanComplete
+            )
+            Text(LocalizedPlanText.formatted(
+                "today.header.sets_progress",
+                locale: locale,
+                Int64(plan.completedSetsCount),
+                Int64(plan.totalSetsCount)
+            ))
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundColor(.textSecondary)
+            .contentTransition(.numericText())
         }
+        .padding(.horizontal, 4)
     }
 
     @ViewBuilder
@@ -641,59 +654,8 @@ private struct TodaySummarySection: View {
             ))
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(.textSecondary)
-            .padding(.horizontal, RootPageHeaderMetrics.horizontalPadding)
-            .padding(.top, 2)
+            .padding(.horizontal, 4)
         }
-    }
-
-    private var freeRecordSummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            RootPageHeader(
-                eyebrow: TodayHeaderDateText.eyebrow(locale: locale),
-                title: String(localized: "today.summary.free_record_day.title"),
-                subtitle: String(localized: "today.summary.free_record_day.subtitle")
-            )
-            runningPlanSummary
-        }
-    }
-
-    private var runningOnlySummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            RootPageHeader(
-                eyebrow: TodayHeaderDateText.eyebrow(locale: locale),
-                title: String(localized: "today.summary.running_only.title"),
-                subtitle: LocalizedPlanText.todayRunningRecordsSummary(
-                    distance: state.totalDistance.cleanDistance,
-                    durationMinutes: state.totalDuration,
-                    count: state.runningRecords.count,
-                    locale: locale
-                )
-            )
-        }
-    }
-
-    private var emptySummary: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            RootPageHeader(
-                eyebrow: TodayHeaderDateText.eyebrow(locale: locale),
-                title: String(localized: "today.summary.empty.title"),
-                subtitle: String(localized: "today.summary.empty.subtitle")
-            )
-        }
-    }
-
-    private var completedChip: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 9, weight: .bold))
-            Text("today.header.completed")
-                .font(.system(size: 11, weight: .bold))
-        }
-        .foregroundColor(.green)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(Color.green.opacity(0.14)))
-        .transition(.scale.combined(with: .opacity))
     }
 }
 
