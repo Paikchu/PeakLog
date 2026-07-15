@@ -36,30 +36,30 @@ struct LoadValueLabel: View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             if isBodyweight {
                 Text("chat.exercise.bodyweight")
-                    .font(.exerciseValue)
+                    .appFont(.exerciseValue)
                     .foregroundColor(.accentValue)
                 if let weight, weight > 0 {
                     Text("+\(formatWeightValue(weight))")
-                        .font(.exerciseValue)
+                        .appFont(.exerciseValue)
                         .foregroundColor(.accentValue)
                     Text(weightUnit.display)
-                        .font(.exerciseUnit)
+                        .appFont(.exerciseUnit)
                         .foregroundColor(.textSecondary)
                 }
             } else if let weight {
                 Text(formatWeightValue(weight))
-                    .font(.exerciseValue)
+                    .appFont(.exerciseValue)
                     .foregroundColor(.accentValue)
                 Text(weightUnit.display)
-                    .font(.exerciseUnit)
+                    .appFont(.exerciseUnit)
                     .foregroundColor(.textSecondary)
             } else if let unsetPlaceholder {
                 Text(unsetPlaceholder)
-                    .font(.exerciseValue)
+                    .appFont(.exerciseValue)
                     .foregroundColor(.accentValue)
             } else {
                 Text("chat.exercise.bodyweight")
-                    .font(.exerciseValue)
+                    .appFont(.exerciseValue)
                     .foregroundColor(.accentValue)
             }
         }

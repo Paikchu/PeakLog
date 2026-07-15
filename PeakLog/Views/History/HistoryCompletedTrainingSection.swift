@@ -42,10 +42,10 @@ struct HistoryCompletedTrainingSection: View {
     private func sectionHeader(_ title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 17, weight: .bold))
+                .appFont(size: 17, weight: .bold)
                 .foregroundColor(.textPrimary)
             Text(subtitle)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(size: 12, weight: .medium)
                 .foregroundColor(.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -65,7 +65,7 @@ struct HistoryCompletedStrengthExerciseCard: View {
                     .frame(width: 5, height: 22)
 
                 Text(exercise.name)
-                    .font(.exerciseName)
+                    .appFont(.exerciseName)
                     .foregroundColor(.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -73,7 +73,7 @@ struct HistoryCompletedStrengthExerciseCard: View {
                 Spacer()
 
                 Text(LocalizedPlanText.completedStrengthBadge(exercise.completedSetCount, locale: locale))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(size: 12, weight: .semibold)
                     .foregroundColor(.green.opacity(0.9))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -113,7 +113,7 @@ private struct HistoryCompletedStrengthSetRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Text("\(set.setIndex)")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(.textSecondary)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.workoutIndexFill))
@@ -121,7 +121,7 @@ private struct HistoryCompletedStrengthSetRow: View {
             infoChip(loadText, accentColor: loadTint)
 
             Text("×")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
             infoChip(
@@ -133,12 +133,12 @@ private struct HistoryCompletedStrengthSetRow: View {
 
             if let rpe = set.rpe {
                 Text("RPE \(rpe.cleanRPE)")
-                    .font(.system(size: 11, weight: .medium))
+                    .appFont(size: 11, weight: .medium)
                     .foregroundColor(.textMuted)
             }
 
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 21, weight: .semibold))
+                .appFont(size: 21, weight: .semibold)
                 .foregroundColor(.green)
         }
         .padding(.horizontal, 10)
@@ -175,7 +175,7 @@ private struct HistoryCompletedStrengthSetRow: View {
 
     private func infoChip(_ text: String, accentColor: Color) -> some View {
         Text(text)
-            .font(.system(size: 14, weight: .semibold))
+            .appFont(size: 14, weight: .semibold)
             .foregroundColor(.textPrimary)
             .frame(maxWidth: .infinity)
             .frame(height: 42)
@@ -198,7 +198,7 @@ struct HistoryCompletedCardioRecordCard: View {
                     .frame(width: 5, height: 22)
 
                 Text(record.title)
-                    .font(.exerciseName)
+                    .appFont(.exerciseName)
                     .foregroundColor(.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
@@ -206,7 +206,7 @@ struct HistoryCompletedCardioRecordCard: View {
                 Spacer()
 
                 Text(sourceLabel)
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(size: 12, weight: .semibold)
                     .foregroundColor(.teal.opacity(0.92))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -236,7 +236,7 @@ struct HistoryCompletedCardioRecordCard: View {
             }
 
             Text(dateLabel)
-                .font(.system(size: 12))
+                .appFont(size: 12)
                 .foregroundColor(.textMuted)
         }
         .padding(14)
@@ -268,10 +268,10 @@ struct HistoryCompletedCardioRecordCard: View {
     private func metricChip(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .appFont(size: 11, weight: .semibold)
                 .foregroundColor(.textMuted)
             Text(value)
-                .font(.system(size: 15, weight: .bold))
+                .appFont(size: 15, weight: .bold)
                 .foregroundColor(.textPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

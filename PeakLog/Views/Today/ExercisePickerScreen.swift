@@ -118,11 +118,11 @@ struct ExercisePickerScreen: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
+                .appFont(size: 14, weight: .medium)
                 .foregroundColor(.textMuted)
 
             TextField(String(localized: "exercise_picker.search_placeholder"), text: $query)
-                .font(.chatBodyMedium)
+                .appFont(.chatBodyMedium)
                 .foregroundColor(.textPrimary)
                 .autocorrectionDisabled()
 
@@ -131,7 +131,7 @@ struct ExercisePickerScreen: View {
                     withAnimation(pickerSpring) { query = "" }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
+                        .appFont(size: 14)
                         .foregroundColor(.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -199,7 +199,7 @@ struct ExercisePickerScreen: View {
             withAnimation(pickerSpring) { action() }
         } label: {
             label
-                .font(.system(size: compact ? 11 : 12, weight: .medium))
+                .appFont(size: compact ? 11 : 12, weight: .medium)
                 .foregroundColor(isSelected ? .accentValue : .textSecondary)
                 .padding(.horizontal, compact ? 10 : 12)
                 .padding(.vertical, compact ? 5 : 7)
@@ -222,7 +222,7 @@ struct ExercisePickerScreen: View {
 
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
         Text(key)
-            .font(.system(size: 11, weight: .medium))
+            .appFont(size: 11, weight: .medium)
             .kerning(1.1)
             .foregroundColor(.textMuted)
             .padding(.horizontal, 16)
@@ -241,7 +241,7 @@ struct ExercisePickerScreen: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(definition.displayName(for: localizationManager.appLanguage))
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(size: 15, weight: .semibold)
                         .foregroundColor(isAdded ? .textMuted : (isSelected ? .accentValue : .textPrimary))
 
                     metaLine(for: definition, recentEntry: recentEntry)
@@ -269,15 +269,15 @@ struct ExercisePickerScreen: View {
     private func metaLine(for definition: ExerciseDefinition, recentEntry: RecentExerciseEntry?) -> some View {
         HStack(spacing: 4) {
             Text("\(definition.equipment.displayLabel) · \(definition.muscleGroup.displayLabel)")
-                .font(.exerciseUnit)
+                .appFont(.exerciseUnit)
                 .foregroundColor(.textMuted)
 
             if let recentEntry, let summary = lastSummary(recentEntry) {
                 Text("·")
-                    .font(.exerciseUnit)
+                    .appFont(.exerciseUnit)
                     .foregroundColor(.textMuted)
                 Text(summary)
-                    .font(.exerciseUnit)
+                    .appFont(.exerciseUnit)
                     .foregroundColor(.accentValue)
             }
         }
@@ -287,16 +287,16 @@ struct ExercisePickerScreen: View {
     private func trailingIndicator(isAdded: Bool, isSelected: Bool) -> some View {
         if isAdded {
             Text("exercise_picker.already_added")
-                .font(.system(size: 11, weight: .medium))
+                .appFont(size: 11, weight: .medium)
                 .foregroundColor(.textMuted)
         } else if isSelected {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
+                .appFont(size: 20, weight: .semibold)
                 .foregroundColor(.accentPrimary)
                 .transition(.scale.combined(with: .opacity))
         } else {
             Image(systemName: "circle")
-                .font(.system(size: 20, weight: .regular))
+                .appFont(size: 20, weight: .regular)
                 .foregroundColor(.textDarkMuted)
         }
     }
@@ -305,7 +305,7 @@ struct ExercisePickerScreen: View {
 
     private var noResults: some View {
         Text("exercise_picker.no_results")
-            .font(.chatBody)
+            .appFont(.chatBody)
             .foregroundColor(.textMuted)
             .frame(maxWidth: .infinity)
             .padding(.top, 28)
@@ -326,7 +326,7 @@ struct ExercisePickerScreen: View {
             } icon: {
                 Image(systemName: "plus")
             }
-            .font(.system(size: 14, weight: .semibold))
+            .appFont(size: 14, weight: .semibold)
             .foregroundColor(.accentPrimary)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
@@ -356,7 +356,7 @@ struct ExercisePickerScreen: View {
                     onConfirm(picked)
                 } label: {
                     Text(String(format: String(localized: "exercise_picker.add_count"), selection.count))
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(size: 15, weight: .semibold)
                         .foregroundColor(.white)
                         .contentTransition(.numericText())
                         .animation(pickerSpring, value: selection.count)
@@ -407,12 +407,12 @@ struct ExercisePickerScreen: View {
         } label: {
             HStack(spacing: 5) {
                 Text(definition.displayName(for: localizationManager.appLanguage))
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(size: 12, weight: .medium)
                     .foregroundColor(.textPrimary)
                     .lineLimit(1)
 
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .appFont(size: 9, weight: .bold)
                     .foregroundColor(.textMuted)
             }
             .padding(.horizontal, 11)
@@ -529,12 +529,12 @@ struct CreateCustomExerciseSheet: View {
     var body: some View {
         VStack(spacing: 14) {
             Text("exercise_picker.create_custom")
-                .font(.headerTitle)
+                .appFont(.headerTitle)
                 .foregroundColor(.textPrimary)
                 .padding(.top, 20)
 
             TextField(String(localized: "exercise_picker.custom_name_placeholder"), text: $name)
-                .font(.chatBodyMedium)
+                .appFont(.chatBodyMedium)
                 .foregroundColor(.textPrimary)
                 .padding(.horizontal, 14)
                 .frame(height: 44)
@@ -556,10 +556,10 @@ struct CreateCustomExerciseSheet: View {
                         Text(muscleGroup.displayLabel)
                             .foregroundColor(.accentValue)
                         Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
+                            .appFont(size: 10, weight: .semibold)
                             .foregroundColor(.textMuted)
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(size: 13, weight: .medium)
                     .padding(.horizontal, 12)
                     .frame(height: 38)
                     .background(Capsule().fill(Color.workoutPanel))
@@ -569,7 +569,7 @@ struct CreateCustomExerciseSheet: View {
                     isBodyweight.toggle()
                 } label: {
                     Text(isBodyweight ? "daily_record.load.bodyweight" : "daily_record.load.weighted")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(size: 13, weight: .medium)
                         .foregroundColor(isBodyweight ? .accentValue : .textSecondary)
                         .padding(.horizontal, 12)
                         .frame(height: 38)

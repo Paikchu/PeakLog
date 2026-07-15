@@ -10,11 +10,11 @@ struct RunningRecordCard: View {
                 Image(systemName: "figure.run")
                     .foregroundColor(.accentPrimary)
                 Text(isPreview ? "跑步记录预览" : "跑步记录")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(size: 15, weight: .semibold)
                     .foregroundColor(.textPrimary)
                 Spacer()
                 Text(sourceLabel)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(size: 12, weight: .medium)
                     .foregroundColor(.textMuted)
             }
 
@@ -24,7 +24,7 @@ struct RunningRecordCard: View {
             }
 
             Text(dateLabel)
-                .font(.system(size: 12))
+                .appFont(size: 12)
                 .foregroundColor(.textMuted)
         }
         .padding(14)
@@ -55,10 +55,10 @@ struct RunningRecordCard: View {
     private func metric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(size: 12, weight: .medium)
                 .foregroundColor(.textMuted)
             Text(value)
-                .font(.system(size: 18, weight: .bold))
+                .appFont(size: 18, weight: .bold)
                 .foregroundColor(.textPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

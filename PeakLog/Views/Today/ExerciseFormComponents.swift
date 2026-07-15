@@ -47,7 +47,7 @@ struct ExerciseFormCard: View {
 
             // Names come from the exercise library picker, so the header is read-only.
             Text(exercise.name)
-                .font(.exerciseName)
+                .appFont(.exerciseName)
                 .foregroundColor(.textPrimary)
                 .lineLimit(1)
 
@@ -62,7 +62,7 @@ struct ExerciseFormCard: View {
                     }
                 } label: {
                     Image(systemName: "minus.circle")
-                        .font(.system(size: 16, weight: .semibold))
+                        .appFont(size: 16, weight: .semibold)
                         .foregroundColor(.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -71,7 +71,7 @@ struct ExerciseFormCard: View {
             if canDelete {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(size: 14, weight: .semibold)
                         .foregroundColor(.textMuted)
                 }
                 .buttonStyle(.plain)
@@ -93,7 +93,7 @@ struct ExerciseFormCard: View {
             }
         } label: {
             Text(exercise.isBodyweight ? "daily_record.load.bodyweight" : "daily_record.load.weighted")
-                .font(.system(size: 12, weight: .medium))
+                .appFont(size: 12, weight: .medium)
                 .foregroundColor(exercise.isBodyweight ? .accentValue : .textSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -109,7 +109,7 @@ struct ExerciseFormCard: View {
             }
         } label: {
             Label(String(localized: "daily_record.add_set"), systemImage: "plus.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(size: 13, weight: .semibold)
                 .foregroundColor(.accentPrimary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 38)
@@ -140,7 +140,7 @@ struct ExerciseFormSetRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Text("\(setIndex)")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(.textSecondary)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.workoutIndexFill))
@@ -148,7 +148,7 @@ struct ExerciseFormSetRow: View {
             weightChip
 
             Text("×")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
             repsChip
@@ -210,10 +210,10 @@ struct ExerciseFormSetRow: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(set.reps)")
-                    .font(.exerciseValue)
+                    .appFont(.exerciseValue)
                     .foregroundColor(.accentValue)
                 Text("chat.exercise.reps")
-                    .font(.exerciseUnit)
+                    .appFont(.exerciseUnit)
                     .foregroundColor(.textSecondary)
             }
             .frame(maxWidth: .infinity)
@@ -263,7 +263,7 @@ struct AddExerciseDashedButton: View {
     var body: some View {
         Button(action: action) {
             Label(String(localized: "daily_record.add_exercise"), systemImage: "plus")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(size: 14, weight: .semibold)
                 .foregroundColor(.accentPrimary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)

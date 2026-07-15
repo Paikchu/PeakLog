@@ -16,7 +16,7 @@ private struct WheelSheetChrome<Content: View>: View {
     var body: some View {
         VStack(spacing: 14) {
             Text(String(localized: String.LocalizationValue(titleKey)))
-                .font(.headerTitle)
+                .appFont(.headerTitle)
                 .foregroundColor(.textPrimary)
                 .padding(.top, 20)
 
@@ -29,7 +29,7 @@ private struct WheelSheetChrome<Content: View>: View {
                         Text(lastTimeText)
                             .foregroundColor(.textSecondary)
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(size: 12, weight: .medium)
                     .foregroundColor(.textMuted)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
@@ -144,7 +144,7 @@ struct WeightWheelEditSheet: View {
 
                 if isBodyweight {
                     Text("chat.exercise.bodyweight")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .appFont(size: 32, weight: .bold, design: .rounded)
                         .foregroundColor(.accentValue)
                         .frame(height: 150)
                 } else {
@@ -158,7 +158,7 @@ struct WeightWheelEditSheet: View {
                         .frame(width: 84)
 
                         Text(".")
-                            .font(.system(size: 20, weight: .semibold))
+                            .appFont(size: 20, weight: .semibold)
                             .foregroundColor(.textSecondary)
 
                         Picker("", selection: $fractionIndex) {
@@ -170,7 +170,7 @@ struct WeightWheelEditSheet: View {
                         .frame(width: 68)
 
                         Text(weightUnit.display)
-                            .font(.settingTitle)
+                            .appFont(.settingTitle)
                             .foregroundColor(.textMuted)
                             .padding(.leading, 4)
                     }
@@ -236,7 +236,7 @@ struct RepsWheelEditSheet: View {
                 .frame(width: 100, height: 150)
 
                 Text("chat.exercise.reps")
-                    .font(.settingTitle)
+                    .appFont(.settingTitle)
                     .foregroundColor(.textMuted)
             }
         }

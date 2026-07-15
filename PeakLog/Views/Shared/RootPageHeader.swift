@@ -7,8 +7,8 @@ enum RootPageHeaderMetrics {
     static let trailingControlSize: CGFloat = 44
 }
 
-extension Font {
-    static let rootPageTitle = Font.system(size: 30, weight: .bold)
+extension AppFont {
+    static let rootPageTitle = AppFont(size: 30, weight: .bold, relativeTo: .largeTitle)
 }
 
 struct RootPageHeader<Trailing: View>: View {
@@ -30,12 +30,12 @@ struct RootPageHeader<Trailing: View>: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.rootPageTitle)
+                    .appFont(.rootPageTitle)
                     .foregroundColor(.textPrimary)
                     .lineLimit(2)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 15))
+                        .appFont(size: 15)
                         .foregroundColor(.textSecondary)
                 }
             }

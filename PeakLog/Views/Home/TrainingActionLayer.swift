@@ -31,9 +31,9 @@ struct TrainingActionLayer: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(size: 14, weight: .bold)
                 Text("today.start_training")
-                    .font(.system(size: 16, weight: .bold))
+                    .appFont(size: 16, weight: .bold)
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
@@ -50,19 +50,19 @@ struct TrainingActionLayer: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 17, weight: .semibold))
+                    .appFont(size: 17, weight: .semibold)
                     .foregroundColor(.accentPrimary)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("training_session.in_progress")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(size: 14, weight: .bold)
                         .foregroundColor(.textPrimary)
                     Text(LocalizedPlanText.setsCompleted(
                         completed: completed,
                         total: total,
                         locale: locale
                     ))
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(size: 12, weight: .medium)
                     .foregroundColor(.textSecondary)
                     .contentTransition(.numericText())
                 }
@@ -70,7 +70,7 @@ struct TrainingActionLayer: View {
                 Spacer()
 
                 Text("training_session.resume")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(size: 13, weight: .bold)
                     .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)

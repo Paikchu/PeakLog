@@ -59,12 +59,12 @@ struct FocusExerciseCard: View {
                 .frame(width: 5, height: 22)
 
             Text(exercise.name)
-                .font(.exerciseName)
+                .appFont(.exerciseName)
                 .foregroundColor(.textPrimary)
 
             if isComplete {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .appFont(size: 16, weight: .semibold)
                     .foregroundColor(.green)
                     .transition(.scale.combined(with: .opacity))
             }
@@ -72,7 +72,7 @@ struct FocusExerciseCard: View {
             Spacer()
 
             Text("\(session.completedSetsCount(in: exercise))/\(exercise.sets.count)")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .appFont(size: 13, weight: .bold, design: .rounded)
                 .foregroundColor(.textSecondary)
 
             if isCurrent, !isComplete {
@@ -82,7 +82,7 @@ struct FocusExerciseCard: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(size: 14, weight: .semibold)
                         .foregroundColor(.textMuted)
                         .frame(width: 28, height: 28)
                         .contentShape(Circle())
@@ -115,7 +115,7 @@ private struct FocusSetRow: View {
             }
 
             Text("\(set.setIndex)")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(isCurrent ? .textPrimary : .textSecondary)
                 .frame(width: isCurrent ? 34 : 28, height: isCurrent ? 34 : 28)
                 .background(Circle().fill(Color.workoutIndexFill))
@@ -123,26 +123,26 @@ private struct FocusSetRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 if let weight = set.targetWeight {
                     Text(formatWeightValue(weight))
-                        .font(.system(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded))
+                        .appFont(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded)
                         .foregroundColor(isCompleted ? .textMuted : .accentValue)
                     Text(set.targetWeightUnit.display)
-                        .font(.exerciseUnit)
+                        .appFont(.exerciseUnit)
                         .foregroundColor(.textSecondary)
                 } else {
                     Text(loadType.displayLabel)
-                        .font(.system(size: isCurrent ? 20 : 15, weight: .bold, design: .rounded))
+                        .appFont(size: isCurrent ? 20 : 15, weight: .bold, design: .rounded)
                         .foregroundColor(isCompleted ? .textMuted : .accentValue)
                 }
 
                 Text("×")
-                    .font(.setIndex)
+                    .appFont(.setIndex)
                     .foregroundColor(Color.accentBorder.opacity(0.55))
 
                 Text("\(set.targetReps)")
-                    .font(.system(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded))
+                    .appFont(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded)
                     .foregroundColor(isCompleted ? .textMuted : .accentValue)
                 Text("chat.exercise.reps")
-                    .font(.exerciseUnit)
+                    .appFont(.exerciseUnit)
                     .foregroundColor(.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -156,7 +156,7 @@ private struct FocusSetRow: View {
 #endif
             } label: {
                 Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: isCurrent ? 24 : 20, weight: .semibold))
+                    .appFont(size: isCurrent ? 24 : 20, weight: .semibold)
                     .foregroundColor(isCompleted ? .green : .textMuted)
                     .contentTransition(.symbolEffect(.replace))
             }
@@ -192,17 +192,17 @@ struct FocusCollapsedExerciseRow: View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 Image(systemName: isComplete ? "checkmark.circle.fill" : "circle.dotted")
-                    .font(.system(size: 17, weight: .semibold))
+                    .appFont(size: 17, weight: .semibold)
                     .foregroundColor(isComplete ? .green : .textMuted)
 
                 Text(exercise.name)
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(size: 15, weight: .semibold)
                     .foregroundColor(isComplete ? .textSecondary : .textPrimary)
                     .strikethrough(isComplete, color: .textMuted)
 
                 if isSkipped {
                     Text("training_session.skipped")
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(size: 11, weight: .bold)
                         .foregroundColor(.orange)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -212,7 +212,7 @@ struct FocusCollapsedExerciseRow: View {
                 Spacer()
 
                 Text("\(session.completedSetsCount(in: exercise))/\(exercise.sets.count)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .appFont(size: 13, weight: .bold, design: .rounded)
                     .foregroundColor(.textMuted)
             }
             .padding(.horizontal, 14)
@@ -262,11 +262,11 @@ struct TrainingFocusBar: View {
                     locale: locale,
                     Int64(session.currentSet?.setIndex ?? 0)
                 ))
-                .font(.system(size: 16, weight: .bold))
+                .appFont(size: 16, weight: .bold)
 
                 if let set = session.currentSet {
                     Text(currentSetSummary(set, loadType: session.currentExercise?.loadType ?? .weighted))
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(size: 12, weight: .medium)
                         .opacity(0.8)
                 }
             }
@@ -288,7 +288,7 @@ struct TrainingFocusBar: View {
 #endif
         } label: {
             Label(String(localized: "training_session.all_done"), systemImage: "checkmark.seal.fill")
-                .font(.system(size: 16, weight: .bold))
+                .appFont(size: 16, weight: .bold)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
         }
@@ -302,22 +302,22 @@ struct TrainingFocusBar: View {
     private func restCountdown(until endDate: Date) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "timer")
-                .font(.system(size: 16, weight: .semibold))
+                .appFont(size: 16, weight: .semibold)
                 .foregroundColor(.accentPrimary)
 
             Text("training_session.rest.title")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(size: 14, weight: .semibold)
                 .foregroundColor(.textPrimary)
 
             Text(timerInterval: Date()...endDate, countsDown: true)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .appFont(size: 20, weight: .bold, design: .rounded)
                 .foregroundColor(.accentValue)
                 .frame(maxWidth: .infinity, alignment: .center)
 
             Button(action: { viewModel.skipRest() }) {
                 Text("training_session.rest.skip")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(size: 13, weight: .bold)
                     .foregroundColor(.textPrimary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)

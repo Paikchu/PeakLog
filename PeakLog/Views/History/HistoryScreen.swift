@@ -42,7 +42,7 @@ struct HistoryScreen: View {
                 showsCalendarPopup = true
             } label: {
                 Image(systemName: "calendar")
-                    .font(.system(size: 17, weight: .semibold))
+                    .appFont(size: 17, weight: .semibold)
                     .foregroundColor(.accentPrimary)
                     .frame(width: RootPageHeaderMetrics.trailingControlSize, height: RootPageHeaderMetrics.trailingControlSize)
                     .background(Color.appSurface)
@@ -73,7 +73,7 @@ struct HistoryScreen: View {
                 .padding(.top, 20)
         } else if let errorMessage = viewModel.errorMessage {
             Text(errorMessage)
-                .font(.chatBody)
+                .appFont(.chatBody)
                 .foregroundColor(.textSecondary)
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
@@ -85,10 +85,10 @@ struct HistoryScreen: View {
             )
             VStack(alignment: .leading, spacing: 12) {
                 Text(content.title)
-                    .font(.rootPageTitle)
+                    .appFont(.rootPageTitle)
                     .foregroundColor(.textPrimary)
                 Text(content.subtitle)
-                    .font(.system(size: 15))
+                    .appFont(size: 15)
                     .foregroundColor(.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

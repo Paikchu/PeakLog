@@ -27,7 +27,7 @@ private struct SetRowView: View {
     var body: some View {
         HStack(spacing: 14) {
             Text("\(setIndex)")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(.textSecondary)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.workoutIndexFill))
@@ -43,16 +43,16 @@ private struct SetRowView: View {
             }
 
             Text("×")
-                .font(.setIndex)
+                .appFont(.setIndex)
                 .foregroundColor(Color.accentBorder.opacity(0.55))
 
             valueChip(action: { presentRepsEditor() }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(set.reps)")
-                        .font(.exerciseValue)
+                        .appFont(.exerciseValue)
                         .foregroundColor(.accentValue)
                     Text("chat.exercise.reps")
-                        .font(.exerciseUnit)
+                        .appFont(.exerciseUnit)
                         .foregroundColor(.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -151,7 +151,7 @@ struct ExerciseCardView: View {
                         .frame(width: 5, height: 22)
 
                     Text(exercise.name)
-                        .font(.exerciseName)
+                        .appFont(.exerciseName)
                         .foregroundColor(.textPrimary)
 
                     Spacer()
@@ -159,7 +159,7 @@ struct ExerciseCardView: View {
                     if isEditable, let onDeleteLastSet, exercise.sets.count > 1 {
                         Button(action: onDeleteLastSet) {
                             Image(systemName: "minus.circle")
-                                .font(.system(size: 16, weight: .semibold))
+                                .appFont(size: 16, weight: .semibold)
                                 .foregroundColor(.textMuted)
                         }
                     }
@@ -167,7 +167,7 @@ struct ExerciseCardView: View {
                     if isEditable, let onAddSet {
                         Button(action: onAddSet) {
                             Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 17, weight: .semibold))
+                                .appFont(size: 17, weight: .semibold)
                                 .foregroundColor(.accentPrimary)
                         }
                     }
