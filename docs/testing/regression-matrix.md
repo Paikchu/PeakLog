@@ -78,12 +78,15 @@
 | 最近使用动作的选取器展示 | `tests/exercise_picker_recent_test.swift` | 主路径、空态 |
 | 动作推荐逻辑 | `tests/exercise_recommendation_test.swift` | 主路径 |
 | 添加训练计划直接进入统一选择器，有氧分类提供四种活动 | `tests/cardio_plan_ui_contract_test.swift` | 主路径、空态 |
+| 全部、搜索与有氧筛选中的有氧项和力量项使用相同行与选择状态 | `tests/cardio_plan_ui_contract_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径 |
+| 混合选择按顺序进入配置页；返回选择器保留参数且已配置项不可重复添加 | `tests/plan_exercise_draft_builder_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径、重复提交 |
 
 ## Localization（跨模块）
 
 | 场景 | 验证方式 | 固定验收维度 |
 |---|---|---|
 | LocalizationManager 语言切换与 fallback | `tests/localization_manager_test.swift` | 主路径、迁移后兼容性 |
+| 四个有氧名称在中文和英文中均解析为文本，不显示 `cardio.activity.*` | `tests/cardio_plan_ui_contract_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径 |
 
 ## Live Activity
 

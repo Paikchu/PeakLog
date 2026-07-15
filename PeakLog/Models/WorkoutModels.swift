@@ -11,7 +11,12 @@ nonisolated enum CardioActivityType: String, Codable, CaseIterable, Equatable, S
     }
 
     var localizedTitle: String {
-        String(localized: String.LocalizationValue("cardio.activity.\(rawValue)"))
+        switch self {
+        case .running: return String(localized: "cardio.activity.running")
+        case .cycling: return String(localized: "cardio.activity.cycling")
+        case .elliptical: return String(localized: "cardio.activity.elliptical")
+        case .stairClimber: return String(localized: "cardio.activity.stair_climber")
+        }
     }
 }
 

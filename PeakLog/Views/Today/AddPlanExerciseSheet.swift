@@ -1,7 +1,6 @@
 import SwiftUI
 
 // MARK: - Add Plan Exercise Sheet
-// Strength and cardio begin in one picker, then route to their own target forms.
 
 struct AddPlanExerciseSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -9,18 +8,14 @@ struct AddPlanExerciseSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Route: Hashable {
-        case strengthForm
-        case cardioForm
+        case form
     }
 
-    @State private var exercises: [DailyRecordExerciseInput] = []
+    @State private var formItems: [PlanExerciseFormItem] = []
     @State private var path: [Route] = []
-    @State private var appearedCardIds: Set<UUID> = []
+    @State private var appearedCardIDs: Set<UUID> = []
     @State private var isSaving = false
     @State private var saveError: String?
-    @State private var selectedCardioActivity: CardioActivityType = .running
-    @State private var cardioDuration = "30"
-    @State private var cardioDistance = ""
 
     let onSave: ([PlanExerciseDraft]) async throws -> Void
 
@@ -31,9 +26,9 @@ struct AddPlanExerciseSheet: View {
     var body: some View {
         NavigationStack(path: $path) {
             ExercisePickerScreen(
-                alreadyAddedIds: Set(exercises.compactMap(\.sourceExerciseId)),
+                alreadyAddedItemIDs: Set(formItems.map(\.pickerItemID)),
                 onConfirm: appendPicked,
-                onSelectCardio: selectCardio
+                supportsCardio: true
             )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -43,33 +38,21 @@ struct AddPlanExerciseSheet: View {
             }
             .navigationDestination(for: Route.self) { route in
                 switch route {
-                case .strengthForm:
+                case .form:
                     formPage
-                case .cardioForm:
-                    cardioFormPage
                 }
             }
         }
     }
 
-    // MARK: - Form Page
-
     private var formPage: some View {
         ScrollView {
             VStack(spacing: 14) {
-                ForEach($exercises) { $exercise in
-                    ExerciseFormCard(
-                        exercise: $exercise,
-                        canDelete: exercises.count > 1,
-                        onDelete: {
-                            withAnimation(formSpring) {
-                                exercises.removeAll { $0.id == exercise.id }
-                            }
-                        }
-                    )
-                    .opacity(appearedCardIds.contains(exercise.id) ? 1 : 0)
-                    .offset(y: appearedCardIds.contains(exercise.id) || reduceMotion ? 0 : 12)
-                    .onAppear { revealCard(exercise.id) }
+                ForEach(formItems) { item in
+                    formCard(for: item)
+                        .opacity(appearedCardIDs.contains(item.id) ? 1 : 0)
+                        .offset(y: appearedCardIDs.contains(item.id) || reduceMotion ? 0 : 12)
+                        .onAppear { revealCard(item.id) }
                 }
 
                 if let saveError {
@@ -99,105 +82,158 @@ struct AddPlanExerciseSheet: View {
                     .disabled(drafts == nil || isSaving)
             }
         }
-        .onChange(of: exercises.isEmpty) { _, isEmpty in
+        .onChange(of: formItems.isEmpty) { _, isEmpty in
             if isEmpty {
                 path = []
             }
         }
     }
 
-    // MARK: - Actions
-
-    private func appendPicked(_ picked: [ExerciseDefinition]) {
-        let language = localizationManager.appLanguage
-        exercises.append(contentsOf: picked.map { DailyRecordExerciseInput(definition: $0, language: language) })
-        path.append(.strengthForm)
-    }
-
-    private func selectCardio(_ activity: CardioActivityType) {
-        selectedCardioActivity = activity
-        if !activity.supportsDistance {
-            cardioDistance = ""
+    @ViewBuilder
+    private func formCard(for item: PlanExerciseFormItem) -> some View {
+        if let index = formItems.firstIndex(where: { $0.id == item.id }) {
+            switch item {
+            case .strength(let input):
+                ExerciseFormCard(
+                    exercise: strengthBinding(at: index, fallback: input),
+                    canDelete: true,
+                    onDelete: { removeFormItem(id: item.id) }
+                )
+            case .cardio(let input):
+                CardioPlanFormCard(
+                    input: cardioBinding(at: index, fallback: input),
+                    onDelete: { removeFormItem(id: item.id) }
+                )
+            }
         }
-        path.append(.cardioForm)
     }
 
-    /// Staggers newly pushed cards in — 50ms steps, matching the form spring.
+    private func strengthBinding(
+        at index: Int,
+        fallback: DailyRecordExerciseInput
+    ) -> Binding<DailyRecordExerciseInput> {
+        Binding(
+            get: {
+                guard formItems.indices.contains(index), case .strength(let input) = formItems[index] else {
+                    return fallback
+                }
+                return input
+            },
+            set: { input in
+                guard formItems.indices.contains(index) else { return }
+                formItems[index] = .strength(input)
+            }
+        )
+    }
+
+    private func cardioBinding(
+        at index: Int,
+        fallback: CardioPlanExerciseInput
+    ) -> Binding<CardioPlanExerciseInput> {
+        Binding(
+            get: {
+                guard formItems.indices.contains(index), case .cardio(let input) = formItems[index] else {
+                    return fallback
+                }
+                return input
+            },
+            set: { input in
+                guard formItems.indices.contains(index) else { return }
+                formItems[index] = .cardio(input)
+            }
+        )
+    }
+
+    private func appendPicked(_ picked: [ExercisePickerItem]) {
+        let language = localizationManager.appLanguage
+        formItems.append(contentsOf: picked.map { item in
+            switch item {
+            case .strength(let definition):
+                .strength(DailyRecordExerciseInput(definition: definition, language: language))
+            case .cardio(let activity):
+                .cardio(CardioPlanExerciseInput(activityType: activity))
+            }
+        })
+        path.append(.form)
+    }
+
+    private func removeFormItem(id: UUID) {
+        withAnimation(formSpring) {
+            formItems.removeAll { $0.id == id }
+        }
+    }
+
     private func revealCard(_ id: UUID) {
-        guard !appearedCardIds.contains(id) else { return }
-        let pending = exercises.filter { !appearedCardIds.contains($0.id) }
+        guard !appearedCardIDs.contains(id) else { return }
+        let pending = formItems.filter { !appearedCardIDs.contains($0.id) }
         let step = pending.firstIndex { $0.id == id } ?? 0
         withAnimation(formSpring.delay(reduceMotion ? 0 : Double(step) * 0.05)) {
-            _ = appearedCardIds.insert(id)
+            _ = appearedCardIDs.insert(id)
         }
     }
 
     private var drafts: [PlanExerciseDraft]? {
-        PlanExerciseDraftBuilder.drafts(exercises: exercises)
+        PlanExerciseDraftBuilder.drafts(items: formItems)
     }
 
-    private var cardioFormPage: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: selectedCardioActivity.iconName)
-                        .foregroundColor(.teal)
-                    Text(selectedCardioActivity.localizedTitle)
-                        .fontWeight(.semibold)
-                    Spacer()
-                }
-                .padding(14)
-                .background(Color.appSurface)
-                .cornerRadius(AppRadius.xl)
+    private func save() {
+        guard let drafts, !isSaving else { return }
+        isSaving = true
+        saveError = nil
+        Task {
+            do {
+                try await onSave(drafts)
+                isSaving = false
+                dismiss()
+            } catch {
+                isSaving = false
+                saveError = error.localizedDescription
+            }
+        }
+    }
+}
 
-                cardioField("cardio.metric.duration", text: $cardioDuration, suffix: "min")
-                if selectedCardioActivity.supportsDistance {
-                    cardioField("cardio.metric.distance", text: $cardioDistance, suffix: "km", decimal: true)
+private struct CardioPlanFormCard: View {
+    @Binding var input: CardioPlanExerciseInput
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Text(input.activityType.localizedTitle)
+                    .appFont(.exerciseName)
+                    .foregroundColor(.textPrimary)
+                Spacer()
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .appFont(size: 14, weight: .semibold)
+                        .foregroundColor(.textMuted)
                 }
-                if let saveError {
-                    Text(saveError)
-                        .font(.footnote)
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "daily_record.delete_exercise"))
             }
-            .padding(16)
-        }
-        .background(Color.appBackground.ignoresSafeArea())
-        .dismissKeyboardOnTap()
-        .navigationTitle("add_plan_exercise.cardio_title")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("daily_record.save") {
-                    guard let submissionDrafts = cardioSubmissionDrafts else { return }
-                    save(submissionDrafts)
-                }
-                .fontWeight(.semibold)
-                .disabled(cardioSubmissionDrafts == nil || isSaving)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.xxl)
+                    .fill(Color.workoutPanel.opacity(0.5))
+            )
+
+            metricField("cardio.metric.duration", text: $input.durationText, suffix: "min")
+            if input.activityType.supportsDistance {
+                metricField("cardio.metric.distance", text: $input.distanceText, suffix: "km", decimal: true)
             }
         }
+        .padding(8)
+        .glassPanel(cornerRadius: AppRadius.xl)
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.xl)
+                .strokeBorder(Color.accentPrimary.opacity(0.14), lineWidth: 1)
+        )
         .accessibilityIdentifier("addPlan.cardioForm")
     }
 
-    private var cardioDraft: PlanExerciseDraft? {
-        guard let duration = Int(cardioDuration),
-              cardioDistance.isEmpty || Double(cardioDistance) != nil else { return nil }
-        let distance = selectedCardioActivity.supportsDistance && !cardioDistance.isEmpty
-            ? Double(cardioDistance) : nil
-        return try? PlanExerciseDraft.cardio(
-            activityType: selectedCardioActivity,
-            targetDurationMinutes: duration,
-            targetDistanceKm: distance
-        )
-    }
-
-    private var cardioSubmissionDrafts: [PlanExerciseDraft]? {
-        guard let cardioDraft else { return nil }
-        return PlanExerciseDraftBuilder.drafts(exercises: exercises, appending: cardioDraft)
-    }
-
-    private func cardioField(
+    private func metricField(
         _ key: LocalizedStringKey,
         text: Binding<String>,
         suffix: String,
@@ -215,29 +251,8 @@ struct AddPlanExerciseSheet: View {
                 .foregroundColor(.textMuted)
         }
         .padding(14)
-        .background(Color.appSurface)
+        .background(Color.workoutPanel.opacity(0.5))
         .cornerRadius(AppRadius.xl)
-    }
-
-    private func save() {
-        guard let drafts else { return }
-        save(drafts)
-    }
-
-    private func save(_ drafts: [PlanExerciseDraft]) {
-        guard !isSaving else { return }
-        isSaving = true
-        saveError = nil
-        Task {
-            do {
-                try await onSave(drafts)
-                isSaving = false
-                dismiss()
-            } catch {
-                isSaving = false
-                saveError = error.localizedDescription
-            }
-        }
     }
 }
 

@@ -91,8 +91,13 @@ struct DailyRecordSheet: View {
                 switch route {
                 case .picker:
                     ExercisePickerScreen(
-                        alreadyAddedIds: Set(exercises.compactMap(\.sourceExerciseId)),
-                        onConfirm: appendPicked
+                        alreadyAddedItemIDs: Set(exercises.compactMap(\.sourceExerciseId).map { "strength:\($0)" }),
+                        onConfirm: { picked in
+                            appendPicked(picked.compactMap { item in
+                                guard case .strength(let definition) = item else { return nil }
+                                return definition
+                            })
+                        }
                     )
                 }
             }
