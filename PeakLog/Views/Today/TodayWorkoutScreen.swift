@@ -1056,6 +1056,8 @@ private struct TodayPlannedExerciseCard: View {
                     Text(exercise.exerciseName)
                         .font(.exerciseName)
                         .foregroundColor(.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
 
                     if let previous = exercise.previousPerformanceSummary, !previous.isEmpty {
                         Text(previous)

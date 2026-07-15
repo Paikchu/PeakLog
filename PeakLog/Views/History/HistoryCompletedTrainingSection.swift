@@ -67,6 +67,8 @@ struct HistoryCompletedStrengthExerciseCard: View {
                 Text(exercise.name)
                     .font(.exerciseName)
                     .foregroundColor(.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
 
                 Spacer()
 
@@ -198,6 +200,8 @@ struct HistoryCompletedCardioRecordCard: View {
                 Text(record.title)
                     .font(.exerciseName)
                     .foregroundColor(.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
 
                 Spacer()
 
