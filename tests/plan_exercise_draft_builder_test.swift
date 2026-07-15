@@ -10,6 +10,9 @@ struct PlanExerciseDraftBuilderTestRunner {
         appendsCardioAfterCompletedStrengthDrafts()
         rejectsCardioAppendWhenStrengthDraftIsIncomplete()
         allowsCardioAppendWithoutStrengthDrafts()
+        buildsMixedItemsInSelectionOrder()
+        rejectsMixedItemsWhenAnyItemIsInvalid()
+        rejectsDuplicateCardioItems()
         rejectsIncompleteForms()
         print("plan_exercise_draft_builder_test passed")
     }
@@ -67,6 +70,58 @@ struct PlanExerciseDraftBuilderTestRunner {
         )
 
         precondition(PlanExerciseDraftBuilder.drafts(exercises: [], appending: cardio) == [cardio])
+    }
+
+    private static func buildsMixedItemsInSelectionOrder() {
+        let items: [PlanExerciseFormItem] = [
+            .strength(DailyRecordExerciseInput(
+                name: "卧推",
+                sets: [DailyRecordSetInput(weight: 60, reps: 8)]
+            )),
+            .cardio(CardioPlanExerciseInput(
+                activityType: .running,
+                durationText: "30",
+                distanceText: "5"
+            )),
+            .cardio(CardioPlanExerciseInput(
+                activityType: .elliptical,
+                durationText: "20"
+            )),
+        ]
+
+        let drafts = PlanExerciseDraftBuilder.drafts(items: items)
+
+        precondition(drafts?.map(\.itemType) == [.strength, .cardio, .cardio])
+        precondition(drafts?.map(\.cardioActivityType) == [nil, .running, .elliptical])
+    }
+
+    private static func rejectsMixedItemsWhenAnyItemIsInvalid() {
+        let incompleteStrength: [PlanExerciseFormItem] = [
+            .strength(DailyRecordExerciseInput(
+                name: "卧推",
+                sets: [DailyRecordSetInput(weight: nil, reps: 8)]
+            )),
+            .cardio(CardioPlanExerciseInput(activityType: .cycling, durationText: "30")),
+        ]
+        let invalidCardio: [PlanExerciseFormItem] = [
+            .strength(DailyRecordExerciseInput(
+                name: "卧推",
+                sets: [DailyRecordSetInput(weight: 60, reps: 8)]
+            )),
+            .cardio(CardioPlanExerciseInput(activityType: .running, durationText: "0")),
+        ]
+
+        precondition(PlanExerciseDraftBuilder.drafts(items: incompleteStrength) == nil)
+        precondition(PlanExerciseDraftBuilder.drafts(items: invalidCardio) == nil)
+    }
+
+    private static func rejectsDuplicateCardioItems() {
+        let items: [PlanExerciseFormItem] = [
+            .cardio(CardioPlanExerciseInput(activityType: .running, durationText: "30")),
+            .cardio(CardioPlanExerciseInput(activityType: .running, durationText: "45")),
+        ]
+
+        precondition(PlanExerciseDraftBuilder.drafts(items: items) == nil)
     }
 
     private static func buildsDraftsWithMultipleExercisesAndPerSetTargets() {
