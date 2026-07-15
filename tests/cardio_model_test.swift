@@ -7,6 +7,7 @@ struct CardioModelTestRunner {
         try legacyRunningRecordDefaultsToRunning()
         try legacyCardioRPEStillDecodes()
         try unknownActivityDefaultsToRunning()
+        try unknownPlanActivityDefaultsToRunning()
         try newCardioMetricsDefaultToNoRPE()
         try cardioMetricsValidateByActivityType()
         print("cardio_model_test passed")
@@ -18,6 +19,12 @@ struct CardioModelTestRunner {
         decoder.dateDecodingStrategy = .secondsSince1970
         let record = try decoder.decode(CardioWorkoutRecord.self, from: Data(json.utf8))
         precondition(record.activityType == .running, "Unknown persisted activity must use the legacy running fallback")
+    }
+
+    private static func unknownPlanActivityDefaultsToRunning() throws {
+        let json = #"{"id":"plan-cardio-1","orderIndex":0,"exerciseName":"Future Cardio","exerciseLoadType":"unknown","progressionMode":"manual","sets":[],"itemType":"cardio","cardioActivityType":"future_cardio","targetDurationMinutes":30}"#
+        let exercise = try JSONDecoder().decode(TrainingPlanExercise.self, from: Data(json.utf8))
+        precondition(exercise.cardioActivityType == .running, "Unknown persisted plan activity must use the running fallback")
     }
 
     private static func legacyCardioRPEStillDecodes() throws {

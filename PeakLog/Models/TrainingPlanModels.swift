@@ -117,7 +117,9 @@ nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Senda
         aiSuggestion = try container.decodeIfPresent(String.self, forKey: .aiSuggestion)
         sets = try container.decodeIfPresent([TrainingPlanSet].self, forKey: .sets) ?? []
         itemType = try container.decodeIfPresent(PlanItemType.self, forKey: .itemType) ?? .strength
-        cardioActivityType = try container.decodeIfPresent(CardioActivityType.self, forKey: .cardioActivityType)
+        let rawCardioActivityType = try container.decodeIfPresent(String.self, forKey: .cardioActivityType)
+        cardioActivityType = rawCardioActivityType.flatMap(CardioActivityType.init(rawValue:))
+            ?? (itemType == .cardio ? .running : nil)
         targetDurationMinutes = try container.decodeIfPresent(Int.self, forKey: .targetDurationMinutes)
         targetDistanceKm = try container.decodeIfPresent(Double.self, forKey: .targetDistanceKm)
         targetRPE = try container.decodeIfPresent(Double.self, forKey: .targetRPE)

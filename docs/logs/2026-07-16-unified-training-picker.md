@@ -11,3 +11,4 @@
 - Advisor 发现新增关联外键缺少覆盖索引，已新增并部署 `20260715164521_add_cardio_link_index`；对应性能告警已清除。
 - `generate-weekly-plan` 已发布为 v9，状态 `ACTIVE`、`verify_jwt=true`；线上包包含 `v3-cardio-no-rpe`/`replan-v3-cardio-no-rpe`，无凭证探测由网关返回 401。
 - `install_generated_plan` 与 `replan_plan_days` 仅 `service_role` 可执行，`anon` 与 `authenticated` 均无执行权限；Advisor 未报告这两个 RPC 的安全问题。
+- PR review 修复：力量卡追加有氧后合并提交；未完成力量卡阻止保存；未知计划有氧类型回退跑步；恢复肌群 chip 再次点选清除；力量-only 选择器恢复“选择动作”，统一选择器使用“选择运动”；删除三项无引用本地化键。

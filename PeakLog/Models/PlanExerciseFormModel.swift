@@ -78,4 +78,15 @@ enum PlanExerciseDraftBuilder {
         }
         return result
     }
+
+    /// Appends a cardio draft without discarding strength cards already configured in the sheet.
+    /// An incomplete strength card blocks the combined submission.
+    static func drafts(
+        exercises: [DailyRecordExerciseInput],
+        appending cardioDraft: PlanExerciseDraft
+    ) -> [PlanExerciseDraft]? {
+        guard !exercises.isEmpty else { return [cardioDraft] }
+        guard let strengthDrafts = drafts(exercises: exercises) else { return nil }
+        return strengthDrafts + [cardioDraft]
+    }
 }

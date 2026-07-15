@@ -40,6 +40,7 @@
 | 专注训练模式下的计划展示与交互 | `tests/plan_focus_training_mode_test.swift` | 主路径 |
 | 计划文案的多语言本地化 | `tests/localized_plan_text_test.swift` | 主路径、迁移后兼容性 |
 | 新增有氧计划只保存时长/距离，编辑事件和生成器输出不含 RPE | `tests/plan_exercise_draft_builder_test.swift`、`tests/plan_edit_event_recording_test.swift`、`backend/tests/` | 主路径、迁移后兼容性 |
+| 已配置力量动作后追加有氧时合并提交，未完成力量草稿阻止保存 | `tests/plan_exercise_draft_builder_test.swift`、`tests/cardio_plan_ui_contract_test.swift` | 主路径、重复提交 |
 
 ## Home
 
@@ -58,7 +59,7 @@
 | 云端数据模型与本地模型的双向映射（roundtrip） | `tests/cloud_mapper_roundtrip_test.swift` | 主路径、迁移后兼容性 |
 | 云端拉取数据与本地状态的合并策略 | `tests/cloud_pull_merge_test.swift` | 主路径、网络失败 |
 | 本地状态在 Schema 迁移后仍可解码 | `tests/local_state_decode_compat_test.swift` | 迁移后兼容性 |
-| 旧有氧 RPE 与未知活动类型可兼容解码，新记录的 RPE 为 nil | `tests/cardio_model_test.swift`、`tests/cloud_mapper_roundtrip_test.swift`、`tests/local_state_decode_compat_test.swift` | 主路径、迁移后兼容性 |
+| 旧有氧 RPE 与记录/计划中的未知活动类型可兼容解码，新记录的 RPE 为 nil | `tests/cardio_model_test.swift`、`tests/cloud_mapper_roundtrip_test.swift`、`tests/local_state_decode_compat_test.swift` | 主路径、迁移后兼容性 |
 | Service 层 mock 边界不泄漏到生产路径 | `tests/service_layer_mock_boundary_test.swift` | 主路径 |
 
 ## Profile

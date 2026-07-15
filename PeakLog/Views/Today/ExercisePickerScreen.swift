@@ -59,6 +59,10 @@ struct ExercisePickerScreen: View {
         (selection.map(\.id) + alreadyAddedIds.sorted()).joined(separator: "|")
     }
 
+    private var navigationTitle: LocalizedStringKey {
+        onSelectCardio == nil ? "exercise_picker.title" : "exercise_picker.activity_title"
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -110,7 +114,7 @@ struct ExercisePickerScreen: View {
         }
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
-        .navigationTitle("exercise_picker.title")
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) { confirmBar }
         .sensoryFeedback(.selection, trigger: selection.count)
@@ -186,7 +190,7 @@ struct ExercisePickerScreen: View {
                         isSelected: category == .strength && muscleFilter == group
                     ) {
                         category = .strength
-                        muscleFilter = group
+                        muscleFilter = muscleFilter == group ? nil : group
                         equipmentFilter = nil
                     }
                 }

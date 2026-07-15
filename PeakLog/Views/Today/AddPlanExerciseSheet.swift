@@ -170,11 +170,11 @@ struct AddPlanExerciseSheet: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("daily_record.save") {
-                    guard let cardioDraft else { return }
-                    save([cardioDraft])
+                    guard let submissionDrafts = cardioSubmissionDrafts else { return }
+                    save(submissionDrafts)
                 }
                 .fontWeight(.semibold)
-                .disabled(cardioDraft == nil || isSaving)
+                .disabled(cardioSubmissionDrafts == nil || isSaving)
             }
         }
         .accessibilityIdentifier("addPlan.cardioForm")
@@ -190,6 +190,11 @@ struct AddPlanExerciseSheet: View {
             targetDurationMinutes: duration,
             targetDistanceKm: distance
         )
+    }
+
+    private var cardioSubmissionDrafts: [PlanExerciseDraft]? {
+        guard let cardioDraft else { return nil }
+        return PlanExerciseDraftBuilder.drafts(exercises: exercises, appending: cardioDraft)
     }
 
     private func cardioField(
