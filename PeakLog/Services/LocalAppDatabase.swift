@@ -1186,6 +1186,10 @@ actor LocalAppDatabase {
         customExercises: [ExerciseDefinition],
         goalSpec: GoalSpec?
     ) {
+        var profile = profile
+        // darkModeEnabled is device-local and never synced; the incoming
+        // cloud-assembled profile only carries a placeholder for it.
+        profile.preferences.darkModeEnabled = state.profile.preferences.darkModeEnabled
         state.profile = profile
         state.activePlan = activePlan
         state.strengthSessions = strengthSessions
@@ -1218,7 +1222,9 @@ actor LocalAppDatabase {
     ///   (completion is monotonic). A local seed plan (different id) is
     ///   replaced wholesale.
     /// - `profile` / `goalSpec`: cloud wins (confirmed decision; timezone
-    ///   self-heals via `reconcileDeviceTimezone`).
+    ///   self-heals via `reconcileDeviceTimezone`) — except
+    ///   `preferences.darkModeEnabled`, which is device-local, never synced,
+    ///   and always kept from the local state.
     /// - `pendingEditEvents` / `editEventSeq`: untouched (EV1).
     ///
     /// Like `replaceAll`, this does NOT fire `onChange`: it is the sync
@@ -1233,6 +1239,10 @@ actor LocalAppDatabase {
         goalSpec: GoalSpec?
     ) {
         let ownerUserId = state.ownerUserId
+        var profile = profile
+        // darkModeEnabled is device-local and never synced; the incoming
+        // cloud-assembled profile only carries a placeholder for it.
+        profile.preferences.darkModeEnabled = state.profile.preferences.darkModeEnabled
         state.profile = profile
         state.activePlan = mergePlanPreservingCompletions(cloud: activePlan, local: state.activePlan)
         state.strengthSessions = mergeRecords(
@@ -1447,13 +1457,7 @@ actor LocalAppDatabase {
                 avatarURL: nil,
                 membershipLevel: .premium,
                 stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: 0, prCount: 0),
-                preferences: UserPreferences(
-                    notificationsEnabled: true,
-                    darkModeEnabled: true,
-                    weightUnit: .kg,
-                    timezone: TimeZone.current.identifier,
-                    language: .english
-                ),
+                preferences: .defaults(),
                 fitnessGoalSummary: "Build muscle with extra focus on upper body strength and consistent weekly progress.",
                 exercisePRs: []
             ),

@@ -204,7 +204,6 @@ nonisolated enum CloudMapper {
         PreferencesRow(
             user_id: profile.id,
             notifications_enabled: profile.preferences.notificationsEnabled,
-            dark_mode_enabled: profile.preferences.darkModeEnabled,
             weight_unit: profile.preferences.weightUnit.rawValue,
             language: profile.preferences.language.rawValue
         )
@@ -305,12 +304,19 @@ nonisolated enum CloudMapper {
     }
 
     static func profile(userId: String, profileRow: ProfileRow?, preferencesRow: PreferencesRow?) -> UserProfile {
+        // A brand-new signup has no profile/preferences rows yet; fall back
+        // to the same `UserPreferences.defaults` the local seed uses so the
+        // "never configured" boundary is defined in one place (Issue #35).
+        // `darkModeEnabled` is device-local and never synced — the value
+        // assembled here is a placeholder that `mergeFromCloud`/`replaceAll`
+        // replace with the local one.
+        let defaults = UserPreferences.defaults(timezone: profileRow?.timezone ?? "UTC")
         let preferences = UserPreferences(
-            notificationsEnabled: preferencesRow?.notifications_enabled ?? true,
-            darkModeEnabled: preferencesRow?.dark_mode_enabled ?? false,
-            weightUnit: preferencesRow.flatMap { WeightUnit(rawValue: $0.weight_unit) } ?? .kg,
-            timezone: profileRow?.timezone ?? "UTC",
-            language: preferencesRow.flatMap { AppLanguage(rawValue: $0.language) } ?? .english
+            notificationsEnabled: preferencesRow?.notifications_enabled ?? defaults.notificationsEnabled,
+            darkModeEnabled: defaults.darkModeEnabled,
+            weightUnit: preferencesRow.flatMap { WeightUnit(rawValue: $0.weight_unit) } ?? defaults.weightUnit,
+            timezone: defaults.timezone,
+            language: preferencesRow.flatMap { AppLanguage(rawValue: $0.language) } ?? defaults.language
         )
         return UserProfile(
             id: profileRow?.id ?? userId,
