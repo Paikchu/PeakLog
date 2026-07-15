@@ -1,4 +1,3 @@
-# .github/workflows/claude-review.yml
 name: Claude PR Review
 on:
   pull_request:
@@ -9,12 +8,21 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      issues: write
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          track_progress: true
           prompt: |
-            /review
-            重点检查正确性 bug、并发问题和测试遗漏,用 inline comment 标注具体行。
+            Review 这个 PR,重点检查正确性 bug、并发问题和测试遗漏。
+            对每个具体问题,用 mcp__github_inline_comment__create_inline_comment
+            在对应的代码行上留 inline comment。
+            最后用 `gh pr comment` 发一条总结评论,列出发现的问题概览;
+            如果没有发现问题,总结评论里说明即可,不要留 inline comment。
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
