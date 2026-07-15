@@ -198,31 +198,17 @@ private struct CardioPlanFormCard: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Text(input.activityType.localizedTitle)
-                    .appFont(.exerciseName)
-                    .foregroundColor(.textPrimary)
-                Spacer()
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .appFont(size: 14, weight: .semibold)
-                        .foregroundColor(.textMuted)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: "daily_record.delete_exercise"))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.xxl)
-                    .fill(Color.workoutPanel.opacity(0.5))
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            header
 
-            metricField("cardio.metric.duration", text: $input.durationText, suffix: "min")
-            if input.activityType.supportsDistance {
-                metricField("cardio.metric.distance", text: $input.distanceText, suffix: "km", decimal: true)
+            VStack(spacing: 6) {
+                metricField("cardio.metric.duration", text: $input.durationText, suffix: "min")
+                if input.activityType.supportsDistance {
+                    metricField("cardio.metric.distance", text: $input.distanceText, suffix: "km", decimal: true)
+                }
             }
+            .padding(.horizontal, 6)
+            .padding(.bottom, 6)
         }
         .padding(8)
         .glassPanel(cornerRadius: AppRadius.xl)
@@ -231,6 +217,42 @@ private struct CardioPlanFormCard: View {
                 .strokeBorder(Color.accentPrimary.opacity(0.14), lineWidth: 1)
         )
         .accessibilityIdentifier("addPlan.cardioForm")
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: AppRadius.full)
+                .fill(Color.accentPrimary)
+                .frame(width: 5, height: 22)
+
+            Text(input.activityType.localizedTitle)
+                .appFont(.exerciseName)
+                .foregroundColor(.textPrimary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            Text("daily_record.type.cardio")
+                .appFont(size: 12, weight: .medium)
+                .foregroundColor(.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.workoutPanel))
+
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .appFont(size: 14, weight: .semibold)
+                    .foregroundColor(.textMuted)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "daily_record.delete_exercise"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.xxl)
+                .fill(Color.workoutPanel.opacity(0.5))
+        )
     }
 
     private func metricField(
