@@ -11,6 +11,7 @@ struct TodayWorkoutScreen: View {
     @State private var isPresentingFinishDialog = false
     @State private var isPresentingCancelDialog = false
     @State private var pendingPlanExerciseDeletion: PendingPlanExerciseDeletion?
+    @State private var cardioCompletionTarget: TrainingPlanExercise?
     @State private var replanToast: ReplanToast?
     // 专注模式滚动编排：scrolledExerciseId 追踪屏幕中心的卡片，displayedExerciseId 决定哪张卡展开。
     @State private var scrolledExerciseId: String?
@@ -110,7 +111,7 @@ struct TodayWorkoutScreen: View {
 
     private var isPlanComplete: Bool {
         guard let plan = viewModel.todayPlan else { return false }
-        return plan.totalSetsCount > 0 && plan.completedSetsCount >= plan.totalSetsCount
+        return plan.totalProgressUnits > 0 && plan.completedProgressUnits >= plan.totalProgressUnits
     }
 
     private var completedChip: some View {
@@ -187,6 +188,9 @@ struct TodayWorkoutScreen: View {
                                 },
                                 onDeleteExercise: { exerciseId in
                                     requestPlanExerciseDeletion(exerciseId)
+                                },
+                                onStartCardio: { exercise in
+                                    cardioCompletionTarget = exercise
                                 }
                             )
                             .confirmationDialog(
@@ -340,6 +344,14 @@ struct TodayWorkoutScreen: View {
         .sheet(isPresented: $isPresentingAddPlanExercise) {
             AddPlanExerciseSheet { drafts in
                 try await viewModel.addPlanExercises(drafts)
+            }
+        }
+        .sheet(item: $cardioCompletionTarget) { exercise in
+            CardioCompletionSheet(exercise: exercise) { metrics in
+                try await viewModel.completePlannedCardio(
+                    planExerciseId: exercise.id,
+                    metrics: metrics
+                )
             }
         }
         .confirmationDialog(
@@ -592,13 +604,13 @@ private struct TodaySummarySection: View {
         }
 
         var totalDistance: Double {
-            runningRecords.reduce(0) { $0 + $1.distanceKm }
+            runningRecords.reduce(0) { $0 + ($1.distanceKm ?? 0) }
         }
 
         /// 仅跑步/空状态的信息都在钉顶 header 的副标题里，此时本区不渲染，
         /// 由外层直接跳过以免在父 VStack 里占一格间距。
         var hasScrollContent: Bool {
-            if let plan, plan.totalSetsCount > 0 { return true }
+            if let plan, plan.totalProgressUnits > 0 { return true }
             return !runningRecords.isEmpty && (plan != nil || todayRecord != nil)
         }
     }
@@ -608,7 +620,7 @@ private struct TodaySummarySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let plan = state.plan, plan.totalSetsCount > 0 {
+            if let plan = state.plan, plan.totalProgressUnits > 0 {
                 planProgress(plan)
             }
             if state.plan != nil || state.todayRecord != nil {
@@ -619,18 +631,18 @@ private struct TodaySummarySection: View {
     }
 
     private func planProgress(_ plan: TrainingPlanDay) -> some View {
-        let isPlanComplete = plan.completedSetsCount >= plan.totalSetsCount
+        let isPlanComplete = plan.completedProgressUnits >= plan.totalProgressUnits
 
         return HStack(spacing: 10) {
             PlanProgressBar(
-                progress: Double(plan.completedSetsCount) / Double(plan.totalSetsCount),
+                progress: Double(plan.completedProgressUnits) / Double(plan.totalProgressUnits),
                 isComplete: isPlanComplete
             )
             Text(LocalizedPlanText.formatted(
-                "today.header.sets_progress",
+                "today.header.progress_units",
                 locale: locale,
-                Int64(plan.completedSetsCount),
-                Int64(plan.totalSetsCount)
+                Int64(plan.completedProgressUnits),
+                Int64(plan.totalProgressUnits)
             ))
             .monospacedDigit()
             .appFont(size: 13, weight: .semibold, design: .rounded)
@@ -678,6 +690,7 @@ private struct TodayPlanExercisesSection: View {
     let onSkipCurrentLiveExercise: () -> Void
     let onReorderExercises: ([String]) -> Void
     let onDeleteExercise: (String) -> Void
+    let onStartCardio: (TrainingPlanExercise) -> Void
 
     @SwiftUI.State private var draftOrder: [TrainingPlanExercise] = []
 
@@ -695,7 +708,7 @@ private struct TodayPlanExercisesSection: View {
                 .transition(.opacity)
             } else {
                 VStack(alignment: .leading, spacing: state.isFocusMode ? 10 : 16) {
-                    ForEach(state.plan.exercises) { exercise in
+                    ForEach(state.plan.exercises.filter { !state.isFocusMode || $0.itemType == .strength }) { exercise in
                         exerciseCard(for: exercise)
                             .id(exercise.id)
                             .visualEffect { content, proxy in
@@ -719,7 +732,13 @@ private struct TodayPlanExercisesSection: View {
 
     @ViewBuilder
     private func exerciseCard(for exercise: TrainingPlanExercise) -> some View {
-        if state.isFocusMode, let session = state.focusSession {
+        if exercise.itemType == .cardio {
+            SwipeToDeleteRow(onDelete: { onDeleteExercise(exercise.id) }) {
+                PlannedCardioCard(exercise: exercise) {
+                    onStartCardio(exercise)
+                }
+            }
+        } else if state.isFocusMode, let session = state.focusSession {
             let liveModel = session.exercise(withId: exercise.id) ?? liveExercise(from: exercise)
             if state.displayedExerciseId == exercise.id {
                 FocusExerciseCard(

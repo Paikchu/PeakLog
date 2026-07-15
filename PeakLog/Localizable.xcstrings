@@ -220,6 +220,24 @@
         }
       }
     },
+    "add_plan_exercise.cardio_subtitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Running, cycling, elliptical, or stair climber" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "跑步、骑行、椭圆机或爬楼机" } }
+      }
+    },
+    "add_plan_exercise.cardio_title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add Cardio" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加有氧" } }
+      }
+    },
+    "add_plan_exercise.strength_subtitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sets, load, and reps" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "设置组数、重量和次数" } }
+      }
+    },
     "add_plan_exercise.exercise": {
       "extractionState": "manual",
       "localizations": {
@@ -1065,6 +1083,88 @@
             "state": "translated",
             "value": "添加动作"
           }
+        }
+      }
+    },
+    "cardio.activity.cycling": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cycling" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "骑行" } }
+      }
+    },
+    "cardio.activity.elliptical": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Elliptical" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "椭圆机" } }
+      }
+    },
+    "cardio.activity.running": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Running" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "跑步" } }
+      }
+    },
+    "cardio.activity.stair_climber": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stair Climber" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "爬楼机" } }
+      }
+    },
+    "cardio.metric.activity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Activity" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "运动类型" } }
+      }
+    },
+    "cardio.metric.distance": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Distance" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "距离" } }
+      }
+    },
+    "cardio.metric.duration": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Duration" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "时长" } }
+      }
+    },
+    "cardio.metric.optional": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Optional" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "可选" } }
+      }
+    },
+    "cardio.metric.rpe": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "RPE" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主观强度 RPE" } }
+      }
+    },
+    "cardio.plan.complete_title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Complete Cardio" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "完成有氧" } }
+      }
+    },
+    "cardio.plan.completed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Completed" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已完成" } }
+      }
+    },
+    "cardio.plan.start": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Log Cardio" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "记录有氧" } }
+      }
+    },
+    "today.header.progress_units": {
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "%1$lld of %2$lld completed" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已完成 %1$lld/%2$lld" }
         }
       }
     },

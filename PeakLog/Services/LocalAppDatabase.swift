@@ -401,18 +401,78 @@ actor LocalAppDatabase {
         distanceKm: Double,
         source: RunningWorkoutSource
     ) throws -> RunningWorkoutRecord {
+        let metrics = try CardioMetrics(
+            activityType: .running,
+            durationMinutes: durationMinutes,
+            distanceKm: distanceKm,
+            rpe: nil
+        )
+        return try createCardioRecord(workoutDate: workoutDate, metrics: metrics, source: source)
+    }
+
+    func createCardioRecord(
+        workoutDate: Date,
+        metrics: CardioMetrics,
+        source: RunningWorkoutSource
+    ) throws -> CardioWorkoutRecord {
         let now = Date()
-        let record = RunningWorkoutRecord(
+        let record = CardioWorkoutRecord(
             id: UUID().uuidString,
             userId: state.profile.id,
             workoutDate: workoutDate,
-            durationMinutes: durationMinutes,
-            distanceKm: distanceKm,
+            activityType: metrics.activityType,
+            durationMinutes: metrics.durationMinutes,
+            distanceKm: metrics.distanceKm,
+            rpe: metrics.rpe,
             source: source,
             createdAt: now,
             updatedAt: now
         )
         state.runningRecords.append(record)
+        derivedProfileIsStale = true
+        try persist()
+        return record
+    }
+
+    func completePlannedCardio(
+        planExerciseId: String,
+        metrics: CardioMetrics
+    ) throws -> CardioWorkoutRecord {
+        guard let dayIndex = state.activePlan.days.firstIndex(where: { day in
+            day.exercises.contains { $0.id == planExerciseId }
+        }), let exerciseIndex = state.activePlan.days[dayIndex].exercises.firstIndex(where: {
+            $0.id == planExerciseId
+        }) else {
+            throw LocalAppDatabaseError.planExerciseNotFound
+        }
+
+        let planItem = state.activePlan.days[dayIndex].exercises[exerciseIndex]
+        guard planItem.itemType == .cardio, let plannedActivity = planItem.cardioActivityType else {
+            throw LocalAppDatabaseError.planExerciseNotCardio
+        }
+        guard plannedActivity == metrics.activityType else {
+            throw LocalAppDatabaseError.cardioActivityMismatch
+        }
+        guard !planItem.isCardioCompleted else {
+            throw LocalAppDatabaseError.cardioAlreadyCompleted
+        }
+
+        let now = Date()
+        let record = CardioWorkoutRecord(
+            id: UUID().uuidString,
+            userId: state.profile.id,
+            workoutDate: Self.date(from: state.activePlan.days[dayIndex].planDate) ?? now,
+            activityType: metrics.activityType,
+            durationMinutes: metrics.durationMinutes,
+            distanceKm: metrics.distanceKm,
+            rpe: metrics.rpe,
+            source: .manual,
+            createdAt: now,
+            updatedAt: now
+        )
+        state.runningRecords.append(record)
+        state.activePlan.days[dayIndex].exercises[exerciseIndex].cardioCompletedAt = now
+        state.activePlan.days[dayIndex].exercises[exerciseIndex].linkedCardioWorkoutId = record.id
         derivedProfileIsStale = true
         try persist()
         return record
@@ -851,7 +911,26 @@ actor LocalAppDatabase {
     }
 
     private func makePlanExercise(from draft: PlanExerciseDraft, orderIndex: Int) -> TrainingPlanExercise {
-        TrainingPlanExercise(
+        if draft.itemType == .cardio {
+            return TrainingPlanExercise(
+                id: UUID().uuidString,
+                orderIndex: orderIndex,
+                exerciseName: draft.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines),
+                exerciseId: nil,
+                exerciseLoadType: .unknown,
+                progressionMode: "manual",
+                notes: nil,
+                previousPerformanceSummary: nil,
+                aiSuggestion: nil,
+                sets: [],
+                itemType: .cardio,
+                cardioActivityType: draft.cardioActivityType,
+                targetDurationMinutes: draft.targetDurationMinutes,
+                targetDistanceKm: draft.targetDistanceKm,
+                targetRPE: draft.targetRPE
+            )
+        }
+        return TrainingPlanExercise(
             id: UUID().uuidString,
             orderIndex: orderIndex,
             exerciseName: draft.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1037,12 +1116,22 @@ actor LocalAppDatabase {
         let exerciseId: String?
         let exerciseLoadType: ExerciseLoadType
         let sets: [PlannedSetSnapshot]
+        let itemType: PlanItemType
+        let cardioActivityType: CardioActivityType?
+        let targetDurationMinutes: Int?
+        let targetDistanceKm: Double?
+        let targetRPE: Double?
 
         init(_ exercise: TrainingPlanExercise) {
             exerciseName = exercise.exerciseName
             exerciseId = exercise.exerciseId
             exerciseLoadType = exercise.exerciseLoadType
             sets = exercise.sets.map(PlannedSetSnapshot.init)
+            itemType = exercise.itemType
+            cardioActivityType = exercise.cardioActivityType
+            targetDurationMinutes = exercise.targetDurationMinutes
+            targetDistanceKm = exercise.targetDistanceKm
+            targetRPE = exercise.targetRPE
         }
     }
 
@@ -1577,6 +1666,9 @@ enum LocalAppDatabaseError: LocalizedError {
     case invalidPlanExerciseName
     case invalidCustomExerciseName
     case invalidExerciseOrder
+    case planExerciseNotCardio
+    case cardioActivityMismatch
+    case cardioAlreadyCompleted
 
     var errorDescription: String? {
         switch self {
@@ -1598,6 +1690,12 @@ enum LocalAppDatabaseError: LocalizedError {
             return "Custom exercise name cannot be empty."
         case .invalidExerciseOrder:
             return "Exercise order is invalid."
+        case .planExerciseNotCardio:
+            return "The selected plan item is not a cardio activity."
+        case .cardioActivityMismatch:
+            return "The completed cardio type does not match the plan."
+        case .cardioAlreadyCompleted:
+            return "This cardio activity is already completed."
         }
     }
 }

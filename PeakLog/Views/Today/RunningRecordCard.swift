@@ -7,9 +7,9 @@ struct RunningRecordCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "figure.run")
+                Image(systemName: record.activityType.iconName)
                     .foregroundColor(.accentPrimary)
-                Text(isPreview ? "跑步记录预览" : "跑步记录")
+                Text(isPreview ? "\(record.activityType.title)预览" : record.activityType.title)
                     .appFont(size: 15, weight: .semibold)
                     .foregroundColor(.textPrimary)
                 Spacer()
@@ -20,7 +20,12 @@ struct RunningRecordCard: View {
 
             HStack(spacing: 12) {
                 metric(title: "时长", value: "\(record.durationMinutes) 分钟")
-                metric(title: "里程", value: "\(record.distanceKm.cleanDistance) km")
+                if let distanceKm = record.distanceKm {
+                    metric(title: "里程", value: "\(distanceKm.cleanDistance) km")
+                }
+                if let rpe = record.rpe {
+                    metric(title: "RPE", value: rpe.cleanDistance)
+                }
             }
 
             Text(dateLabel)

@@ -16,6 +16,35 @@ struct PlanExerciseDraft: Equatable, Sendable {
     var exerciseId: String? = nil
     var isBodyweight: Bool
     var sets: [SetDraft]
+    var itemType: PlanItemType = .strength
+    var cardioActivityType: CardioActivityType? = nil
+    var targetDurationMinutes: Int? = nil
+    var targetDistanceKm: Double? = nil
+    var targetRPE: Double? = nil
+
+    static func cardio(
+        activityType: CardioActivityType,
+        targetDurationMinutes: Int,
+        targetDistanceKm: Double?,
+        targetRPE: Double?
+    ) throws -> PlanExerciseDraft {
+        let metrics = try CardioMetrics(
+            activityType: activityType,
+            durationMinutes: targetDurationMinutes,
+            distanceKm: targetDistanceKm,
+            rpe: targetRPE
+        )
+        return PlanExerciseDraft(
+            exerciseName: activityType.localizedTitle,
+            isBodyweight: false,
+            sets: [],
+            itemType: .cardio,
+            cardioActivityType: metrics.activityType,
+            targetDurationMinutes: metrics.durationMinutes,
+            targetDistanceKm: metrics.distanceKm,
+            targetRPE: metrics.rpe
+        )
+    }
 }
 
 enum PlanExerciseDraftBuilder {

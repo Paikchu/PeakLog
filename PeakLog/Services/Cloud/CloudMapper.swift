@@ -88,7 +88,14 @@ nonisolated enum CloudMapper {
                     exercise_id: exercise.exerciseId,
                     progression_mode: exercise.progressionMode,
                     exercise_load_type: exercise.exerciseLoadType.rawValue,
-                    notes: exercise.notes
+                    notes: exercise.notes,
+                    item_type: exercise.itemType.rawValue,
+                    cardio_activity_type: exercise.cardioActivityType?.rawValue,
+                    target_duration_minutes: exercise.targetDurationMinutes,
+                    target_distance_km: exercise.targetDistanceKm,
+                    target_rpe: exercise.targetRPE,
+                    cardio_completed_at: exercise.cardioCompletedAt.map(CloudDate.timestampString(from:)),
+                    linked_cardio_workout_id: exercise.linkedCardioWorkoutId
                 ))
                 for set in exercise.sets {
                     planSets.append(TrainingPlanSetRow(
@@ -231,7 +238,9 @@ nonisolated enum CloudMapper {
             distance_km: record.distanceKm,
             source: record.source == .agent ? "agent" : "manual",
             created_at: CloudDate.timestampString(from: record.createdAt),
-            updated_at: CloudDate.timestampString(from: record.updatedAt)
+            updated_at: CloudDate.timestampString(from: record.updatedAt),
+            activity_type: record.activityType.rawValue,
+            rpe: record.rpe
         )
     }
 
@@ -372,7 +381,14 @@ nonisolated enum CloudMapper {
                             notes: exerciseRow.notes,
                             previousPerformanceSummary: nil,
                             aiSuggestion: nil,
-                            sets: sets
+                            sets: sets,
+                            itemType: PlanItemType(rawValue: exerciseRow.item_type ?? "strength") ?? .strength,
+                            cardioActivityType: exerciseRow.cardio_activity_type.flatMap(CardioActivityType.init(rawValue:)),
+                            targetDurationMinutes: exerciseRow.target_duration_minutes,
+                            targetDistanceKm: exerciseRow.target_distance_km,
+                            targetRPE: exerciseRow.target_rpe,
+                            cardioCompletedAt: CloudDate.timestamp(from: exerciseRow.cardio_completed_at),
+                            linkedCardioWorkoutId: exerciseRow.linked_cardio_workout_id
                         )
                     }
                 return TrainingPlanDay(
@@ -449,8 +465,10 @@ nonisolated enum CloudMapper {
             id: row.id,
             userId: row.user_id,
             workoutDate: date,
+            activityType: row.activity_type.flatMap(CardioActivityType.init(rawValue:)) ?? .running,
             durationMinutes: row.duration_minutes,
             distanceKm: row.distance_km,
+            rpe: row.rpe,
             source: RunningWorkoutSource(rawValue: row.source) ?? .manual,
             createdAt: CloudDate.timestamp(from: row.created_at) ?? date,
             updatedAt: CloudDate.timestamp(from: row.updated_at) ?? date

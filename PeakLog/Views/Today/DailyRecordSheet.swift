@@ -2,7 +2,7 @@ import SwiftUI
 
 enum DailyRecordDraft: Equatable {
     case strength(StrengthSessionDraft)
-    case cardio(durationMinutes: Int, distanceKm: Double)
+    case cardio(CardioMetrics)
 }
 
 private enum DailyRecordMode: String, CaseIterable, Identifiable {
@@ -35,6 +35,8 @@ struct DailyRecordSheet: View {
     @State private var exercises: [DailyRecordExerciseInput] = []
     @State private var durationMinutes = ""
     @State private var distanceKm = ""
+    @State private var rpeText = ""
+    @State private var selectedCardioActivity: CardioActivityType = .running
     @State private var path: [Route] = []
     @State private var isSaving = false
     @State private var saveError: String?
@@ -172,17 +174,31 @@ struct DailyRecordSheet: View {
 
     private var cardioCard: some View {
         VStack(spacing: 10) {
+            Picker("cardio.metric.activity", selection: $selectedCardioActivity) {
+                ForEach(CardioActivityType.allCases, id: \.self) { activity in
+                    Label(activity.title, systemImage: activity.iconName).tag(activity)
+                }
+            }
+            .pickerStyle(.menu)
             cardioField(
                 labelKey: "daily_record.duration",
                 placeholder: "45",
                 keyboardType: .numberPad,
                 text: $durationMinutes
             )
+            if selectedCardioActivity.supportsDistance {
+                cardioField(
+                    labelKey: "daily_record.distance",
+                    placeholder: String(localized: "cardio.metric.optional"),
+                    keyboardType: .decimalPad,
+                    text: $distanceKm
+                )
+            }
             cardioField(
-                labelKey: "daily_record.distance",
-                placeholder: "5.0",
+                labelKey: "cardio.metric.rpe",
+                placeholder: String(localized: "cardio.metric.optional"),
                 keyboardType: .decimalPad,
-                text: $distanceKm
+                text: $rpeText
             )
         }
         .padding(12)
@@ -231,9 +247,19 @@ struct DailyRecordSheet: View {
                 exercises: exercises
             ).map(DailyRecordDraft.strength)
         case .cardio:
-            guard let duration = Int(durationMinutes), duration > 0,
-                  let distance = Double(distanceKm), distance > 0 else { return nil }
-            return .cardio(durationMinutes: duration, distanceKm: distance)
+            guard let duration = Int(durationMinutes) else { return nil }
+            guard distanceKm.isEmpty || Double(distanceKm) != nil,
+                  rpeText.isEmpty || Double(rpeText) != nil else { return nil }
+            let distance = selectedCardioActivity.supportsDistance && !distanceKm.isEmpty
+                ? Double(distanceKm) : nil
+            let rpe = rpeText.isEmpty ? nil : Double(rpeText)
+            guard let metrics = try? CardioMetrics(
+                activityType: selectedCardioActivity,
+                durationMinutes: duration,
+                distanceKm: distance,
+                rpe: rpe
+            ) else { return nil }
+            return .cardio(metrics)
         }
     }
 

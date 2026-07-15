@@ -16,6 +16,29 @@ protocol WorkoutServiceProtocol {
         distanceKm: Double,
         source: RunningWorkoutSource
     ) async throws -> RunningWorkoutRecord
+    func createCardioRecord(
+        workoutDate: Date,
+        metrics: CardioMetrics,
+        source: RunningWorkoutSource
+    ) async throws -> CardioWorkoutRecord
+}
+
+extension WorkoutServiceProtocol {
+    func createCardioRecord(
+        workoutDate: Date,
+        metrics: CardioMetrics,
+        source: RunningWorkoutSource
+    ) async throws -> CardioWorkoutRecord {
+        guard metrics.activityType == .running, let distanceKm = metrics.distanceKm else {
+            throw CardioMetricsError.unsupportedDistance
+        }
+        return try await createRunningRecord(
+            workoutDate: workoutDate,
+            durationMinutes: metrics.durationMinutes,
+            distanceKm: distanceKm,
+            source: source
+        )
+    }
 }
 
 final class LocalWorkoutService: WorkoutServiceProtocol {
@@ -84,6 +107,18 @@ final class LocalWorkoutService: WorkoutServiceProtocol {
             workoutDate: workoutDate,
             durationMinutes: durationMinutes,
             distanceKm: distanceKm,
+            source: source
+        )
+    }
+
+    func createCardioRecord(
+        workoutDate: Date,
+        metrics: CardioMetrics,
+        source: RunningWorkoutSource
+    ) async throws -> CardioWorkoutRecord {
+        try await database.createCardioRecord(
+            workoutDate: workoutDate,
+            metrics: metrics,
             source: source
         )
     }

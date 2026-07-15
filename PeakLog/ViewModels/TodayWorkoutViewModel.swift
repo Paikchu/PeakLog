@@ -178,7 +178,9 @@ final class TodayWorkoutViewModel: ObservableObject {
     /// one-tap signals that only make sense on an untrained day (the server's
     /// C31 would reject them regardless).
     var todayHasCompletedSets: Bool {
-        todayPlan?.exercises.contains { $0.sets.contains(where: { $0.isCompleted }) } ?? false
+        todayPlan?.exercises.contains {
+            $0.isCardioCompleted || $0.sets.contains(where: { $0.isCompleted })
+        } ?? false
     }
 
     /// Records a one-tap mid-week signal locally (Phase 3) so it reaches the
@@ -195,7 +197,7 @@ final class TodayWorkoutViewModel: ObservableObject {
     func startPlanLiveWorkout() {
         guard let plan = todayPlan else { return }
         let exercises = plan.exercises
-            .filter { !$0.sets.isEmpty }
+            .filter { $0.itemType == .strength && !$0.sets.isEmpty }
             .map { exercise in
                 PlanLiveWorkoutExercise(
                     id: exercise.id,
@@ -663,12 +665,25 @@ final class TodayWorkoutViewModel: ObservableObject {
         return record
     }
 
+    func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws {
+        _ = try await trainingPlanService.completePlannedCardio(
+            planExerciseId: planExerciseId,
+            metrics: metrics
+        )
+        await refresh()
+    }
+
     func addDailyRecord(_ draft: DailyRecordDraft) async throws {
         switch draft {
         case .strength(let strengthDraft):
             try await addStrengthRecord(strengthDraft)
-        case .cardio(let durationMinutes, let distanceKm):
-            try await addRunningRecord(durationMinutes: durationMinutes, distanceKm: distanceKm)
+        case .cardio(let metrics):
+            let record = try await workoutService.createCardioRecord(
+                workoutDate: Date(),
+                metrics: metrics,
+                source: .manual
+            )
+            runningRecords.append(record)
         }
         await refreshTodayRecordOnly()
     }

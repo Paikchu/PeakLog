@@ -41,6 +41,22 @@ function validExercise() {
   };
 }
 
+function validCardio(overrides = {}) {
+  return {
+    itemType: 'cardio',
+    exerciseId: null,
+    exerciseName: 'Running',
+    loadType: null,
+    cardioActivityType: 'running',
+    targetDurationMinutes: 30,
+    targetDistanceKm: 5,
+    targetRPE: 6,
+    notes: null,
+    sets: [],
+    ...overrides,
+  };
+}
+
 function validSevenDayPlan() {
   return {
     days: [
@@ -136,6 +152,67 @@ test('bodyweight exercise with null weight is fine', () => {
   };
   const result = validateWeeklyPlan(plan, baseContext());
   assert.equal(result.ok, true);
+});
+
+test('running and cycling accept duration with optional distance and RPE', () => {
+  const plan = validSevenDayPlan();
+  plan.days[0].exercises.push(validCardio());
+  plan.days[2].exercises = [validCardio({
+    exerciseName: 'Cycling',
+    cardioActivityType: 'cycling',
+    targetDistanceKm: null,
+    targetRPE: null,
+  })];
+  const result = validateWeeklyPlan(plan, baseContext());
+  assert.equal(result.ok, true, result.structuralViolations.join('\n'));
+});
+
+test('elliptical and stair climber reject distance but accept duration and RPE', () => {
+  const validPlan = validSevenDayPlan();
+  validPlan.days[0].exercises = [validCardio({
+    exerciseName: 'Elliptical',
+    cardioActivityType: 'elliptical',
+    targetDistanceKm: null,
+  })];
+  assert.equal(validateWeeklyPlan(validPlan, baseContext()).ok, true);
+
+  const invalidPlan = validSevenDayPlan();
+  invalidPlan.days[0].exercises = [validCardio({
+    exerciseName: 'Stair Climber',
+    cardioActivityType: 'stair_climber',
+    targetDistanceKm: 2,
+  })];
+  const result = validateWeeklyPlan(invalidPlan, baseContext());
+  assert.equal(result.ok, false);
+  assert.ok(result.structuralViolations.some((v) => v.includes('does not support distance')));
+});
+
+test('cardio contract rejects unknown type, invalid metrics, and strength sets', () => {
+  const cases = [
+    [validCardio({ cardioActivityType: 'swimming' }), 'unknown cardioActivityType'],
+    [validCardio({ targetDurationMinutes: 0 }), 'duration'],
+    [validCardio({ targetDistanceKm: -1 }), 'distance'],
+    [validCardio({ targetRPE: 11 }), 'RPE'],
+    [validCardio({ sets: validExercise().sets }), 'must not contain strength sets'],
+    [validCardio({ exerciseId: 'bench_press' }), 'exerciseId must be null'],
+    [validCardio({ loadType: 'weighted' }), 'loadType must be null'],
+  ];
+  for (const [cardio, message] of cases) {
+    const plan = validSevenDayPlan();
+    plan.days[0].exercises = [cardio];
+    const result = validateWeeklyPlan(plan, baseContext());
+    assert.equal(result.ok, false, message);
+    assert.ok(result.structuralViolations.some((v) => v.includes(message)), result.structuralViolations.join('\n'));
+  }
+});
+
+test('strength items reject cardio-only fields', () => {
+  const plan = validSevenDayPlan();
+  plan.days[0].exercises[0].itemType = 'strength';
+  plan.days[0].exercises[0].targetDurationMinutes = 20;
+  const result = validateWeeklyPlan(plan, baseContext());
+  assert.equal(result.ok, false);
+  assert.ok(result.structuralViolations.some((v) => v.includes('strength item contains cardio fields')));
 });
 
 test('weight exceeding 110% of last actual is clamped in place, not rejected', () => {

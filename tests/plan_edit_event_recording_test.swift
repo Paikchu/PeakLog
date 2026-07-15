@@ -20,10 +20,37 @@ import Foundation
 struct PlanEditEventRecordingTest {
     static func main() async {
         await testMutationsRecordExpectedEvents()
+        await testCardioAddEventCarriesTargets()
         await testCompletePlannedSetDoesNotRecordEvent()
         await testReplaceAllPreservesPendingEvents()
         await testArmCloudSyncDiscardsMismatchedAccountEvents()
         print("plan_edit_event_recording_test passed")
+    }
+
+    static func testCardioAddEventCarriesTargets() async {
+        let db = LocalAppDatabase(fileURL: tempURL())
+        await db.armCloudSync(userId: "user-a") {}
+
+        let draft = try! PlanExerciseDraft.cardio(
+            activityType: .cycling,
+            targetDurationMinutes: 40,
+            targetDistanceKm: 15,
+            targetRPE: 6
+        )
+        _ = try! await db.addPlannedExercises([draft])
+
+        let events = await db.snapshot().pendingEditEvents
+        guard let event = events.last,
+              event.eventType == .exerciseAdded,
+              case .object(let payload) = event.payload,
+              case .string("cardio")? = payload["itemType"],
+              case .string("cycling")? = payload["cardioActivityType"],
+              case .number(40)? = payload["targetDurationMinutes"],
+              case .number(15)? = payload["targetDistanceKm"],
+              case .number(6)? = payload["targetRPE"]
+        else {
+            fatalError("cardio exercise_added payload missing activity or targets")
+        }
     }
 
     static func tempURL() -> URL {
@@ -134,7 +161,7 @@ struct PlanEditEventRecordingTest {
         let setupEvents = await db.snapshot().pendingEditEvents
         precondition(!setupEvents.isEmpty, "setup should have produced at least one event for user-a")
 
-        await db.disarmCloudSync()
+        await db.disarmCloudSync(userId: "user-a")
         await db.armCloudSync(userId: "user-b") {}
 
         let remaining = await db.snapshot().pendingEditEvents

@@ -37,14 +37,24 @@ struct CompletedStrengthSetViewData: Identifiable, Equatable {
 
 struct CompletedCardioRecordViewData: Identifiable, Equatable {
     let id: String
-    let title: String
+    let activityType: CardioActivityType
     let source: RunningWorkoutSource
     let durationMinutes: Int
-    let distanceKm: Double
+    let distanceKm: Double?
+    let rpe: Double?
     let createdAt: Date
 
+    var title: String {
+        switch activityType {
+        case .running: return String(localized: "cardio.activity.running")
+        case .cycling: return String(localized: "cardio.activity.cycling")
+        case .elliptical: return String(localized: "cardio.activity.elliptical")
+        case .stairClimber: return String(localized: "cardio.activity.stair_climber")
+        }
+    }
+
     var paceText: String? {
-        guard distanceKm > 0 else { return nil }
+        guard activityType == .running, let distanceKm, distanceKm > 0 else { return nil }
         let totalSeconds = Double(durationMinutes * 60)
         let secondsPerKm = totalSeconds / distanceKm
         guard secondsPerKm.isFinite else { return nil }
@@ -67,7 +77,7 @@ enum HistoryCompletedAggregator {
             cardioRecordCount: runningRecords.count,
             totalDurationMinutes: sessions.reduce(0) { $0 + ($1.durationMinutes ?? 0) } +
                 runningRecords.reduce(0) { $0 + $1.durationMinutes },
-            totalDistanceKm: runningRecords.reduce(0) { $0 + $1.distanceKm }
+            totalDistanceKm: runningRecords.reduce(0) { $0 + ($1.distanceKm ?? 0) }
         )
     }
 
@@ -143,10 +153,11 @@ enum HistoryCompletedAggregator {
         runningRecords.map { record in
             CompletedCardioRecordViewData(
                 id: record.id,
-                title: "跑步",
+                activityType: record.activityType,
                 source: record.source,
                 durationMinutes: record.durationMinutes,
                 distanceKm: record.distanceKm,
+                rpe: record.rpe,
                 createdAt: record.createdAt
             )
         }

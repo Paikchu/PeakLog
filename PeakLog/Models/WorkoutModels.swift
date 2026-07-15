@@ -1,5 +1,54 @@
 import Foundation
 
+nonisolated enum CardioActivityType: String, Codable, CaseIterable, Equatable, Sendable {
+    case running
+    case cycling
+    case elliptical
+    case stairClimber = "stair_climber"
+
+    var supportsDistance: Bool {
+        self == .running || self == .cycling
+    }
+
+    var localizedTitle: String {
+        String(localized: String.LocalizationValue("cardio.activity.\(rawValue)"))
+    }
+}
+
+nonisolated enum CardioMetricsError: Error, Equatable, Sendable {
+    case invalidDuration
+    case invalidDistance
+    case unsupportedDistance
+    case invalidRPE
+}
+
+nonisolated struct CardioMetrics: Codable, Equatable, Sendable {
+    let activityType: CardioActivityType
+    let durationMinutes: Int
+    let distanceKm: Double?
+    let rpe: Double?
+
+    init(
+        activityType: CardioActivityType,
+        durationMinutes: Int,
+        distanceKm: Double?,
+        rpe: Double?
+    ) throws {
+        guard durationMinutes > 0 else { throw CardioMetricsError.invalidDuration }
+        if let distanceKm {
+            guard distanceKm > 0 else { throw CardioMetricsError.invalidDistance }
+            guard activityType.supportsDistance else { throw CardioMetricsError.unsupportedDistance }
+        }
+        if let rpe, !(1...10).contains(rpe) {
+            throw CardioMetricsError.invalidRPE
+        }
+        self.activityType = activityType
+        self.durationMinutes = durationMinutes
+        self.distanceKm = distanceKm
+        self.rpe = rpe
+    }
+}
+
 nonisolated enum RunningWorkoutSource: String, Codable, Equatable, Sendable {
     case agent
     case manual
@@ -18,16 +67,62 @@ nonisolated enum RunningWorkoutSource: String, Codable, Equatable, Sendable {
     }
 }
 
-nonisolated struct RunningWorkoutRecord: Identifiable, Codable, Equatable, Sendable {
+nonisolated struct CardioWorkoutRecord: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let userId: String
     var workoutDate: Date
+    var activityType: CardioActivityType
     var durationMinutes: Int
-    var distanceKm: Double
+    var distanceKm: Double?
+    var rpe: Double?
     var source: RunningWorkoutSource
     var createdAt: Date
     var updatedAt: Date
+
+    init(
+        id: String,
+        userId: String,
+        workoutDate: Date,
+        activityType: CardioActivityType = .running,
+        durationMinutes: Int,
+        distanceKm: Double?,
+        rpe: Double? = nil,
+        source: RunningWorkoutSource,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.userId = userId
+        self.workoutDate = workoutDate
+        self.activityType = activityType
+        self.durationMinutes = durationMinutes
+        self.distanceKm = distanceKm
+        self.rpe = rpe
+        self.source = source
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, userId, workoutDate, activityType, durationMinutes, distanceKm, rpe, source, createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userId = try container.decode(String.self, forKey: .userId)
+        workoutDate = try container.decode(Date.self, forKey: .workoutDate)
+        activityType = try container.decodeIfPresent(CardioActivityType.self, forKey: .activityType) ?? .running
+        durationMinutes = try container.decode(Int.self, forKey: .durationMinutes)
+        distanceKm = try container.decodeIfPresent(Double.self, forKey: .distanceKm)
+        rpe = try container.decodeIfPresent(Double.self, forKey: .rpe)
+        source = try container.decode(RunningWorkoutSource.self, forKey: .source)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
 }
+
+typealias RunningWorkoutRecord = CardioWorkoutRecord
 
 nonisolated struct StrengthSessionDraft: Equatable, Sendable {
     nonisolated struct ExerciseDraft: Equatable, Sendable {

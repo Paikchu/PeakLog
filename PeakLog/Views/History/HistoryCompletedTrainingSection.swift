@@ -222,16 +222,21 @@ struct HistoryCompletedCardioRecordCard: View {
             )
 
             HStack(spacing: 8) {
-                metricChip(
-                    title: String(localized: "history.completed.metric.distance"),
-                    value: LocalizedPlanText.historyMetricDistance(record.distanceKm.cleanDistance, locale: locale)
-                )
+                if let distanceKm = record.distanceKm {
+                    metricChip(
+                        title: String(localized: "history.completed.metric.distance"),
+                        value: LocalizedPlanText.historyMetricDistance(distanceKm.cleanDistance, locale: locale)
+                    )
+                }
                 metricChip(
                     title: String(localized: "history.completed.metric.duration"),
                     value: LocalizedPlanText.historyMetricDuration(record.durationMinutes, locale: locale)
                 )
                 if let paceText = record.paceText {
                     metricChip(title: String(localized: "history.completed.metric.pace"), value: paceText)
+                }
+                if let rpe = record.rpe {
+                    metricChip(title: "RPE", value: rpe.cleanRPE)
                 }
             }
 
