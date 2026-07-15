@@ -9,22 +9,18 @@ enum RootPageHeaderMetrics {
 
 extension Font {
     static let rootPageTitle = Font.system(size: 30, weight: .bold)
-    static let rootPageEyebrow = Font.system(size: 12, weight: .semibold)
 }
 
 struct RootPageHeader<Trailing: View>: View {
-    let eyebrow: String?
     let title: String
     let subtitle: String?
     @ViewBuilder let trailing: () -> Trailing
 
     init(
-        eyebrow: String? = nil,
         title: String,
         subtitle: String? = nil,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
-        self.eyebrow = eyebrow
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing
@@ -33,12 +29,6 @@ struct RootPageHeader<Trailing: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                if let eyebrow, !eyebrow.isEmpty {
-                    Text(eyebrow)
-                        .font(.rootPageEyebrow)
-                        .kerning(0.8)
-                        .foregroundColor(.textMuted)
-                }
                 Text(title)
                     .font(.rootPageTitle)
                     .foregroundColor(.textPrimary)
@@ -61,7 +51,7 @@ struct RootPageHeader<Trailing: View>: View {
 }
 
 extension RootPageHeader where Trailing == EmptyView {
-    init(eyebrow: String? = nil, title: String, subtitle: String? = nil) {
-        self.init(eyebrow: eyebrow, title: title, subtitle: subtitle) { EmptyView() }
+    init(title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }

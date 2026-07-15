@@ -30,15 +30,8 @@ enum HomeTab: String, CaseIterable, Identifiable {
     }
 }
 
-struct DockPlanAction {
-    let title: String
-    let isEnabled: Bool
-    let action: () -> Void
-}
-
 struct HomeDockBar: View {
     @Binding var selectedTab: HomeTab
-    var planAction: DockPlanAction?
 
     @Namespace private var dockNamespace
 
@@ -46,31 +39,35 @@ struct HomeDockBar: View {
     // switching tabs never animates the screens themselves.
     static let dockSpring = Animation.spring(response: 0.35, dampingFraction: 0.82)
 
-    // The plan slot doubles as the start-training CTA while the plan tab is
-    // active and today's plan has sets to run.
-    private var showsPlanAction: Bool {
-        selectedTab == .plan && planAction != nil
-    }
-
     var body: some View {
-        dockContent
-            .padding(HomeDockMetrics.contentPadding)
-            .background(dockBackground)
+        glassDock
             .padding(.horizontal, HomeDockMetrics.outerHorizontalPadding)
             .animation(Self.dockSpring, value: selectedTab)
-            .animation(Self.dockSpring, value: showsPlanAction)
             .accessibilityIdentifier("homeDockBar")
+    }
+
+    // 原生 Liquid Glass：不叠底色、描边和自定义阴影，质感全部交给系统。
+    @ViewBuilder
+    private var glassDock: some View {
+        if #available(iOS 26, *) {
+            dockContent
+                .padding(HomeDockMetrics.contentPadding)
+                .glassEffect(
+                    .regular.tint(Color.accentPrimary.opacity(0.12)).interactive(),
+                    in: .capsule
+                )
+        } else {
+            dockContent
+                .padding(HomeDockMetrics.contentPadding)
+                .background(legacyDockBackground)
+        }
     }
 
     private var dockContent: some View {
         HStack(spacing: HomeDockMetrics.slotSpacing) {
             ForEach(HomeTab.allCases) { tab in
                 dockSlot(for: tab) {
-                    if tab == .plan, showsPlanAction, let planAction {
-                        startTrainingButton(planAction)
-                    } else {
-                        tabButton(tab)
-                    }
+                    tabButton(tab)
                 }
             }
         }
@@ -81,13 +78,12 @@ struct HomeDockBar: View {
             .frame(width: HomeDockMetrics.slotWidth, height: HomeDockMetrics.slotHeight)
             .contentShape(Rectangle())
             .overlay(alignment: .trailing) {
-                if tab != .settings && !(tab == .plan && showsPlanAction) {
+                if tab != .settings {
                     Rectangle()
                         .fill(Color.appSeparator.opacity(0.55))
                         .frame(width: 0.5, height: HomeDockMetrics.dividerHeight)
                 }
             }
-            .zIndex(tab == .plan && showsPlanAction ? 1 : 0)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("homeDock.slot.\(tab.rawValue)")
     }
@@ -123,58 +119,22 @@ struct HomeDockBar: View {
             .matchedGeometryEffect(id: "activeDockSlot", in: dockNamespace)
     }
 
-    private func startTrainingButton(_ planAction: DockPlanAction) -> some View {
-        Button(action: planAction.action) {
-            Label(planAction.title, systemImage: "play.fill")
-                .font(.system(size: 15, weight: .bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .padding(.horizontal, 16)
-                .frame(width: HomeDockMetrics.actionWidth, height: HomeDockMetrics.slotHeight)
-        }
-        .buttonStyle(.plain)
-        .foregroundColor(.white)
-        .background {
-            Capsule()
-                .fill(Color.accentPrimary)
-                .matchedGeometryEffect(id: "activeDockSlot", in: dockNamespace)
-        }
-        .clipShape(Capsule())
-        .disabled(!planAction.isEnabled)
-        .opacity(planAction.isEnabled ? 1 : 0.5)
-        .transition(.opacity.combined(with: .scale(scale: 0.94)))
-        .accessibilityLabel(planAction.title)
-        .accessibilityIdentifier("today.startPlan")
-    }
-
-    @ViewBuilder
-    private var dockBackground: some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 8) {
-                Capsule(style: .continuous)
-                    .fill(Color.appSurface.opacity(0.05))
-                    .glassEffect(.regular.interactive(), in: .capsule)
-            }
-            .overlay(rimHighlight)
-            .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 8)
-        } else {
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(rimHighlight)
-                .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 8)
-        }
-    }
-
-    private var rimHighlight: some View {
+    // iOS 26 以下没有 Liquid Glass，保留材质 + 描边 + 阴影模拟。
+    private var legacyDockBackground: some View {
         Capsule(style: .continuous)
-            .strokeBorder(
-                LinearGradient(
-                    colors: [Color.white.opacity(0.32), Color.white.opacity(0.04)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ),
-                lineWidth: 1
+            .fill(.ultraThinMaterial)
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.32), Color.white.opacity(0.04)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             )
+            .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 8)
     }
 }
 
@@ -184,10 +144,7 @@ struct HomeDockBar: View {
         VStack(spacing: 16) {
             Spacer()
             HomeDockBar(selectedTab: .constant(.calendar))
-            HomeDockBar(
-                selectedTab: .constant(.plan),
-                planAction: DockPlanAction(title: "开始训练", isEnabled: true, action: {})
-            )
+            HomeDockBar(selectedTab: .constant(.plan))
         }
     }
 }

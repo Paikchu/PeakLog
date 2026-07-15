@@ -167,7 +167,6 @@ enum HomeDockMetrics {
     static let contentPadding: CGFloat = 4
     static let slotWidth: CGFloat = 112
     static let slotHeight: CGFloat = 56
-    static let actionWidth: CGFloat = 148
     static let minimumHitTarget: CGFloat = 44
     static let slotSpacing: CGFloat = 0
     static let dividerHeight: CGFloat = 42

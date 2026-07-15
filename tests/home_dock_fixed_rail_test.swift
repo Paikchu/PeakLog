@@ -1,6 +1,6 @@
 import Foundation
 
-let root = URL(fileURLWithPath: "/Users/max/Developer/PeakLog")
+let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let dock = try String(contentsOf: root.appendingPathComponent("PeakLog/Views/Home/HomeDockBar.swift"), encoding: .utf8)
 let content = try String(contentsOf: root.appendingPathComponent("PeakLog/ContentView.swift"), encoding: .utf8)
 let theme = try String(contentsOf: root.appendingPathComponent("PeakLog/Theme/AppTheme.swift"), encoding: .utf8)
@@ -16,10 +16,8 @@ require(dock.contains("HomeDockMetrics"), "dock must use shared fixed geometry t
 require(dock.contains("frame(width: HomeDockMetrics.slotWidth"), "each tab must be constrained to the fixed slot width")
 require(dock.contains(".frame(width: HomeDockMetrics.slotWidth, height: HomeDockMetrics.slotHeight)"), "selected tab background must fill its fixed column")
 require(!dock.contains(".frame(width: HomeDockMetrics.minimumHitTarget, height: HomeDockMetrics.slotHeight)"), "selected tab must not shrink to the minimum hit target")
-require(dock.contains("frame(width: HomeDockMetrics.actionWidth"), "plan CTA must expand symmetrically without changing slot positions")
-require(dock.contains("showsTitle"), "calendar label must remain visible in the plan-ready composition")
 require(theme.contains("static let slotHeight: CGFloat = 56"), "dock must use the compact 56pt slot height")
-require(dock.contains("today.startPlan"), "plan CTA accessibility identifier must remain stable")
+require(!dock.contains("DockPlanAction") && !dock.contains("today.startPlan"), "dock must stay a pure tab rail; the training CTA lives in TrainingActionLayer")
 require(dock.contains("homeDock.\\(tab.rawValue)"), "tab accessibility identifiers must remain stable")
 require(content.contains("HomeDockBar(selectedTab: $selectedTab"), "content view must retain the dock outside training focus")
 

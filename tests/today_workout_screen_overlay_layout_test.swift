@@ -9,6 +9,8 @@ let dockSourceURL = rootURL.appendingPathComponent("PeakLog/Views/Home/HomeDockB
 let dockSource = try String(contentsOf: dockSourceURL, encoding: .utf8)
 let contentViewSourceURL = rootURL.appendingPathComponent("PeakLog/ContentView.swift")
 let contentViewSource = try String(contentsOf: contentViewSourceURL, encoding: .utf8)
+let actionLayerSourceURL = rootURL.appendingPathComponent("PeakLog/Views/Home/TrainingActionLayer.swift")
+let actionLayerSource = try String(contentsOf: actionLayerSourceURL, encoding: .utf8)
 
 precondition(
     !source.contains("ChatInputBar("),
@@ -43,12 +45,16 @@ precondition(
     "Expected the today screen to stop hosting its own Start Plan button"
 )
 precondition(
-    dockSource.contains("today.startPlan") && dockSource.contains("DockPlanAction"),
-    "Expected the dock's plan slot to host the Start Plan action"
+    !dockSource.contains("today.startPlan") && !dockSource.contains("DockPlanAction"),
+    "Expected the dock to be a pure tab rail with no plan CTA slot"
 )
 precondition(
-    contentViewSource.contains("today.start_training") && contentViewSource.contains("startPlanLiveWorkout"),
-    "Expected ContentView to wire the dock Start Plan action to the live workout"
+    actionLayerSource.contains("today.startPlan") && actionLayerSource.contains("training_focus.resumeBanner"),
+    "Expected the training action layer above the dock to host both start and resume states"
+)
+precondition(
+    contentViewSource.contains("TrainingActionLayer") && contentViewSource.contains("startPlanLiveWorkout"),
+    "Expected ContentView to wire the training action layer to the live workout"
 )
 precondition(
     !source.contains("TrainingSessionScreen") && !source.contains("fullScreenCover"),
