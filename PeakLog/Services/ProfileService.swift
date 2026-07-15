@@ -9,6 +9,13 @@ struct UpdatePreferencesRequest: Encodable {
 }
 
 protocol ProfileServiceProtocol {
+    /// Contract: never surfaces an "empty profile". When the user has never
+    /// set anything up (fresh install, brand-new signup), implementations
+    /// must still return a profile whose `preferences` carry
+    /// `UserPreferences.defaults` — "first-time setup" is not a state
+    /// callers have to handle. `LocalAppDatabase` guarantees this by
+    /// seeding on init; the cloud pull by defaulting missing rows
+    /// (`CloudMapper.profile`). See Issue #35.
     func fetchProfile() async throws -> UserProfile
     func updatePreferences(_ prefs: UpdatePreferencesRequest) async throws -> UserPreferences
     func updateFitnessGoalSummary(_ summary: String) async throws -> String
