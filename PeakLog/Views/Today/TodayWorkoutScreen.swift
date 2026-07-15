@@ -243,7 +243,6 @@ struct TodayWorkoutScreen: View {
         .scrollDisabled(isReorderingPlan)
         .dismissKeyboardOnTap()
         .background(Color.appBackground.ignoresSafeArea())
-        .dismissKeyboardOnTap()
         .overlay(alignment: .bottom) {
             if let toast = replanToast {
                 replanToastView(toast)
