@@ -8,6 +8,8 @@ struct ProfileScreen: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingWeightUnitPicker = false
     @State private var showingGoalSpecEditor = false
+    @State private var showingHelp = false
+    @State private var showingPrivacy = false
     // Local optimistic mirrors for the preference toggles. SwiftUI's Toggle
     // needs the Binding's `get` to reflect the new value the instant the
     // user taps, but the real source of truth (`viewModel.profile?.preferences`)
@@ -30,15 +32,20 @@ struct ProfileScreen: View {
             VStack(spacing: 0) {
                 // Header 随信息流上滑收起，回到顶部时复位，把滚动后的空间让给内容。
                 header
-                VStack(spacing: 24) {
-                    avatarSection
-                    goalSection
-                    statsSection
-                    prSection
-                    preferencesSection
-                    supportSection
+                if viewModel.profile == nil && !viewModel.isLoading && viewModel.errorMessage != nil {
+                    emptyState
+                        .padding(.bottom, 40)
+                } else {
+                    VStack(spacing: 24) {
+                        avatarSection
+                        goalSection
+                        statsSection
+                        prSection
+                        preferencesSection
+                        supportSection
+                    }
+                    .padding(.bottom, 40)
                 }
-                .padding(.bottom, 40)
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
@@ -74,6 +81,18 @@ struct ProfileScreen: View {
             ) { spec in
                 try await viewModel.saveGoalSpec(spec)
             }
+        }
+        .sheet(isPresented: $showingHelp) {
+            ProfileInfoSheet(
+                titleKey: "profile.support.help",
+                bodyKey: "profile.support.help.body"
+            )
+        }
+        .sheet(isPresented: $showingPrivacy) {
+            ProfileInfoSheet(
+                titleKey: "profile.support.privacy",
+                bodyKey: "profile.support.privacy.body"
+            )
         }
     }
 
@@ -314,7 +333,7 @@ struct ProfileScreen: View {
     private var supportSection: some View {
         SettingsSection(title: "profile.section.support") {
             PreferenceNavRow(icon: "questionmark.circle", title: "profile.support.help") {
-                // TODO: Open Help & FAQ
+                showingHelp = true
             }
 
             Divider()
@@ -322,7 +341,7 @@ struct ProfileScreen: View {
                 .padding(.horizontal, 16)
 
             PreferenceNavRow(icon: "doc.text", title: "profile.support.privacy") {
-                // TODO: Open Privacy Policy URL
+                showingPrivacy = true
             }
         }
     }
@@ -337,6 +356,65 @@ struct ProfileScreen: View {
             return String(format: "%.0f", weight)
         }
         return String(format: "%.1f", weight)
+    }
+
+    // Shown when the profile failed to load (or is empty) and we're not
+    // mid-flight. Gives the user a retry affordance instead of silent placeholders.
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .appFont(size: 40)
+                .foregroundColor(.textMuted)
+
+            Text("profile.empty.title")
+                .appFont(size: 16, weight: .semibold)
+                .foregroundColor(.textPrimary)
+
+            if let errorMessage = viewModel.errorMessage {
+                Text(errorMessage)
+                    .appFont(size: 13)
+                    .foregroundColor(.textMuted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+
+            Button("profile.empty.retry") {
+                Task { await viewModel.loadProfile() }
+            }
+            .appFont(size: 14, weight: .semibold)
+            .foregroundColor(Color.accentPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 80)
+    }
+}
+
+/// Minimal in-app info sheet used by the Profile support rows (Help / Privacy).
+/// Replace the placeholder body copy with the finalized FAQ / policy text or a
+/// deep link once those resources are available.
+private struct ProfileInfoSheet: View {
+    let titleKey: String
+    let bodyKey: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Text(String(localized: String.LocalizationValue(bodyKey)))
+                    .appFont(size: 15)
+                    .foregroundColor(.textSecondary)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle(String(localized: String.LocalizationValue(titleKey)))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("common.ok") { dismiss() }
+                }
+            }
+        }
     }
 }
 

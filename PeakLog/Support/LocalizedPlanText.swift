@@ -87,19 +87,4 @@ enum LocalizedPlanText {
     static func planStatusLabel(for status: String) -> String {
         localized(planStatusKey(for: status))
     }
-
-    static func weekdayLabel(dayIndex: Int, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        let symbols = formatter.shortStandaloneWeekdaySymbols ?? formatter.shortWeekdaySymbols ?? []
-        guard symbols.count == 7 else {
-            return localized("plan.weekday.unknown")
-        }
-
-        let mondayFirst = Array(symbols[1...6]) + [symbols[0]]
-        guard (1...7).contains(dayIndex) else {
-            return localized("plan.weekday.unknown")
-        }
-        return mondayFirst[dayIndex - 1]
-    }
 }

@@ -5,6 +5,7 @@ struct DailyRecordMultiExerciseDraftTestRunner {
     static func main() {
         buildsDraftWithMultipleExercisesAndPerSetValues()
         preservesOptionalAddedWeightForBodyweightExercises()
+        rejectsNegativeAddedWeightForBodyweightExercises()
         rejectsIncompleteForms()
         copiesLastSetWhenAppending()
         trimsTitleAndDropsEmptyOne()
@@ -52,6 +53,32 @@ struct DailyRecordMultiExerciseDraftTestRunner {
 
         precondition(draft.exercises[0].sets.map(\.weight) == [20, nil], "Added weight on a bodyweight set must be preserved")
         precondition(draft.exercises[0].sets.map(\.reps) == [10, 8])
+    }
+
+    /// A negative added weight on a bodyweight set is invalid (you can't load
+    /// negative weight); the builder must reject the whole form. A zero added
+    /// weight stays valid — it's an explicit value, distinct from nil which
+    /// means pure bodyweight.
+    private static func rejectsNegativeAddedWeightForBodyweightExercises() {
+        let negative = [
+            DailyRecordExerciseInput(name: "引体向上", isBodyweight: true, sets: [
+                DailyRecordSetInput(weight: -5, reps: 10),
+            ]),
+        ]
+        precondition(
+            DailyRecordDraftBuilder.strengthDraft(title: "", workoutDate: Date(), exercises: negative) == nil,
+            "Expected nil draft when a bodyweight set has negative added weight"
+        )
+
+        let zeroAdded = [
+            DailyRecordExerciseInput(name: "引体向上", isBodyweight: true, sets: [
+                DailyRecordSetInput(weight: 0, reps: 10),
+            ]),
+        ]
+        guard let draft = DailyRecordDraftBuilder.strengthDraft(title: "", workoutDate: Date(), exercises: zeroAdded) else {
+            preconditionFailure("Expected a valid draft when added weight is 0")
+        }
+        precondition(draft.exercises[0].sets[0].weight == 0, "Zero added weight must be preserved as an explicit 0")
     }
 
     private static func rejectsIncompleteForms() {

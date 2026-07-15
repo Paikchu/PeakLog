@@ -15,15 +15,6 @@ nonisolated enum AppLanguage: String, Codable, CaseIterable, Identifiable, Senda
         }
     }
 
-    var speechLocaleIdentifier: String {
-        switch self {
-        case .english:
-            return "en-US"
-        case .simplifiedChinese:
-            return "zh-CN"
-        }
-    }
-
     var nativeDisplayName: String {
         switch self {
         case .english:
@@ -58,7 +49,4 @@ nonisolated enum AppLanguage: String, Codable, CaseIterable, Identifiable, Senda
         return .english
     }
 
-    static func current(preferredLanguages: [String] = Bundle.main.preferredLocalizations + Locale.preferredLanguages) -> AppLanguage {
-        bestMatch(for: preferredLanguages)
-    }
 }

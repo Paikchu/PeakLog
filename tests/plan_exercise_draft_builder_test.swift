@@ -5,6 +5,7 @@ struct PlanExerciseDraftBuilderTestRunner {
     static func main() {
         buildsDraftsWithMultipleExercisesAndPerSetTargets()
         preservesOptionalAddedWeightForBodyweightExercises()
+        rejectsNegativeAddedWeightForBodyweightExercises()
         rejectsIncompleteForms()
         print("plan_exercise_draft_builder_test passed")
     }
@@ -51,6 +52,31 @@ struct PlanExerciseDraftBuilderTestRunner {
         precondition(drafts[0].isBodyweight)
         precondition(drafts[0].sets.map(\.targetWeight) == [20, nil], "Added weight on a bodyweight set must be preserved")
         precondition(drafts[0].sets.map(\.targetReps) == [10, 8])
+    }
+
+    /// A negative added weight on a bodyweight set is invalid; the builder must
+    /// reject the whole exercise. A zero added weight stays valid — distinct
+    /// from nil, which means pure bodyweight.
+    private static func rejectsNegativeAddedWeightForBodyweightExercises() {
+        let negative = [
+            DailyRecordExerciseInput(name: "引体向上", isBodyweight: true, sets: [
+                DailyRecordSetInput(weight: -5, reps: 10),
+            ]),
+        ]
+        precondition(
+            PlanExerciseDraftBuilder.drafts(exercises: negative) == nil,
+            "Expected nil drafts when a bodyweight set has negative added weight"
+        )
+
+        let zeroAdded = [
+            DailyRecordExerciseInput(name: "引体向上", isBodyweight: true, sets: [
+                DailyRecordSetInput(weight: 0, reps: 10),
+            ]),
+        ]
+        guard let drafts = PlanExerciseDraftBuilder.drafts(exercises: zeroAdded) else {
+            preconditionFailure("Expected valid drafts when added weight is 0")
+        }
+        precondition(drafts[0].sets[0].targetWeight == 0, "Zero added weight must be preserved as an explicit 0")
     }
 
     private static func rejectsIncompleteForms() {
