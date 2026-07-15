@@ -1,0 +1,20 @@
+# .github/workflows/claude-review.yml
+name: Claude PR Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            /review
+            重点检查正确性 bug、并发问题和测试遗漏,用 inline comment 标注具体行。
