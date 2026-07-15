@@ -13,8 +13,10 @@ import Foundation
 //      the completion is backed by a real logged set (b637e5e invariant),
 //      even if that session has not yet synced to the cloud; no backfill when
 //      plan ids differ.
-//   5. pendingEditEvents untouched (EV1).
-//   6. mergeFromCloud does not fire onChange (no pull→push echo).
+//   5. offline cardio completion markers survive when the plan id matches and
+//      their linked cardio record is still present.
+//   6. pendingEditEvents untouched (EV1).
+//   7. mergeFromCloud does not fire onChange (no pull→push echo).
 //
 // Compile with:
 //   swiftc -parse-as-library \
@@ -36,10 +38,61 @@ struct CloudPullMergeTest {
         await testUpdatedAtLastWriteWins()
         await testSeedPlanReplacedByCloudPlan()
         await testPlanCompletionPreservedWhenSamePlanId()
+        await testCardioCompletionPreservedWhenSamePlanId()
         await testNoCompletionBackfillWhenPlanIdsDiffer()
         await testPendingEditEventsUntouched()
         await testMergeDoesNotFireOnChange()
         print("cloud_pull_merge_test passed")
+    }
+
+    static func testCardioCompletionPreservedWhenSamePlanId() async {
+        let db = LocalAppDatabase(fileURL: tempURL())
+        let profile = await db.fetchProfile()
+        let completedAt = Date(timeIntervalSince1970: 1_783_000_000)
+        let linkedRecordId = UUID().uuidString
+
+        let localExercise = TrainingPlanExercise(
+            id: "cardio-1", orderIndex: 0, exerciseName: "Cycling",
+            exerciseLoadType: .unknown, progressionMode: "manual", notes: nil,
+            previousPerformanceSummary: nil, aiSuggestion: nil, sets: [],
+            itemType: .cardio, cardioActivityType: .cycling,
+            targetDurationMinutes: 30, targetDistanceKm: 10, targetRPE: 6,
+            cardioCompletedAt: completedAt, linkedCardioWorkoutId: linkedRecordId)
+        let localPlan = TrainingPlan(
+            id: "plan-cardio", weekStartDate: "2026-07-06",
+            goalSummary: "local", coachSummary: "local", days: [TrainingPlanDay(
+                id: "day-cardio", planDate: "2026-07-08", dayIndex: 1,
+                title: "Local Cardio", focus: nil, status: "planned", exercises: [localExercise])])
+        let localRecord = CardioWorkoutRecord(
+            id: linkedRecordId, userId: profile.id, workoutDate: Date(),
+            activityType: .cycling, durationMinutes: 32, distanceKm: 11,
+            rpe: 7, source: .manual, createdAt: completedAt, updatedAt: completedAt)
+        await db.replaceAll(profile: profile, activePlan: localPlan,
+            strengthSessions: [], runningRecords: [localRecord], customExercises: [], goalSpec: nil)
+
+        let cloudExercise = TrainingPlanExercise(
+            id: "cardio-1", orderIndex: 0, exerciseName: "Cycling",
+            exerciseLoadType: .unknown, progressionMode: "manual", notes: nil,
+            previousPerformanceSummary: nil, aiSuggestion: nil, sets: [],
+            itemType: .cardio, cardioActivityType: .cycling,
+            targetDurationMinutes: 30, targetDistanceKm: 10, targetRPE: 6)
+        let cloudPlan = TrainingPlan(
+            id: "plan-cardio", weekStartDate: "2026-07-06",
+            goalSummary: "cloud", coachSummary: "cloud", days: [TrainingPlanDay(
+                id: "day-cardio", planDate: "2026-07-08", dayIndex: 1,
+                title: "Cloud Cardio", focus: nil, status: "planned", exercises: [cloudExercise])])
+
+        await db.mergeFromCloud(profile: profile, activePlan: cloudPlan,
+            strengthSessions: [], runningRecords: [], customExercises: [], goalSpec: nil)
+
+        let snapshot = await db.snapshot()
+        let merged = snapshot.activePlan.days[0].exercises[0]
+        precondition(merged.cardioCompletedAt == completedAt,
+            "offline cardio completion timestamp must survive cloud pull")
+        precondition(merged.linkedCardioWorkoutId == linkedRecordId,
+            "offline cardio record link must survive cloud pull")
+        precondition(snapshot.runningRecords.contains { $0.id == linkedRecordId },
+            "offline linked cardio record must survive cloud pull")
     }
 
     static func tempURL() -> URL {

@@ -1306,8 +1306,8 @@ actor LocalAppDatabase {
     /// - `customExercises`: cloud wins; local-only user-generated customs
     ///   are kept.
     /// - `activePlan`: cloud structure wins; when `cloud.id == local.id`,
-    ///   offline plan-set completion markers (`completedAt` /
-    ///   `linkedExerciseSetId`) are carried back onto the cloud plan
+    ///   offline strength-set and cardio completion markers are carried back
+    ///   onto the cloud plan
     ///   (completion is monotonic). A local seed plan (different id) is
     ///   replaced wholesale.
     /// - `profile` / `goalSpec`: cloud wins (confirmed decision; timezone
@@ -1360,9 +1360,20 @@ actor LocalAppDatabase {
                 exercise.sets.map(\.id)
             }
         })
+        let cardioRecordIds = Set(state.runningRecords.map(\.id))
 
         for dayIndex in state.activePlan.days.indices {
             for exerciseIndex in state.activePlan.days[dayIndex].exercises.indices {
+                let exercise = state.activePlan.days[dayIndex].exercises[exerciseIndex]
+                if exercise.cardioCompletedAt != nil || exercise.linkedCardioWorkoutId != nil {
+                    if let linkedId = exercise.linkedCardioWorkoutId,
+                       cardioRecordIds.contains(linkedId) {
+                        // The linked record still exists; keep the completion markers.
+                    } else {
+                        state.activePlan.days[dayIndex].exercises[exerciseIndex].cardioCompletedAt = nil
+                        state.activePlan.days[dayIndex].exercises[exerciseIndex].linkedCardioWorkoutId = nil
+                    }
+                }
                 for setIndex in state.activePlan.days[dayIndex].exercises[exerciseIndex].sets.indices {
                     let set = state.activePlan.days[dayIndex].exercises[exerciseIndex].sets[setIndex]
                     guard set.completedAt != nil || set.linkedExerciseSetId != nil else { continue }
@@ -1418,8 +1429,15 @@ actor LocalAppDatabase {
 
         // Index local completion markers by plan-set id for O(1) lookup.
         var localCompletionById: [String: (completedAt: Date?, linkedExerciseSetId: String?)] = [:]
+        var localCardioCompletionById: [String: (completedAt: Date?, linkedCardioWorkoutId: String?)] = [:]
         for day in local.days {
             for exercise in day.exercises {
+                if exercise.isCardioCompleted {
+                    localCardioCompletionById[exercise.id] = (
+                        exercise.cardioCompletedAt,
+                        exercise.linkedCardioWorkoutId
+                    )
+                }
                 for set in exercise.sets where set.isCompleted {
                     localCompletionById[set.id] = (set.completedAt, set.linkedExerciseSetId)
                 }
@@ -1429,6 +1447,11 @@ actor LocalAppDatabase {
         let mergedDays = cloud.days.map { day -> TrainingPlanDay in
             var day = day
             for exerciseIndex in day.exercises.indices {
+                if !day.exercises[exerciseIndex].isCardioCompleted,
+                   let local = localCardioCompletionById[day.exercises[exerciseIndex].id] {
+                    day.exercises[exerciseIndex].cardioCompletedAt = local.completedAt
+                    day.exercises[exerciseIndex].linkedCardioWorkoutId = local.linkedCardioWorkoutId
+                }
                 for setIndex in day.exercises[exerciseIndex].sets.indices {
                     let setId = day.exercises[exerciseIndex].sets[setIndex].id
                     guard !day.exercises[exerciseIndex].sets[setIndex].isCompleted,

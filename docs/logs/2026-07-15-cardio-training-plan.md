@@ -18,6 +18,7 @@
 - `node --test backend/tests/*.test.mjs`：99/99 通过。
 - `swift tests/cardio_plan_ui_contract_test.swift`：通过。
 - `plan_edit_event_recording_test`：通过，覆盖手动有氧新增事件载荷。
+- `cloud_pull_merge_test`：通过，覆盖离线有氧完成标记与关联记录在云拉取后的保留。
 - `cardio_model_test` 与 `cloud_mapper_roundtrip_test`：通过。
 - iOS Simulator 通用构建：`BUILD SUCCEEDED`。
 - `CardioPlanCompletionTests`：手动添加与完成流程 2/2 通过。
