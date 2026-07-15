@@ -427,7 +427,7 @@ nonisolated enum CloudMapper {
                 id: sessionRow.id,
                 userId: sessionRow.user_id,
                 date: date,
-                durationMinutes: sessionRow.duration_seconds.map { $0 / 60 },
+                durationMinutes: sessionRow.duration_seconds.map { Int((Double($0) / 60).rounded()) },
                 label: sessionRow.title,
                 exercises: exercises,
                 createdAt: CloudDate.timestamp(from: sessionRow.created_at) ?? date,
