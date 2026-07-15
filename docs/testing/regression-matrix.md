@@ -43,8 +43,8 @@
 
 | 场景 | 验证方式 | 固定验收维度 |
 |---|---|---|
-| 底部 Dock 固定栏在不同内容高度下保持固定 | `tests/home_dock_fixed_rail_test.swift` | 主路径 |
-| Dock 导航跳转目标正确 | `tests/home_dock_navigation_test.swift` | 主路径 |
+| 原生 Tab Bar 贴合底部安全区且无自绘 Dock 残留 | `tests/home_dock_fixed_rail_test.swift` | 主路径 |
+| 日历、计划、设置原生 Tab 与训练态显隐正确 | `tests/home_dock_navigation_test.swift` | 主路径 |
 
 ## Auth · Sync
 

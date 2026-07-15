@@ -100,7 +100,7 @@ flowchart TB
 | Profile（个人） | `Views/Profile/ProfileScreen.swift`、`StatCardView` | 资料、统计、偏好 |
 | Auth | `Views/Auth/AuthView.swift` | 登录；DEBUG 本地模式入口 |
 
-导航**不依赖** `NavigationStack`，而是手动 `HomeTab` 枚举 + 大量 sheet（`DailyRecordSheet`、`AddPlanExerciseSheet`、`ExercisePickerScreen`、`WheelValueEditSheet`）。
+根导航使用原生 `TabView(selection:)` + `HomeTab` 枚举，日历、计划、设置由系统 Tab Bar 承载；页面内流程仍主要使用 sheet（`DailyRecordSheet`、`AddPlanExerciseSheet`、`ExercisePickerScreen`、`WheelValueEditSheet`），不依赖 `NavigationStack`。
 
 ### 3.2 视图模型层（ViewModels）
 

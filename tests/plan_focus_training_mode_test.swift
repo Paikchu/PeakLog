@@ -17,6 +17,10 @@ let contentViewSource = try String(
     contentsOf: rootURL.appendingPathComponent("PeakLog/ContentView.swift"),
     encoding: .utf8
 )
+let trainingActionSource = try String(
+    contentsOf: rootURL.appendingPathComponent("PeakLog/Views/Home/TrainingActionLayer.swift"),
+    encoding: .utf8
+)
 let attributesSource = try String(
     contentsOf: rootURL.appendingPathComponent("PeakLogShared/PlanLiveActivityAttributes.swift"),
     encoding: .utf8
@@ -63,8 +67,20 @@ precondition(
     "Expected a bottom bar with the big complete-current-set action"
 )
 precondition(
-    contentViewSource.contains("TrainingFocusBar") && contentViewSource.contains("training_session.resume"),
-    "Expected the dock to swap with the focus bar and offer resume for minimized sessions"
+    !componentsSource.contains(".glassActionBackground"),
+    "Expected focus-mode primary actions to avoid the system glass rim"
+)
+precondition(
+    componentsSource.contains(".background(Color.accentPrimary.opacity(0.82), in: Capsule())"),
+    "Expected complete-set action to use a solid amber capsule"
+)
+precondition(
+    componentsSource.contains(".background(Color.green.opacity(0.82), in: Capsule())"),
+    "Expected finish action to use a solid green capsule"
+)
+precondition(
+    contentViewSource.contains("TrainingFocusBar") && trainingActionSource.contains("training_session.resume"),
+    "Expected the tab bar to swap with the focus bar and offer resume for minimized sessions"
 )
 precondition(
     attributesSource.contains("focusedExerciseID"),

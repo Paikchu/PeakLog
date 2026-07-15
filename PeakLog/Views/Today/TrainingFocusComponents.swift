@@ -275,7 +275,7 @@ struct TrainingFocusBar: View {
         }
         .buttonStyle(.plain)
         .foregroundColor(.white)
-        .glassActionBackground(cornerRadius: AppRadius.full, tint: Color.accentPrimary.opacity(0.45))
+        .background(Color.accentPrimary.opacity(0.82), in: Capsule())
         .clipShape(Capsule())
         .accessibilityIdentifier("training_focus.completeSet")
     }
@@ -294,7 +294,7 @@ struct TrainingFocusBar: View {
         }
         .buttonStyle(.plain)
         .foregroundColor(.white)
-        .glassActionBackground(cornerRadius: AppRadius.full, tint: Color.green.opacity(0.5))
+        .background(Color.green.opacity(0.82), in: Capsule())
         .clipShape(Capsule())
         .accessibilityIdentifier("training_focus.finishAll")
     }

@@ -5,10 +5,6 @@ let contentViewSource = try String(
     contentsOf: rootURL.appendingPathComponent("PeakLog/ContentView.swift"),
     encoding: .utf8
 )
-let dockSource = try String(
-    contentsOf: rootURL.appendingPathComponent("PeakLog/Views/Home/HomeDockBar.swift"),
-    encoding: .utf8
-)
 let todaySource = try String(
     contentsOf: rootURL.appendingPathComponent("PeakLog/Views/Today/TodayWorkoutScreen.swift"),
     encoding: .utf8
@@ -19,20 +15,34 @@ precondition(
     "Expected root shell to own a selected HomeTab"
 )
 precondition(
-    contentViewSource.contains("HomeDockBar(selectedTab: $selectedTab)"),
-    "Expected root shell to render the bottom dock as a pure tab rail"
+    contentViewSource.contains("TabView(selection: $selectedTab)"),
+    "Expected root shell to use a native selection-driven TabView"
+)
+precondition(
+    contentViewSource.contains("Tab(value: HomeTab.calendar)")
+        && contentViewSource.contains("Tab(value: HomeTab.plan)")
+        && contentViewSource.contains("Tab(value: HomeTab.settings)"),
+    "Expected native Calendar, Plan, and Settings tabs"
+)
+precondition(
+    contentViewSource.contains("Label(HomeTab.calendar.title, systemImage: HomeTab.calendar.symbolName)")
+        && contentViewSource.contains("Label(HomeTab.plan.title, systemImage: HomeTab.plan.symbolName)")
+        && contentViewSource.contains("Label(HomeTab.settings.title, systemImage: HomeTab.settings.symbolName)"),
+    "Expected every native tab to show its localized text and SF Symbol"
+)
+precondition(
+    contentViewSource.contains("TodayWorkoutScreen(viewModel: todayViewModel)\n                    .toolbarVisibility(isTrainingFocusVisible ? .hidden : .visible, for: .tabBar)"),
+    "Expected focus mode to hide the native tab bar"
 )
 precondition(
     contentViewSource.contains("TrainingActionLayer(state:"),
-    "Expected root shell to host the training action layer above the dock"
+    "Expected root shell to host the training action layer above the tab bar"
 )
 precondition(
-    dockSource.contains("case calendar") && dockSource.contains("case plan") && dockSource.contains("case settings"),
-    "Expected dock to include Calendar, Plan, and Settings tabs"
-)
-precondition(
-    dockSource.contains("glassEffect"),
-    "Expected dock to use Liquid Glass on iOS 26"
+    contentViewSource.contains("if #available(iOS 26.1, *)")
+        && contentViewSource.contains(".tabViewBottomAccessory(isEnabled: state != nil)")
+        && contentViewSource.contains("TrainingActionInsetModifier"),
+    "Expected a dynamically disabled native accessory with an iOS 26.0 content-inset fallback"
 )
 precondition(
     !todaySource.contains("onShowHistory") && !todaySource.contains("onShowProfile"),
