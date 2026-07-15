@@ -23,9 +23,6 @@ struct RunningRecordCard: View {
                 if let distanceKm = record.distanceKm {
                     metric(title: "里程", value: "\(distanceKm.cleanDistance) km")
                 }
-                if let rpe = record.rpe {
-                    metric(title: "RPE", value: rpe.cleanDistance)
-                }
             }
 
             Text(dateLabel)

@@ -1,8 +1,7 @@
 import SwiftUI
 
 // MARK: - Add Plan Exercise Sheet
-// Type-first flow: strength keeps the exercise-library picker and set form;
-// cardio uses its own activity and target-metrics form.
+// Strength and cardio begin in one picker, then route to their own target forms.
 
 struct AddPlanExerciseSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -10,7 +9,6 @@ struct AddPlanExerciseSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Route: Hashable {
-        case strengthPicker
         case strengthForm
         case cardioForm
     }
@@ -23,7 +21,6 @@ struct AddPlanExerciseSheet: View {
     @State private var selectedCardioActivity: CardioActivityType = .running
     @State private var cardioDuration = "30"
     @State private var cardioDistance = ""
-    @State private var cardioRPE = ""
 
     let onSave: ([PlanExerciseDraft]) async throws -> Void
 
@@ -33,9 +30,11 @@ struct AddPlanExerciseSheet: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            typePicker
-                .navigationTitle("add_plan_exercise.title")
-                .navigationBarTitleDisplayMode(.inline)
+            ExercisePickerScreen(
+                alreadyAddedIds: Set(exercises.compactMap(\.sourceExerciseId)),
+                onConfirm: appendPicked,
+                onSelectCardio: selectCardio
+            )
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("common.cancel") { dismiss() }
@@ -44,11 +43,6 @@ struct AddPlanExerciseSheet: View {
             }
             .navigationDestination(for: Route.self) { route in
                 switch route {
-                case .strengthPicker:
-                    ExercisePickerScreen(
-                        alreadyAddedIds: Set(exercises.compactMap(\.sourceExerciseId)),
-                        onConfirm: appendPicked
-                    )
                 case .strengthForm:
                     formPage
                 case .cardioForm:
@@ -56,62 +50,6 @@ struct AddPlanExerciseSheet: View {
                 }
             }
         }
-    }
-
-    private var typePicker: some View {
-        VStack(spacing: 12) {
-            planTypeButton(
-                title: String(localized: "daily_record.type.strength"),
-                subtitle: String(localized: "add_plan_exercise.strength_subtitle"),
-                icon: "dumbbell.fill",
-                tint: .accentPrimary
-            ) { path.append(.strengthPicker) }
-
-            planTypeButton(
-                title: String(localized: "daily_record.type.cardio"),
-                subtitle: String(localized: "add_plan_exercise.cardio_subtitle"),
-                icon: "figure.run",
-                tint: .teal
-            ) { path.append(.cardioForm) }
-
-            Spacer()
-        }
-        .padding(16)
-        .background(Color.appBackground.ignoresSafeArea())
-        .accessibilityIdentifier("addPlan.typePicker")
-    }
-
-    private func planTypeButton(
-        title: String,
-        subtitle: String,
-        icon: String,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .appFont(size: 20, weight: .semibold)
-                    .foregroundColor(tint)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(tint.opacity(0.1)))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .appFont(size: 16, weight: .bold)
-                        .foregroundColor(.textPrimary)
-                    Text(subtitle)
-                        .appFont(size: 12)
-                        .foregroundColor(.textMuted)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.textMuted)
-            }
-            .padding(16)
-            .background(Color.appSurface)
-            .cornerRadius(AppRadius.xl)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Form Page
@@ -142,7 +80,7 @@ struct AddPlanExerciseSheet: View {
                 }
 
                 AddExerciseDashedButton {
-                    path = [.strengthPicker]
+                    path = []
                 }
             }
             .padding(.horizontal, 16)
@@ -163,7 +101,7 @@ struct AddPlanExerciseSheet: View {
         }
         .onChange(of: exercises.isEmpty) { _, isEmpty in
             if isEmpty {
-                path = [.strengthPicker]
+                path = []
             }
         }
     }
@@ -174,6 +112,14 @@ struct AddPlanExerciseSheet: View {
         let language = localizationManager.appLanguage
         exercises.append(contentsOf: picked.map { DailyRecordExerciseInput(definition: $0, language: language) })
         path.append(.strengthForm)
+    }
+
+    private func selectCardio(_ activity: CardioActivityType) {
+        selectedCardioActivity = activity
+        if !activity.supportsDistance {
+            cardioDistance = ""
+        }
+        path.append(.cardioForm)
     }
 
     /// Staggers newly pushed cards in — 50ms steps, matching the form spring.
@@ -193,19 +139,21 @@ struct AddPlanExerciseSheet: View {
     private var cardioFormPage: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Picker("cardio.metric.activity", selection: $selectedCardioActivity) {
-                    ForEach(CardioActivityType.allCases, id: \.self) { activity in
-                        Label(activity.localizedTitle, systemImage: activity.iconName).tag(activity)
-                    }
+                HStack(spacing: 10) {
+                    Image(systemName: selectedCardioActivity.iconName)
+                        .foregroundColor(.teal)
+                    Text(selectedCardioActivity.localizedTitle)
+                        .fontWeight(.semibold)
+                    Spacer()
                 }
-                .pickerStyle(.menu)
+                .padding(14)
+                .background(Color.appSurface)
+                .cornerRadius(AppRadius.xl)
 
                 cardioField("cardio.metric.duration", text: $cardioDuration, suffix: "min")
                 if selectedCardioActivity.supportsDistance {
                     cardioField("cardio.metric.distance", text: $cardioDistance, suffix: "km", decimal: true)
                 }
-                cardioField("cardio.metric.rpe", text: $cardioRPE, suffix: "1–10", decimal: true)
-
                 if let saveError {
                     Text(saveError)
                         .font(.footnote)
@@ -222,11 +170,11 @@ struct AddPlanExerciseSheet: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("daily_record.save") {
-                    guard let cardioDraft else { return }
-                    save([cardioDraft])
+                    guard let submissionDrafts = cardioSubmissionDrafts else { return }
+                    save(submissionDrafts)
                 }
                 .fontWeight(.semibold)
-                .disabled(cardioDraft == nil || isSaving)
+                .disabled(cardioSubmissionDrafts == nil || isSaving)
             }
         }
         .accessibilityIdentifier("addPlan.cardioForm")
@@ -234,17 +182,19 @@ struct AddPlanExerciseSheet: View {
 
     private var cardioDraft: PlanExerciseDraft? {
         guard let duration = Int(cardioDuration),
-              cardioDistance.isEmpty || Double(cardioDistance) != nil,
-              cardioRPE.isEmpty || Double(cardioRPE) != nil else { return nil }
+              cardioDistance.isEmpty || Double(cardioDistance) != nil else { return nil }
         let distance = selectedCardioActivity.supportsDistance && !cardioDistance.isEmpty
             ? Double(cardioDistance) : nil
-        let rpe = cardioRPE.isEmpty ? nil : Double(cardioRPE)
         return try? PlanExerciseDraft.cardio(
             activityType: selectedCardioActivity,
             targetDurationMinutes: duration,
-            targetDistanceKm: distance,
-            targetRPE: rpe
+            targetDistanceKm: distance
         )
+    }
+
+    private var cardioSubmissionDrafts: [PlanExerciseDraft]? {
+        guard let cardioDraft else { return nil }
+        return PlanExerciseDraftBuilder.drafts(exercises: exercises, appending: cardioDraft)
     }
 
     private func cardioField(

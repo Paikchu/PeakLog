@@ -14,9 +14,10 @@ test('weekly and replan prompts expose the cardio plan item contract', () => {
     assert.ok(prompt.includes('"cardioActivityType": "running" | "cycling" | "elliptical" | "stair_climber" | null'));
     assert.ok(prompt.includes('"targetDurationMinutes": integer|null'));
     assert.ok(prompt.includes('elliptical and stair_climber items must have targetDistanceKm null'));
+    assert.ok(!prompt.includes('targetRPE'));
   }
-  assert.notEqual(PROMPT_VERSION, 'v1');
-  assert.notEqual(REPLAN_PROMPT_VERSION, 'replan-v1');
+  assert.equal(PROMPT_VERSION, 'v3-cardio-no-rpe');
+  assert.equal(REPLAN_PROMPT_VERSION, 'replan-v3-cardio-no-rpe');
 });
 
 test('weekly prompt keeps cardio subordinate to recovery and training-day limits', () => {

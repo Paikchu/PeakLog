@@ -161,7 +161,6 @@ export function summarizeCurrentWeekDays({ dayRows, exerciseRows, setRows }) {
             cardioActivityType: ex.cardio_activity_type,
             targetDurationMinutes: ex.target_duration_minutes,
             targetDistanceKm: ex.target_distance_km ?? null,
-            targetRPE: ex.target_rpe ?? null,
             completedCount: isCompleted ? 1 : 0,
             totalCount: 1,
           };

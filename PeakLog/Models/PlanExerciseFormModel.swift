@@ -25,14 +25,13 @@ struct PlanExerciseDraft: Equatable, Sendable {
     static func cardio(
         activityType: CardioActivityType,
         targetDurationMinutes: Int,
-        targetDistanceKm: Double?,
-        targetRPE: Double?
+        targetDistanceKm: Double?
     ) throws -> PlanExerciseDraft {
         let metrics = try CardioMetrics(
             activityType: activityType,
             durationMinutes: targetDurationMinutes,
             distanceKm: targetDistanceKm,
-            rpe: targetRPE
+            rpe: nil
         )
         return PlanExerciseDraft(
             exerciseName: activityType.localizedTitle,
@@ -42,7 +41,7 @@ struct PlanExerciseDraft: Equatable, Sendable {
             cardioActivityType: metrics.activityType,
             targetDurationMinutes: metrics.durationMinutes,
             targetDistanceKm: metrics.distanceKm,
-            targetRPE: metrics.rpe
+            targetRPE: nil
         )
     }
 }
@@ -78,5 +77,16 @@ enum PlanExerciseDraftBuilder {
             ))
         }
         return result
+    }
+
+    /// Appends a cardio draft without discarding strength cards already configured in the sheet.
+    /// An incomplete strength card blocks the combined submission.
+    static func drafts(
+        exercises: [DailyRecordExerciseInput],
+        appending cardioDraft: PlanExerciseDraft
+    ) -> [PlanExerciseDraft]? {
+        guard !exercises.isEmpty else { return [cardioDraft] }
+        guard let strengthDrafts = drafts(exercises: exercises) else { return nil }
+        return strengthDrafts + [cardioDraft]
     }
 }

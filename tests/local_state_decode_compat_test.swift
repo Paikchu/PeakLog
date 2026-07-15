@@ -6,7 +6,33 @@ struct LocalStateDecodeCompatTestRunner {
         await legacyStateFileWithoutCustomExercisesLoads()
         await customExercisesPersistAcrossReopen()
         await legacyStateFileWithoutPhase1FieldsLoads()
+        await unknownCardioActivityDoesNotResetState()
         print("local_state_decode_compat_test passed")
+    }
+
+    private static func unknownCardioActivityDoesNotResetState() async {
+        let seededURL = tempFileURL("cardio-seeded.json")
+        let seededDatabase = LocalAppDatabase(fileURL: seededURL)
+        let originalProfile = await seededDatabase.fetchProfile()
+
+        guard let data = try? Data(contentsOf: seededURL),
+              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              var records = json["runningRecords"] as? [[String: Any]],
+              !records.isEmpty else {
+            preconditionFailure("Expected seeded state to contain a cardio record")
+        }
+        records[0]["activityType"] = "future_cardio"
+        json["runningRecords"] = records
+        guard let mutated = try? JSONSerialization.data(withJSONObject: json) else {
+            preconditionFailure("Expected mutated cardio state to serialize")
+        }
+        try? mutated.write(to: seededURL)
+
+        let reopened = LocalAppDatabase(fileURL: seededURL)
+        let profile = await reopened.fetchProfile()
+        let recordsAfterReopen = await reopened.snapshot().runningRecords
+        precondition(profile.id == originalProfile.id, "Unknown cardio activity must not reseed the full state")
+        precondition(recordsAfterReopen.first?.activityType == .running, "Unknown activity uses the running fallback")
     }
 
     private static func tempFileURL(_ name: String) -> URL {

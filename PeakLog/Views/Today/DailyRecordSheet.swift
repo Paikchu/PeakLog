@@ -35,7 +35,6 @@ struct DailyRecordSheet: View {
     @State private var exercises: [DailyRecordExerciseInput] = []
     @State private var durationMinutes = ""
     @State private var distanceKm = ""
-    @State private var rpeText = ""
     @State private var selectedCardioActivity: CardioActivityType = .running
     @State private var path: [Route] = []
     @State private var isSaving = false
@@ -194,12 +193,6 @@ struct DailyRecordSheet: View {
                     text: $distanceKm
                 )
             }
-            cardioField(
-                labelKey: "cardio.metric.rpe",
-                placeholder: String(localized: "cardio.metric.optional"),
-                keyboardType: .decimalPad,
-                text: $rpeText
-            )
         }
         .padding(12)
         .glassPanel(cornerRadius: AppRadius.xl)
@@ -248,16 +241,13 @@ struct DailyRecordSheet: View {
             ).map(DailyRecordDraft.strength)
         case .cardio:
             guard let duration = Int(durationMinutes) else { return nil }
-            guard distanceKm.isEmpty || Double(distanceKm) != nil,
-                  rpeText.isEmpty || Double(rpeText) != nil else { return nil }
+            guard distanceKm.isEmpty || Double(distanceKm) != nil else { return nil }
             let distance = selectedCardioActivity.supportsDistance && !distanceKm.isEmpty
                 ? Double(distanceKm) : nil
-            let rpe = rpeText.isEmpty ? nil : Double(rpeText)
             guard let metrics = try? CardioMetrics(
                 activityType: selectedCardioActivity,
                 durationMinutes: duration,
-                distanceKm: distance,
-                rpe: rpe
+                distanceKm: distance
             ) else { return nil }
             return .cardio(metrics)
         }

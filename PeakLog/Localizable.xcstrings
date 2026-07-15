@@ -220,22 +220,10 @@
         }
       }
     },
-    "add_plan_exercise.cardio_subtitle": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Running, cycling, elliptical, or stair climber" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "跑步、骑行、椭圆机或爬楼机" } }
-      }
-    },
     "add_plan_exercise.cardio_title": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Add Cardio" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "添加有氧" } }
-      }
-    },
-    "add_plan_exercise.strength_subtitle": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Sets, load, and reps" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "设置组数、重量和次数" } }
       }
     },
     "add_plan_exercise.exercise": {
@@ -1134,12 +1122,6 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "可选" } }
       }
     },
-    "cardio.metric.rpe": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "RPE" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主观强度 RPE" } }
-      }
-    },
     "cardio.plan.complete_title": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Complete Cardio" } },
@@ -1985,6 +1967,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "为你推荐"
+          }
+        }
+      }
+    },
+    "exercise_picker.activity_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Activity"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择运动"
           }
         }
       }

@@ -683,7 +683,7 @@ function buildInstallPlan(clampedPlan: { days: unknown[]; coachSummary?: string 
         cardioActivityType: exercise.cardioActivityType ?? null,
         targetDurationMinutes: exercise.targetDurationMinutes ?? null,
         targetDistanceKm: exercise.targetDistanceKm ?? null,
-        targetRPE: exercise.targetRPE ?? null,
+        targetRPE: null,
         sets: ((exercise.sets as Array<Record<string, unknown>>) ?? []).map((set) => ({
           setIndex: set.setIndex,
           targetWeight: set.targetWeight ?? null,
@@ -758,7 +758,7 @@ function buildReplanDaysPayload(clampedPlan: { days: unknown[] }, weightUnit: st
       cardioActivityType: exercise.cardioActivityType ?? null,
       targetDurationMinutes: exercise.targetDurationMinutes ?? null,
       targetDistanceKm: exercise.targetDistanceKm ?? null,
-      targetRPE: exercise.targetRPE ?? null,
+      targetRPE: null,
       sets: ((exercise.sets as Array<Record<string, unknown>>) ?? []).map((set) => ({
         setIndex: set.setIndex,
         targetWeight: set.targetWeight ?? null,
@@ -988,7 +988,7 @@ function buildFallbackPlan(currentWeekPlan: { days: Array<Record<string, unknown
         cardioActivityType: exercise.cardio_activity_type ?? null,
         targetDurationMinutes: exercise.target_duration_minutes ?? null,
         targetDistanceKm: exercise.target_distance_km ?? null,
-        targetRPE: exercise.target_rpe ?? null,
+        targetRPE: null,
         sets: ((exercise.sets as Array<Record<string, unknown>>) ?? []).map((set) => ({
           setIndex: set.set_index,
           targetWeight: set.target_weight ?? null,

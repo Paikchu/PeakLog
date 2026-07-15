@@ -7,7 +7,6 @@ struct CardioCompletionSheet: View {
 
     @State private var durationText: String
     @State private var distanceText: String
-    @State private var rpeText: String
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -16,7 +15,6 @@ struct CardioCompletionSheet: View {
         self.onSave = onSave
         _durationText = State(initialValue: exercise.targetDurationMinutes.map(String.init) ?? "")
         _distanceText = State(initialValue: exercise.targetDistanceKm.map { $0.cleanDistance } ?? "")
-        _rpeText = State(initialValue: exercise.targetRPE.map { $0.cleanRPE } ?? "")
     }
 
     var body: some View {
@@ -28,7 +26,6 @@ struct CardioCompletionSheet: View {
                     if activityType.supportsDistance {
                         numericField("cardio.metric.distance", text: $distanceText, suffix: "km", decimal: true)
                     }
-                    numericField("cardio.metric.rpe", text: $rpeText, suffix: "1–10", decimal: true)
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundColor(.red) }
@@ -55,15 +52,12 @@ struct CardioCompletionSheet: View {
 
     private var metrics: CardioMetrics? {
         guard let duration = Int(durationText) else { return nil }
-        guard distanceText.isEmpty || Double(distanceText) != nil,
-              rpeText.isEmpty || Double(rpeText) != nil else { return nil }
+        guard distanceText.isEmpty || Double(distanceText) != nil else { return nil }
         let distance = distanceText.isEmpty ? nil : Double(distanceText)
-        let rpe = rpeText.isEmpty ? nil : Double(rpeText)
         return try? CardioMetrics(
             activityType: activityType,
             durationMinutes: duration,
-            distanceKm: distance,
-            rpe: rpe
+            distanceKm: distance
         )
     }
 
@@ -104,6 +98,4 @@ private extension Double {
     var cleanDistance: String {
         truncatingRemainder(dividingBy: 1) == 0 ? String(Int(self)) : String(format: "%.1f", self)
     }
-
-    var cleanRPE: String { cleanDistance }
 }

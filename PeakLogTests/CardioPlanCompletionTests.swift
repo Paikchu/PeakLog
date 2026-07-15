@@ -11,8 +11,7 @@ final class CardioPlanCompletionTests: XCTestCase {
         let draft = try PlanExerciseDraft.cardio(
             activityType: .cycling,
             targetDurationMinutes: 40,
-            targetDistanceKm: 15,
-            targetRPE: 6
+            targetDistanceKm: 15
         )
 
         let day = try await database.addPlannedExercises([draft])
@@ -22,7 +21,7 @@ final class CardioPlanCompletionTests: XCTestCase {
         XCTAssertEqual(item.cardioActivityType, .cycling)
         XCTAssertEqual(item.targetDurationMinutes, 40)
         XCTAssertEqual(item.targetDistanceKm, 15)
-        XCTAssertEqual(item.targetRPE, 6)
+        XCTAssertNil(item.targetRPE)
         XCTAssertTrue(item.sets.isEmpty)
         XCTAssertEqual(item.exerciseLoadType, .unknown)
     }
@@ -48,7 +47,7 @@ final class CardioPlanCompletionTests: XCTestCase {
             cardioActivityType: .cycling,
             targetDurationMinutes: 30,
             targetDistanceKm: 10,
-            targetRPE: 6
+            targetRPE: nil
         )
         let plan = TrainingPlan(
             id: initial.activePlan.id,
@@ -77,13 +76,13 @@ final class CardioPlanCompletionTests: XCTestCase {
         let metrics = try CardioMetrics(
             activityType: .cycling,
             durationMinutes: 32,
-            distanceKm: 11.5,
-            rpe: 7
+            distanceKm: 11.5
         )
         let record = try await database.completePlannedCardio(planExerciseId: item.id, metrics: metrics)
         let after = await database.snapshot()
 
         XCTAssertEqual(after.runningRecords, [record])
+        XCTAssertNil(record.rpe)
         XCTAssertEqual(after.activePlan.days[0].exercises[0].linkedCardioWorkoutId, record.id)
         XCTAssertNotNil(after.activePlan.days[0].exercises[0].cardioCompletedAt)
 

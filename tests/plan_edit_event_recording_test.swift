@@ -34,8 +34,7 @@ struct PlanEditEventRecordingTest {
         let draft = try! PlanExerciseDraft.cardio(
             activityType: .cycling,
             targetDurationMinutes: 40,
-            targetDistanceKm: 15,
-            targetRPE: 6
+            targetDistanceKm: 15
         )
         _ = try! await db.addPlannedExercises([draft])
 
@@ -47,7 +46,7 @@ struct PlanEditEventRecordingTest {
               case .string("cycling")? = payload["cardioActivityType"],
               case .number(40)? = payload["targetDurationMinutes"],
               case .number(15)? = payload["targetDistanceKm"],
-              case .number(6)? = payload["targetRPE"]
+              payload["targetRPE"] == nil
         else {
             fatalError("cardio exercise_added payload missing activity or targets")
         }

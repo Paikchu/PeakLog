@@ -12,6 +12,12 @@ struct ExercisePickerScreen: View {
     /// Exercises already turned into form cards; shown as added and not re-selectable.
     var alreadyAddedIds: Set<String> = []
     let onConfirm: ([ExerciseDefinition]) -> Void
+    var onSelectCardio: ((CardioActivityType) -> Void)? = nil
+
+    private enum ExercisePickerCategory: Hashable {
+        case strength
+        case cardio
+    }
 
     @State private var library: [ExerciseDefinition] = []
     @State private var recommendations: [ExerciseDefinition] = []
@@ -21,6 +27,7 @@ struct ExercisePickerScreen: View {
     @State private var equipmentFilter: Equipment?
     @State private var selection: [ExerciseDefinition] = []
     @State private var showsCreateSheet = false
+    @State private var category: ExercisePickerCategory = .strength
 
     private var pickerSpring: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
@@ -52,12 +59,18 @@ struct ExercisePickerScreen: View {
         (selection.map(\.id) + alreadyAddedIds.sorted()).joined(separator: "|")
     }
 
+    private var navigationTitle: LocalizedStringKey {
+        onSelectCardio == nil ? "exercise_picker.title" : "exercise_picker.activity_title"
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                searchField
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                if category == .strength {
+                    searchField
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                }
 
                 muscleChips
                     .padding(.top, 12)
@@ -68,30 +81,32 @@ struct ExercisePickerScreen: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                if showsSuggestions {
-                    sectionLabel("exercise_picker.suggested_section")
-                    // Prefixed row identity: the same exercise also appears in
-                    // its muscle-group section below.
-                    ForEach(recommendations, id: \.suggestedRowId) { definition in
-                        pickerRow(for: definition, recentEntry: summariesById[definition.id])
-                    }
-                }
-
-                if filteredExercises.isEmpty {
-                    noResults
+                if category == .cardio {
+                    cardioRows
                 } else {
-                    ForEach(groupedExercises, id: \.group) { group in
-                        sectionLabel(LocalizedStringKey(stringLiteral: "muscle_group.\(group.group.rawValue)"))
-                        ForEach(group.exercises) { definition in
-                            pickerRow(for: definition, recentEntry: nil)
+                    if showsSuggestions {
+                        sectionLabel("exercise_picker.suggested_section")
+                        ForEach(recommendations, id: \.suggestedRowId) { definition in
+                            pickerRow(for: definition, recentEntry: summariesById[definition.id])
                         }
                     }
-                }
 
-                createCustomRow
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    .padding(.bottom, 24)
+                    if filteredExercises.isEmpty {
+                        noResults
+                    } else {
+                        ForEach(groupedExercises, id: \.group) { group in
+                            sectionLabel(LocalizedStringKey(stringLiteral: "muscle_group.\(group.group.rawValue)"))
+                            ForEach(group.exercises) { definition in
+                                pickerRow(for: definition, recentEntry: nil)
+                            }
+                        }
+                    }
+
+                    createCustomRow
+                        .padding(.horizontal, 16)
+                        .padding(.top, 20)
+                        .padding(.bottom, 24)
+                }
             }
             .animation(pickerSpring, value: filteredExercises.map(\.id))
             .animation(pickerSpring, value: recommendations.map(\.id))
@@ -99,7 +114,7 @@ struct ExercisePickerScreen: View {
         }
         .background(Color.appBackground.ignoresSafeArea())
         .dismissKeyboardOnTap()
-        .navigationTitle("exercise_picker.title")
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) { confirmBar }
         .sensoryFeedback(.selection, trigger: selection.count)
@@ -153,16 +168,28 @@ struct ExercisePickerScreen: View {
             HStack(spacing: 8) {
                 filterChip(
                     label: Text("exercise_picker.filter_all"),
-                    isSelected: muscleFilter == nil
+                    isSelected: category == .strength && muscleFilter == nil
                 ) {
+                    category = .strength
                     muscleFilter = nil
                     equipmentFilter = nil
+                }
+                if onSelectCardio != nil {
+                    filterChip(
+                        label: Text("daily_record.type.cardio"),
+                        isSelected: category == .cardio
+                    ) {
+                        category = .cardio
+                        muscleFilter = nil
+                        equipmentFilter = nil
+                    }
                 }
                 ForEach(MuscleGroup.allCases) { group in
                     filterChip(
                         label: Text(group.displayLabel),
-                        isSelected: muscleFilter == group
+                        isSelected: category == .strength && muscleFilter == group
                     ) {
+                        category = .strength
                         muscleFilter = muscleFilter == group ? nil : group
                         equipmentFilter = nil
                     }
@@ -266,6 +293,42 @@ struct ExercisePickerScreen: View {
         .transition(.opacity)
     }
 
+    private var cardioRows: some View {
+        ForEach(CardioActivityType.allCases, id: \.self) { activity in
+            Button {
+                onSelectCardio?(activity)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: activity.iconName)
+                        .appFont(size: 18, weight: .semibold)
+                        .foregroundColor(.teal)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.teal.opacity(0.1)))
+
+                    Text(activity.localizedTitle)
+                        .appFont(size: 15, weight: .semibold)
+                        .foregroundColor(.textPrimary)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .appFont(size: 12, weight: .semibold)
+                        .foregroundColor(.textMuted)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color.appSeparator)
+                        .frame(height: 0.5)
+                        .padding(.leading, 16)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func metaLine(for definition: ExerciseDefinition, recentEntry: RecentExerciseEntry?) -> some View {
         HStack(spacing: 4) {
             Text("\(definition.equipment.displayLabel) · \(definition.muscleGroup.displayLabel)")
@@ -346,7 +409,7 @@ struct ExercisePickerScreen: View {
 
     @ViewBuilder
     private var confirmBar: some View {
-        if !selection.isEmpty {
+        if category == .strength && !selection.isEmpty {
             VStack(spacing: 10) {
                 selectionPreview
 
@@ -625,7 +688,7 @@ private extension ExerciseDefinition {
 
 #Preview {
     NavigationStack {
-        ExercisePickerScreen { _ in }
+        ExercisePickerScreen(onConfirm: { _ in })
     }
     .environmentObject(LocalizationManager())
 }

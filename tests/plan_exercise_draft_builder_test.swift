@@ -6,8 +6,67 @@ struct PlanExerciseDraftBuilderTestRunner {
         buildsDraftsWithMultipleExercisesAndPerSetTargets()
         preservesOptionalAddedWeightForBodyweightExercises()
         rejectsNegativeAddedWeightForBodyweightExercises()
+        buildsCardioDraftWithoutRPE()
+        appendsCardioAfterCompletedStrengthDrafts()
+        rejectsCardioAppendWhenStrengthDraftIsIncomplete()
+        allowsCardioAppendWithoutStrengthDrafts()
         rejectsIncompleteForms()
         print("plan_exercise_draft_builder_test passed")
+    }
+
+    private static func buildsCardioDraftWithoutRPE() {
+        let draft = try! PlanExerciseDraft.cardio(
+            activityType: .cycling,
+            targetDurationMinutes: 40,
+            targetDistanceKm: 15
+        )
+
+        precondition(draft.itemType == .cardio)
+        precondition(draft.cardioActivityType == .cycling)
+        precondition(draft.targetDurationMinutes == 40)
+        precondition(draft.targetDistanceKm == 15)
+        precondition(draft.targetRPE == nil, "New cardio plan drafts must not collect RPE")
+    }
+
+    private static func appendsCardioAfterCompletedStrengthDrafts() {
+        let strength = DailyRecordExerciseInput(
+            name: "卧推",
+            sets: [DailyRecordSetInput(weight: 60, reps: 8)]
+        )
+        let cardio = try! PlanExerciseDraft.cardio(
+            activityType: .running,
+            targetDurationMinutes: 30,
+            targetDistanceKm: 5
+        )
+
+        let result = PlanExerciseDraftBuilder.drafts(exercises: [strength], appending: cardio)
+
+        precondition(result?.map(\.itemType) == [.strength, .cardio])
+        precondition(result?.map(\.exerciseName) == ["卧推", cardio.exerciseName])
+    }
+
+    private static func rejectsCardioAppendWhenStrengthDraftIsIncomplete() {
+        let incomplete = DailyRecordExerciseInput(
+            name: "卧推",
+            sets: [DailyRecordSetInput(weight: nil, reps: 8)]
+        )
+        let cardio = try! PlanExerciseDraft.cardio(
+            activityType: .cycling,
+            targetDurationMinutes: 30,
+            targetDistanceKm: nil
+        )
+
+        precondition(PlanExerciseDraftBuilder.drafts(exercises: [incomplete], appending: cardio) == nil)
+    }
+
+    private static func allowsCardioAppendWithoutStrengthDrafts() {
+        let cardio = try! PlanExerciseDraft.cardio(
+            activityType: .elliptical,
+            targetDurationMinutes: 20,
+            targetDistanceKm: nil
+        )
+
+        precondition(PlanExerciseDraftBuilder.drafts(exercises: [], appending: cardio) == [cardio])
     }
 
     private static func buildsDraftsWithMultipleExercisesAndPerSetTargets() {

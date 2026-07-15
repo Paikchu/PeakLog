@@ -32,7 +32,7 @@ nonisolated struct CardioMetrics: Codable, Equatable, Sendable {
         activityType: CardioActivityType,
         durationMinutes: Int,
         distanceKm: Double?,
-        rpe: Double?
+        rpe: Double? = nil
     ) throws {
         guard durationMinutes > 0 else { throw CardioMetricsError.invalidDuration }
         if let distanceKm {
@@ -112,7 +112,8 @@ nonisolated struct CardioWorkoutRecord: Identifiable, Codable, Equatable, Sendab
         id = try container.decode(String.self, forKey: .id)
         userId = try container.decode(String.self, forKey: .userId)
         workoutDate = try container.decode(Date.self, forKey: .workoutDate)
-        activityType = try container.decodeIfPresent(CardioActivityType.self, forKey: .activityType) ?? .running
+        let rawActivityType = try container.decodeIfPresent(String.self, forKey: .activityType)
+        activityType = rawActivityType.flatMap(CardioActivityType.init(rawValue:)) ?? .running
         durationMinutes = try container.decode(Int.self, forKey: .durationMinutes)
         distanceKm = try container.decodeIfPresent(Double.self, forKey: .distanceKm)
         rpe = try container.decodeIfPresent(Double.self, forKey: .rpe)

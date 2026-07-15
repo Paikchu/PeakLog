@@ -41,9 +41,6 @@ struct PlannedCardioCard: View {
                 if let distance = exercise.targetDistanceKm {
                     metric(String(localized: "cardio.metric.distance"), "\(distance.cleanDistance) km")
                 }
-                if let rpe = exercise.targetRPE {
-                    metric("RPE", rpe.cleanRPE)
-                }
             }
 
             if !exercise.isCardioCompleted {
@@ -105,6 +102,4 @@ private extension Double {
     var cleanDistance: String {
         truncatingRemainder(dividingBy: 1) == 0 ? String(Int(self)) : String(format: "%.1f", self)
     }
-
-    var cleanRPE: String { cleanDistance }
 }

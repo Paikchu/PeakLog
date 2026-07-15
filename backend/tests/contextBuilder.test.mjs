@@ -222,6 +222,7 @@ test('summarizeCurrentWeekDays: completed cardio protects the day from replan', 
   assert.equal(overview[0].hasCompletedSets, true);
   assert.equal(overview[0].exercises[0].itemType, 'cardio');
   assert.equal(overview[0].exercises[0].cardioActivityType, 'cycling');
+  assert.equal('targetRPE' in overview[0].exercises[0], false);
   assert.equal(overview[0].exercises[0].completedCount, 1);
   assert.equal(overview[0].exercises[0].totalCount, 1);
 });
