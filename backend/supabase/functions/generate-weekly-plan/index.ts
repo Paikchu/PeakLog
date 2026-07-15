@@ -273,6 +273,13 @@ async function inferenceGateOpen(
   const exerciseIds = (exercises ?? []).map((e: { id: string }) => e.id);
   if (exerciseIds.length === 0) return false;
 
+  const { count: completedCardioToday } = await admin
+    .from("training_plan_exercises").select("id", { count: "exact", head: true })
+    .in("id", exerciseIds)
+    .eq("user_id", userId)
+    .or("cardio_completed_at.not.is.null,linked_cardio_workout_id.not.is.null");
+  if ((completedCardioToday ?? 0) > 0) return false;
+
   // Zero of today's sets completed — a partially-done day isn't "missed".
   const { count: completedToday } = await admin
     .from("training_plan_sets").select("id", { count: "exact", head: true })
@@ -666,12 +673,17 @@ function buildInstallPlan(clampedPlan: { days: unknown[]; coachSummary?: string 
       focus: day.focus ?? null,
       status: "planned",
       exercises: ((day.exercises as Array<Record<string, unknown>>) ?? []).map((exercise, index) => ({
+        itemType: exercise.itemType,
         orderIndex: index,
         exerciseName: exercise.exerciseName,
         exerciseId: exercise.exerciseId ?? null,
         exerciseLoadType: exercise.loadType ?? "unknown",
         progressionMode: "ai_generated",
         notes: exercise.notes ?? null,
+        cardioActivityType: exercise.cardioActivityType ?? null,
+        targetDurationMinutes: exercise.targetDurationMinutes ?? null,
+        targetDistanceKm: exercise.targetDistanceKm ?? null,
+        targetRPE: exercise.targetRPE ?? null,
         sets: ((exercise.sets as Array<Record<string, unknown>>) ?? []).map((set) => ({
           setIndex: set.setIndex,
           targetWeight: set.targetWeight ?? null,
@@ -736,12 +748,17 @@ function buildReplanDaysPayload(clampedPlan: { days: unknown[] }, weightUnit: st
     title: day.title,
     focus: day.focus ?? null,
     exercises: ((day.exercises as Array<Record<string, unknown>>) ?? []).map((exercise, index) => ({
+      itemType: exercise.itemType,
       orderIndex: index,
       exerciseName: exercise.exerciseName,
       exerciseId: exercise.exerciseId ?? null,
       exerciseLoadType: exercise.loadType ?? "unknown",
       progressionMode: "ai_generated",
       notes: exercise.notes ?? null,
+      cardioActivityType: exercise.cardioActivityType ?? null,
+      targetDurationMinutes: exercise.targetDurationMinutes ?? null,
+      targetDistanceKm: exercise.targetDistanceKm ?? null,
+      targetRPE: exercise.targetRPE ?? null,
       sets: ((exercise.sets as Array<Record<string, unknown>>) ?? []).map((set) => ({
         setIndex: set.setIndex,
         targetWeight: set.targetWeight ?? null,
@@ -961,12 +978,17 @@ function buildFallbackPlan(currentWeekPlan: { days: Array<Record<string, unknown
       focus: source?.focus ?? null,
       status: "planned",
       exercises: ((source?.exercises as Array<Record<string, unknown>>) ?? []).map((exercise, exIndex) => ({
+        itemType: exercise.item_type,
         orderIndex: exIndex,
         exerciseName: exercise.exercise_name,
         exerciseId: exercise.exercise_id ?? null,
         exerciseLoadType: exercise.exercise_load_type ?? "unknown",
         progressionMode: "fallback_repeat",
         notes: null,
+        cardioActivityType: exercise.cardio_activity_type ?? null,
+        targetDurationMinutes: exercise.target_duration_minutes ?? null,
+        targetDistanceKm: exercise.target_distance_km ?? null,
+        targetRPE: exercise.target_rpe ?? null,
         sets: ((exercise.sets as Array<Record<string, unknown>>) ?? []).map((set) => ({
           setIndex: set.set_index,
           targetWeight: set.target_weight ?? null,

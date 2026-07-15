@@ -176,8 +176,8 @@ CloudSyncController          // 绑定 auth，生命周期 & 前台触发
 `backend/supabase/migrations/*.sql`（11 个迁移）定义 Postgres 表，全部 RLS 隔离到 `auth.uid()`：
 
 - 用户：`profiles` / `user_preferences` / `user_stats`（由触发器维护派生统计）。
-- 训练：`workout_sessions` / `exercises` / `exercise_sets`（力量）、`running_workouts`（跑步）。
-- 计划：`training_plans` / `training_plan_days` / `training_plan_exercises` / `training_plan_sets`（与 Swift `TrainingPlan*` 结构对应，含 `linked_exercise_set_id`）。
+- 训练：`workout_sessions` / `exercises` / `exercise_sets`（力量）、`running_workouts`（兼容命名的通用有氧表，含活动类型、时长、可选距离和 RPE）。
+- 计划：`training_plans` / `training_plan_days` / `training_plan_exercises` / `training_plan_sets`。计划条目以 `item_type` 区分力量/有氧；有氧条目直接保存类型与目标指标，并通过 `linked_cardio_workout_id` 关联实际记录。
 - 历史遗留（当前客户端未使用）：`conversations` / `messages` / `attachments` / `parse_tasks` / `parse_results` / `conversation_pending_actions` —— 这些是旧聊天/解析管线的产物，当前版本已不再走该路径。
 - PR：`exercise_prs`，以及自定义动作字段。
 
@@ -206,12 +206,12 @@ CloudSyncController          // 绑定 auth，生命周期 & 前台触发
 | `profile` | `UserProfile` | 资料、目标、偏好、PR、派生统计 |
 | `activePlan` | `TrainingPlan` | 当前 7 日计划 |
 | `strengthSessions` | `[WorkoutSession]` | 力量训练记录 |
-| `runningRecords` | `[RunningWorkoutRecord]` | 跑步记录 |
+| `runningRecords` | `[CardioWorkoutRecord]` | 通用有氧记录；字段名保留以兼容旧本地 JSON |
 | `customExercises` | `[ExerciseDefinition]` | 自定义动作库 |
 
 ### 4.2 7 日计划模型（`Models/TrainingPlanModels.swift`）
 
-`TrainingPlan → TrainingPlanDay → TrainingPlanExercise → TrainingPlanSet`。计划与真实训练的关键关联：
+`TrainingPlan → TrainingPlanDay → TrainingPlanExercise → TrainingPlanSet`。`TrainingPlanExercise.itemType` 为 `.strength` 时使用计划组；为 `.cardio` 时使用活动类型、目标时长、可选距离/RPE，并以一次完成作为一个进度单位。计划与真实训练的关键关联：
 
 ```swift
 struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
@@ -230,7 +230,7 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 
 ### 4.3 领域模型
 
-`WorkoutSession`/`Exercise`/`ExerciseSet`（力量）、`RunningWorkoutRecord`（跑步，`source: .agent / .manual`）、`ExerciseDefinition`（动作库，稳定 slug + 中英文别名 + `MuscleGroup`/`Equipment`/`ExerciseLoadType`）、`UserProfile`/`UserStats`/`UserPreferences`/`ExercisePR`。
+`WorkoutSession`/`Exercise`/`ExerciseSet`（力量）、`CardioWorkoutRecord`（通用有氧，`source: .agent / .manual`）、`ExerciseDefinition`（动作库，稳定 slug + 中英文别名 + `MuscleGroup`/`Equipment`/`ExerciseLoadType`）、`UserProfile`/`UserStats`/`UserPreferences`/`ExercisePR`。
 
 ---
 
@@ -245,7 +245,7 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 
 ### 5.2 修改计划 / 页面内容
 
-- **当前（无 Agent）**：纯显式 UI 动作 → `TodayWorkoutViewModel.updatePlannedSet / addPlannedExercises / deletePlannedExercise / reorderTodayPlanExercises / addLoggedSet / updateLoggedSet / deleteExercise` → 对应 `TrainingPlanServiceProtocol` / `WorkoutServiceProtocol` 方法 → `LocalAppDatabase` 变更 → 同 §5.1 的持久化 + 云推送路径。
+- **当前（无 Agent）**：纯显式 UI 动作 → `TodayWorkoutViewModel.updatePlannedSet / addPlannedExercises / deletePlannedExercise / reorderTodayPlanExercises / addLoggedSet / updateLoggedSet / deleteExercise` → 对应 `TrainingPlanServiceProtocol` / `WorkoutServiceProtocol` 方法 → `LocalAppDatabase` 变更 → 同 §5.1 的持久化 + 云推送路径。`AddPlanExerciseSheet` 先分流力量/有氧；有氧草稿不创建计划组，直接保存类型与目标指标。
 - 计划组完成会把 `TrainingPlanSet.linkedExerciseSetId` 关联到真实 `ExerciseSet`，并反向清理孤儿记录。
 
 ### 5.3 生成 7 日计划

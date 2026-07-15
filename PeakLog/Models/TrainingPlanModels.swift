@@ -1,5 +1,10 @@
 import Foundation
 
+nonisolated enum PlanItemType: String, Codable, Equatable, Sendable {
+    case strength
+    case cardio
+}
+
 nonisolated enum ExerciseLoadType: String, Codable, Equatable, Sendable {
     case bodyweight
     case weighted
@@ -43,6 +48,13 @@ nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Senda
     var previousPerformanceSummary: String?
     var aiSuggestion: String?
     var sets: [TrainingPlanSet]
+    var itemType: PlanItemType
+    var cardioActivityType: CardioActivityType?
+    var targetDurationMinutes: Int?
+    var targetDistanceKm: Double?
+    var targetRPE: Double?
+    var cardioCompletedAt: Date?
+    var linkedCardioWorkoutId: String?
 
     init(
         id: String,
@@ -54,7 +66,14 @@ nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Senda
         notes: String?,
         previousPerformanceSummary: String?,
         aiSuggestion: String?,
-        sets: [TrainingPlanSet]
+        sets: [TrainingPlanSet],
+        itemType: PlanItemType = .strength,
+        cardioActivityType: CardioActivityType? = nil,
+        targetDurationMinutes: Int? = nil,
+        targetDistanceKm: Double? = nil,
+        targetRPE: Double? = nil,
+        cardioCompletedAt: Date? = nil,
+        linkedCardioWorkoutId: String? = nil
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -66,6 +85,44 @@ nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Senda
         self.previousPerformanceSummary = previousPerformanceSummary
         self.aiSuggestion = aiSuggestion
         self.sets = sets
+        self.itemType = itemType
+        self.cardioActivityType = cardioActivityType
+        self.targetDurationMinutes = targetDurationMinutes
+        self.targetDistanceKm = targetDistanceKm
+        self.targetRPE = targetRPE
+        self.cardioCompletedAt = cardioCompletedAt
+        self.linkedCardioWorkoutId = linkedCardioWorkoutId
+    }
+
+    var isCardioCompleted: Bool {
+        itemType == .cardio && (cardioCompletedAt != nil || linkedCardioWorkoutId != nil)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, orderIndex, exerciseName, exerciseId, exerciseLoadType, progressionMode, notes
+        case previousPerformanceSummary, aiSuggestion, sets, itemType, cardioActivityType
+        case targetDurationMinutes, targetDistanceKm, targetRPE, cardioCompletedAt, linkedCardioWorkoutId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        orderIndex = try container.decode(Int.self, forKey: .orderIndex)
+        exerciseName = try container.decode(String.self, forKey: .exerciseName)
+        exerciseId = try container.decodeIfPresent(String.self, forKey: .exerciseId)
+        exerciseLoadType = try container.decode(ExerciseLoadType.self, forKey: .exerciseLoadType)
+        progressionMode = try container.decode(String.self, forKey: .progressionMode)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        previousPerformanceSummary = try container.decodeIfPresent(String.self, forKey: .previousPerformanceSummary)
+        aiSuggestion = try container.decodeIfPresent(String.self, forKey: .aiSuggestion)
+        sets = try container.decodeIfPresent([TrainingPlanSet].self, forKey: .sets) ?? []
+        itemType = try container.decodeIfPresent(PlanItemType.self, forKey: .itemType) ?? .strength
+        cardioActivityType = try container.decodeIfPresent(CardioActivityType.self, forKey: .cardioActivityType)
+        targetDurationMinutes = try container.decodeIfPresent(Int.self, forKey: .targetDurationMinutes)
+        targetDistanceKm = try container.decodeIfPresent(Double.self, forKey: .targetDistanceKm)
+        targetRPE = try container.decodeIfPresent(Double.self, forKey: .targetRPE)
+        cardioCompletedAt = try container.decodeIfPresent(Date.self, forKey: .cardioCompletedAt)
+        linkedCardioWorkoutId = try container.decodeIfPresent(String.self, forKey: .linkedCardioWorkoutId)
     }
 }
 
@@ -84,6 +141,14 @@ nonisolated struct TrainingPlanDay: Identifiable, Codable, Equatable, Sendable {
 
     var totalSetsCount: Int {
         exercises.flatMap(\.sets).count
+    }
+
+    var completedProgressUnits: Int {
+        completedSetsCount + exercises.filter(\.isCardioCompleted).count
+    }
+
+    var totalProgressUnits: Int {
+        totalSetsCount + exercises.filter { $0.itemType == .cardio }.count
     }
 
     /// 按 orderedExerciseIds 重排 exercises 并重写 orderIndex(0..<count)。
@@ -124,6 +189,14 @@ nonisolated struct TrainingPlan: Identifiable, Codable, Equatable, Sendable {
 
     var totalSetsCount: Int {
         days.reduce(0) { $0 + $1.totalSetsCount }
+    }
+
+    var completedProgressUnits: Int {
+        days.reduce(0) { $0 + $1.completedProgressUnits }
+    }
+
+    var totalProgressUnits: Int {
+        days.reduce(0) { $0 + $1.totalProgressUnits }
     }
 }
 

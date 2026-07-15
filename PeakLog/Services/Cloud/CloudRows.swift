@@ -126,6 +126,13 @@ nonisolated struct TrainingPlanExerciseRow: Codable, Sendable {
     var progression_mode: String
     var exercise_load_type: String
     var notes: String?
+    var item_type: String? = nil
+    var cardio_activity_type: String? = nil
+    var target_duration_minutes: Int? = nil
+    var target_distance_km: Double? = nil
+    var target_rpe: Double? = nil
+    var cardio_completed_at: String? = nil
+    var linked_cardio_workout_id: String? = nil
 }
 
 nonisolated struct TrainingPlanSetRow: Codable, Sendable {
@@ -183,10 +190,12 @@ nonisolated struct RunningWorkoutRow: Codable, Sendable {
     let user_id: String
     var workout_date: String
     var duration_minutes: Int
-    var distance_km: Double
+    var distance_km: Double?
     var source: String
     var created_at: String?
     var updated_at: String?
+    var activity_type: String? = nil
+    var rpe: Double? = nil
 }
 
 // MARK: - goal spec / plan edit events (Phase 1)

@@ -7,6 +7,7 @@ export const MIN_REPS = 1;
 export const MAX_REPS = 30;
 export const MAX_WEEKLY_INCREASE_FACTOR = 1.10;
 export const NO_HISTORY_CAP_FACTOR = 0.90;
+export const CARDIO_ACTIVITY_TYPES = new Set(['running', 'cycling', 'elliptical', 'stair_climber']);
 
 /**
  * The 7 dates (yyyy-MM-dd, UTC) a plan starting on `weekStartDate` must cover.
@@ -31,6 +32,65 @@ function clampDayExercises(day, dayIndex, context, structuralViolations, verdict
   const exercises = Array.isArray(day.exercises) ? day.exercises : [];
 
   const clampedExercises = exercises.map((exercise) => {
+    const itemType = exercise.itemType ?? 'strength';
+    if (itemType === 'cardio') {
+      const activityType = exercise.cardioActivityType;
+      if (exercise.exerciseId != null) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": cardio exerciseId must be null`
+        );
+      }
+      if (exercise.loadType != null) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": cardio loadType must be null`
+        );
+      }
+      if (!CARDIO_ACTIVITY_TYPES.has(activityType)) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": unknown cardioActivityType "${activityType}"`
+        );
+      }
+      if (!Number.isInteger(exercise.targetDurationMinutes) || exercise.targetDurationMinutes <= 0) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": duration must be a positive integer`
+        );
+      }
+      if (exercise.targetDistanceKm != null &&
+          (typeof exercise.targetDistanceKm !== 'number' || exercise.targetDistanceKm <= 0)) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": distance must be positive when present`
+        );
+      }
+      if ((activityType === 'elliptical' || activityType === 'stair_climber') &&
+          exercise.targetDistanceKm != null) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": ${activityType} does not support distance`
+        );
+      }
+      if (exercise.targetRPE != null &&
+          (typeof exercise.targetRPE !== 'number' || exercise.targetRPE < 1 || exercise.targetRPE > 10)) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": RPE must be between 1 and 10`
+        );
+      }
+      if (Array.isArray(exercise.sets) && exercise.sets.length > 0) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": cardio item must not contain strength sets`
+        );
+      }
+      return { ...exercise, itemType, sets: [] };
+    }
+
+    if (itemType !== 'strength') {
+      structuralViolations.push(`day ${dayIndex}: unknown itemType "${itemType}"`);
+    }
+    if (exercise.cardioActivityType != null || exercise.targetDurationMinutes != null ||
+        exercise.targetDistanceKm != null || exercise.targetRPE != null) {
+      structuralViolations.push(
+        `day ${dayIndex} exercise "${exercise.exerciseName ?? exercise.exerciseId}": strength item contains cardio fields`
+      );
+    }
+
     if (exercise.exerciseId && !knownIds.has(exercise.exerciseId)) {
       structuralViolations.push(`day ${dayIndex}: unknown exerciseId "${exercise.exerciseId}"`);
     }
@@ -72,7 +132,7 @@ function clampDayExercises(day, dayIndex, context, structuralViolations, verdict
       return { ...set, targetWeight };
     });
 
-    return { ...exercise, sets: clampedSets };
+    return { ...exercise, itemType, sets: clampedSets };
   });
 
   return { ...day, exercises: clampedExercises };

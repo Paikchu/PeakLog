@@ -26,12 +26,16 @@ protocol TrainingPlanServiceProtocol {
     func addPlannedExercises(_ drafts: [PlanExerciseDraft]) async throws -> TrainingPlanDay
     func reorderPlannedExercises(orderedExerciseIds: [String]) async throws -> TrainingPlanDay
     func recordDaySignal(_ signal: ReplanSignal) async throws
+    func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws -> CardioWorkoutRecord
 }
 
 extension TrainingPlanServiceProtocol {
     // Default no-op: only the local (real) service records the signal. Mocks
     // and empty services inherit this and need no change.
     func recordDaySignal(_ signal: ReplanSignal) async throws {}
+    func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws -> CardioWorkoutRecord {
+        throw LocalAppDatabaseError.planExerciseNotFound
+    }
 }
 
 final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
@@ -110,6 +114,10 @@ final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
     func recordDaySignal(_ signal: ReplanSignal) async throws {
         try await database.recordDaySignal(signal)
     }
+
+    func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws -> CardioWorkoutRecord {
+        try await database.completePlannedCardio(planExerciseId: planExerciseId, metrics: metrics)
+    }
 }
 
 final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
@@ -179,5 +187,9 @@ final class EmptyTrainingPlanService: TrainingPlanServiceProtocol {
 
     func reorderPlannedExercises(orderedExerciseIds: [String]) async throws -> TrainingPlanDay {
         try await local.reorderPlannedExercises(orderedExerciseIds: orderedExerciseIds)
+    }
+
+    func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws -> CardioWorkoutRecord {
+        try await local.completePlannedCardio(planExerciseId: planExerciseId, metrics: metrics)
     }
 }

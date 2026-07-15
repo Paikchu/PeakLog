@@ -200,6 +200,32 @@ test('summarizeCurrentWeekDays: a rest day with no exercises has hasCompletedSet
   assert.equal(overview[0].hasCompletedSets, false);
 });
 
+test('summarizeCurrentWeekDays: completed cardio protects the day from replan', () => {
+  const overview = summarizeCurrentWeekDays({
+    dayRows: [{ id: 'd1', day_index: 0, plan_date: '2026-07-07', title: 'Cardio', focus: null }],
+    exerciseRows: [{
+      id: 'c1',
+      plan_day_id: 'd1',
+      exercise_name: 'Cycling',
+      exercise_id: null,
+      item_type: 'cardio',
+      cardio_activity_type: 'cycling',
+      target_duration_minutes: 30,
+      target_distance_km: 10,
+      target_rpe: 6,
+      cardio_completed_at: '2026-07-07T10:00:00Z',
+      linked_cardio_workout_id: 'run-1',
+    }],
+    setRows: [],
+  });
+
+  assert.equal(overview[0].hasCompletedSets, true);
+  assert.equal(overview[0].exercises[0].itemType, 'cardio');
+  assert.equal(overview[0].exercises[0].cardioActivityType, 'cycling');
+  assert.equal(overview[0].exercises[0].completedCount, 1);
+  assert.equal(overview[0].exercises[0].totalCount, 1);
+});
+
 test('buildReplanContext: includes base facts plus a replan object with signal/targetDates/currentWeekOverview', () => {
   const context = buildReplanContext({
     goalSpecRow: null, weightUnit: 'kg', language: 'en',

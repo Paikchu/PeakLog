@@ -151,9 +151,25 @@ export function summarizeCurrentWeekDays({ dayRows, exerciseRows, setRows }) {
     .map((day) => {
       const exercises = (exercisesByDay[day.id] ?? []).map((ex) => {
         const sets = setsByExercise[ex.id] ?? [];
+        const itemType = ex.item_type ?? 'strength';
+        if (itemType === 'cardio') {
+          const isCompleted = ex.cardio_completed_at != null || ex.linked_cardio_workout_id != null;
+          return {
+            exerciseName: ex.exercise_name,
+            exerciseId: null,
+            itemType,
+            cardioActivityType: ex.cardio_activity_type,
+            targetDurationMinutes: ex.target_duration_minutes,
+            targetDistanceKm: ex.target_distance_km ?? null,
+            targetRPE: ex.target_rpe ?? null,
+            completedCount: isCompleted ? 1 : 0,
+            totalCount: 1,
+          };
+        }
         return {
           exerciseName: ex.exercise_name,
           exerciseId: ex.exercise_id,
+          itemType,
           targetReps: sets.map((s) => s.target_reps),
           completedCount: sets.filter((s) => s.completed_at != null || s.linked_exercise_set_id != null).length,
           totalCount: sets.length,

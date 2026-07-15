@@ -25,8 +25,8 @@
 |---|---|---|
 | `profiles` / `user_preferences` | SELECT, UPDATE | 由 `handle_new_user` 触发器建首行；客户端只能 `PATCH` |
 | `workout_sessions` / `exercises` / `exercise_sets` | ALL（own） | 力量训练三层聚合，`CloudMapper.pushBundle` 统一 upsert + `deleteNotIn` 对账 |
-| `running_workouts` | ALL（own） | 跑步记录 |
-| `training_plans` / `_days` / `_exercises` / `_sets` | ALL（own） | 周计划四层聚合。**`training_plans` 本身永不被客户端剪除**（历史周计划只增不删）；三张子表的推送剪除与拉取均 scoped 到当前活跃 `plan_id`，避免归档周数据串进 `activePlan` |
+| `running_workouts` | ALL（own） | 有氧记录兼容表；`activity_type` 区分跑步、骑行、椭圆机和爬楼机，距离仅跑步/骑行可选 |
+| `training_plans` / `_days` / `_exercises` / `_sets` | ALL（own） | 周计划四层聚合；`training_plan_exercises.item_type` 区分力量动作与有氧条目，有氧使用时长/可选距离/RPE 并可关联 `running_workouts`。**`training_plans` 本身永不被客户端剪除**；三张子表均 scoped 到当前活跃 `plan_id` |
 | `custom_exercises` | ALL（own） | 用户自定义动作库 |
 | `user_goal_specs` | ALL（own），**PK = `user_id`** | 结构化训练目标（Phase 1）。主键即用户 id，upsert 冲突键直接命中，不会重蹈 `profiles`/`user_preferences` 的坑 |
 | `plan_edit_events` | **仅 INSERT + SELECT** | 计划编辑事件流（Phase 1），append-only。无 UPDATE/DELETE 策略——不可篡改由服务端强制。`source` 字段区分 `user`/`agent`/`system`，Phase 2 起服务端写入必须标 `agent` |
