@@ -26,9 +26,10 @@ struct ProfileScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollView {
+        ScrollView {
+            VStack(spacing: 0) {
+                // Header 随信息流上滑收起，回到顶部时复位，把滚动后的空间让给内容。
+                header
                 VStack(spacing: 24) {
                     avatarSection
                     goalSection
