@@ -1,9 +1,10 @@
 import Foundation
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-let dock = try String(contentsOf: root.appendingPathComponent("PeakLog/Views/Home/HomeDockBar.swift"), encoding: .utf8)
 let content = try String(contentsOf: root.appendingPathComponent("PeakLog/ContentView.swift"), encoding: .utf8)
 let theme = try String(contentsOf: root.appendingPathComponent("PeakLog/Theme/AppTheme.swift"), encoding: .utf8)
+let actionLayer = try String(contentsOf: root.appendingPathComponent("PeakLog/Views/Home/TrainingActionLayer.swift"), encoding: .utf8)
+let customDockURL = root.appendingPathComponent("PeakLog/Views/Home/HomeDockBar.swift")
 
 func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else {
@@ -12,13 +13,14 @@ func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     }
 }
 
-require(dock.contains("HomeDockMetrics"), "dock must use shared fixed geometry tokens")
-require(dock.contains("frame(width: HomeDockMetrics.slotWidth"), "each tab must be constrained to the fixed slot width")
-require(dock.contains(".frame(width: HomeDockMetrics.slotWidth, height: HomeDockMetrics.slotHeight)"), "selected tab background must fill its fixed column")
-require(!dock.contains(".frame(width: HomeDockMetrics.minimumHitTarget, height: HomeDockMetrics.slotHeight)"), "selected tab must not shrink to the minimum hit target")
-require(theme.contains("static let slotHeight: CGFloat = 56"), "dock must use the compact 56pt slot height")
-require(!dock.contains("DockPlanAction") && !dock.contains("today.startPlan"), "dock must stay a pure tab rail; the training CTA lives in TrainingActionLayer")
-require(dock.contains("homeDock.\\(tab.rawValue)"), "tab accessibility identifiers must remain stable")
-require(content.contains("HomeDockBar(selectedTab: $selectedTab"), "content view must retain the dock outside training focus")
+require(!FileManager.default.fileExists(atPath: customDockURL.path), "custom HomeDockBar must be removed")
+require(content.contains("TabView(selection: $selectedTab)"), "content view must use the native tab container")
+require(!content.contains("HomeDockBar("), "content view must not render a custom bottom dock")
+require(!content.contains(".padding(.bottom, 8)"), "native tab bar must own the Home Indicator spacing")
+require(content.contains("TodayWorkoutScreen(viewModel: todayViewModel)\n                    .toolbarVisibility"), "focus visibility must be emitted from the plan tab content")
+require(content.contains(".tabViewBottomAccessory(isEnabled: state != nil)"), "focus mode must dynamically disable the system tab accessory")
+require(content.contains("TrainingActionInsetModifier"), "iOS 26.0 must retain a tab-content safe-area fallback")
+require(!theme.contains("enum HomeDockMetrics"), "custom dock geometry tokens must be removed")
+require(actionLayer.contains("private static let horizontalPadding: CGFloat = 22"), "training actions must retain their local horizontal inset")
 
-print("home_dock_fixed_rail_test passed")
+print("home_native_tab_bar_layout_test passed")

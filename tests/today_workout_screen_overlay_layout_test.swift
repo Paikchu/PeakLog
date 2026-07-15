@@ -5,8 +5,6 @@ let sourceURL = rootURL.appendingPathComponent("PeakLog/Views/Today/TodayWorkout
 let source = try String(contentsOf: sourceURL, encoding: .utf8)
 let viewModelSourceURL = rootURL.appendingPathComponent("PeakLog/ViewModels/TodayWorkoutViewModel.swift")
 let viewModelSource = try String(contentsOf: viewModelSourceURL, encoding: .utf8)
-let dockSourceURL = rootURL.appendingPathComponent("PeakLog/Views/Home/HomeDockBar.swift")
-let dockSource = try String(contentsOf: dockSourceURL, encoding: .utf8)
 let contentViewSourceURL = rootURL.appendingPathComponent("PeakLog/ContentView.swift")
 let contentViewSource = try String(contentsOf: contentViewSourceURL, encoding: .utf8)
 let actionLayerSourceURL = rootURL.appendingPathComponent("PeakLog/Views/Home/TrainingActionLayer.swift")
@@ -45,8 +43,8 @@ precondition(
     "Expected the today screen to stop hosting its own Start Plan button"
 )
 precondition(
-    !dockSource.contains("today.startPlan") && !dockSource.contains("DockPlanAction"),
-    "Expected the dock to be a pure tab rail with no plan CTA slot"
+    !contentViewSource.contains("HomeDockBar") && contentViewSource.contains("TabView(selection: $selectedTab)"),
+    "Expected native tab navigation with no custom dock CTA slot"
 )
 precondition(
     actionLayerSource.contains("today.startPlan") && actionLayerSource.contains("training_focus.resumeBanner"),

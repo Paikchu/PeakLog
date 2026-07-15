@@ -4,6 +4,8 @@ import SwiftUI
 /// - `.start`：计划页专属的「开始训练」CTA（今日有计划且无活跃 session）。
 /// - `.resume`：有最小化的活跃 session 时全局显示的「训练进行中」卡片。
 struct TrainingActionLayer: View {
+    private static let horizontalPadding: CGFloat = 22
+
     enum State: Equatable {
         case start
         case resume(completed: Int, total: Int)
@@ -22,7 +24,7 @@ struct TrainingActionLayer: View {
                 resumeCard(completed: completed, total: total)
             }
         }
-        .padding(.horizontal, HomeDockMetrics.outerHorizontalPadding)
+        .padding(.horizontal, Self.horizontalPadding)
     }
 
     private var startButton: some View {
