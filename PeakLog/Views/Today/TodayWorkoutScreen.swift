@@ -58,20 +58,12 @@ struct TodayWorkoutScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if !isFocusMode {
-                pinnedHeader
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            scrollContent
-        }
-        .background(Color.appBackground.ignoresSafeArea())
-        .animation(flowAnimation, value: isFocusMode)
+        scrollContent
     }
 
-    // 钉在 ScrollView 之外的页面大标题：滚动时保持可见，专注模式下让位给 TodayFocusHeader。
+    // 滚动区内的页面大标题：随信息流上滑收起、回到顶部时复位，专注模式下让位给 TodayFocusHeader。
     @ViewBuilder
-    private var pinnedHeader: some View {
+    private var pageHeader: some View {
         let header = resolvedHeader
         RootPageHeader(
             title: header.title,
@@ -137,115 +129,120 @@ struct TodayWorkoutScreen: View {
 
     private var scrollContent: some View {
         ScrollView {
-            VStack(spacing: 18) {
-                if viewModel.isLoading {
-                    ProgressView().padding(.top, 40)
-                } else {
-                    if !isFocusMode {
-                        if summaryState.hasScrollContent {
-                            TodaySummarySection(state: summaryState, locale: locale)
+            VStack(spacing: 0) {
+                if !isFocusMode {
+                    pageHeader
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                VStack(spacing: 18) {
+                    if viewModel.isLoading {
+                        ProgressView().padding(.top, 40)
+                    } else {
+                        if !isFocusMode {
+                            if summaryState.hasScrollContent {
+                                TodaySummarySection(state: summaryState, locale: locale)
+                                    .transition(.opacity)
+                            }
+                            if showReplanMenu {
+                                replanMenu
+                                    .transition(.opacity)
+                            }
+                        }
+                        if let planState {
+                            TodayPlanExercisesSection(
+                                state: planState,
+                                isReordering: $isReorderingPlan,
+                                flowAnimation: flowAnimation,
+                                onSetScrolled: { id in
+                                    scrolledExerciseId = id
+                                    displayedExerciseId = id
+                                },
+                                onUpdateSet: { setId, weight, unit, reps in
+                                    Task {
+                                        await viewModel.updatePlannedSet(
+                                            planSetId: setId,
+                                            targetWeight: weight,
+                                            targetWeightUnit: unit,
+                                            targetReps: reps
+                                        )
+                                    }
+                                },
+                                onCompleteSet: { setId, rpe in
+                                    Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
+                                },
+                                onAddSet: { exerciseId in
+                                    Task { await viewModel.addPlannedSet(planExerciseId: exerciseId) }
+                                },
+                                onDeleteLastSet: { exerciseId in
+                                    Task { await viewModel.deleteLastPlannedSet(planExerciseId: exerciseId) }
+                                },
+                                onToggleLiveSet: viewModel.toggleLiveSet,
+                                onSkipCurrentLiveExercise: {
+                                    withAnimation(flowAnimation) {
+                                        viewModel.skipCurrentLiveExercise()
+                                    }
+                                },
+                                onReorderExercises: { orderedIds in
+                                    Task { await viewModel.reorderTodayPlanExercises(orderedExerciseIds: orderedIds) }
+                                },
+                                onDeleteExercise: { exerciseId in
+                                    requestPlanExerciseDeletion(exerciseId)
+                                }
+                            )
+                            .confirmationDialog(
+                                "plan.delete_completed.title",
+                                isPresented: Binding(
+                                    get: { pendingPlanExerciseDeletion != nil },
+                                    set: { if !$0 { pendingPlanExerciseDeletion = nil } }
+                                ),
+                                titleVisibility: .visible
+                            ) {
+                                Button("common.delete", role: .destructive) {
+                                    guard let pending = pendingPlanExerciseDeletion else { return }
+                                    Task { await viewModel.deletePlanExercise(planExerciseId: pending.exerciseId) }
+                                }
+                            } message: {
+                                Text(pendingDeletionMessage)
+                            }
+                        }
+                        if !isFocusMode {
+                            TodayInlineAddRow(onAddPlanExercise: { isPresentingAddPlanExercise = true })
                                 .transition(.opacity)
                         }
-                        if showReplanMenu {
-                            replanMenu
+                        if !isFocusMode {
+                            TodayRecordsSection(
+                                state: recordsState,
+                                record: Binding(
+                                    get: { viewModel.todayRecord ?? recordsState.record },
+                                    set: { viewModel.todayRecord = $0 }
+                                ),
+                                onSetChanged: { exerciseId, updatedSet in
+                                    Task { await viewModel.updateLoggedSet(exerciseId: exerciseId, updatedSet: updatedSet) }
+                                },
+                                onAddSet: { exerciseId in
+                                    Task { await viewModel.addLoggedSet(exerciseId: exerciseId) }
+                                },
+                                onDeleteLastSet: { exerciseId in
+                                    Task { await viewModel.deleteLastLoggedSet(exerciseId: exerciseId) }
+                                },
+                                onDeleteExercise: { exerciseId in
+                                    Task { await viewModel.deleteLoggedExercise(exerciseId: exerciseId) }
+                                }
+                            )
                                 .transition(.opacity)
                         }
-                    }
-                    if let planState {
-                        TodayPlanExercisesSection(
-                            state: planState,
-                            isReordering: $isReorderingPlan,
-                            flowAnimation: flowAnimation,
-                            onSetScrolled: { id in
-                                scrolledExerciseId = id
-                                displayedExerciseId = id
-                            },
-                            onUpdateSet: { setId, weight, unit, reps in
-                                Task {
-                                    await viewModel.updatePlannedSet(
-                                        planSetId: setId,
-                                        targetWeight: weight,
-                                        targetWeightUnit: unit,
-                                        targetReps: reps
-                                    )
-                                }
-                            },
-                            onCompleteSet: { setId, rpe in
-                                Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
-                            },
-                            onAddSet: { exerciseId in
-                                Task { await viewModel.addPlannedSet(planExerciseId: exerciseId) }
-                            },
-                            onDeleteLastSet: { exerciseId in
-                                Task { await viewModel.deleteLastPlannedSet(planExerciseId: exerciseId) }
-                            },
-                            onToggleLiveSet: viewModel.toggleLiveSet,
-                            onSkipCurrentLiveExercise: {
-                                withAnimation(flowAnimation) {
-                                    viewModel.skipCurrentLiveExercise()
-                                }
-                            },
-                            onReorderExercises: { orderedIds in
-                                Task { await viewModel.reorderTodayPlanExercises(orderedExerciseIds: orderedIds) }
-                            },
-                            onDeleteExercise: { exerciseId in
-                                requestPlanExerciseDeletion(exerciseId)
-                            }
-                        )
-                        .confirmationDialog(
-                            "plan.delete_completed.title",
-                            isPresented: Binding(
-                                get: { pendingPlanExerciseDeletion != nil },
-                                set: { if !$0 { pendingPlanExerciseDeletion = nil } }
-                            ),
-                            titleVisibility: .visible
-                        ) {
-                            Button("common.delete", role: .destructive) {
-                                guard let pending = pendingPlanExerciseDeletion else { return }
-                                Task { await viewModel.deletePlanExercise(planExerciseId: pending.exerciseId) }
-                            }
-                        } message: {
-                            Text(pendingDeletionMessage)
-                        }
-                    }
-                    if !isFocusMode {
-                        TodayInlineAddRow(onAddPlanExercise: { isPresentingAddPlanExercise = true })
-                            .transition(.opacity)
-                    }
-                    if !isFocusMode {
-                        TodayRecordsSection(
-                            state: recordsState,
-                            record: Binding(
-                                get: { viewModel.todayRecord ?? recordsState.record },
-                                set: { viewModel.todayRecord = $0 }
-                            ),
-                            onSetChanged: { exerciseId, updatedSet in
-                                Task { await viewModel.updateLoggedSet(exerciseId: exerciseId, updatedSet: updatedSet) }
-                            },
-                            onAddSet: { exerciseId in
-                                Task { await viewModel.addLoggedSet(exerciseId: exerciseId) }
-                            },
-                            onDeleteLastSet: { exerciseId in
-                                Task { await viewModel.deleteLastLoggedSet(exerciseId: exerciseId) }
-                            },
-                            onDeleteExercise: { exerciseId in
-                                Task { await viewModel.deleteLoggedExercise(exerciseId: exerciseId) }
-                            }
-                        )
-                            .transition(.opacity)
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                // 专注模式底部留白加大，让最后一个动作也能滚到屏幕中间。
+                .padding(.bottom, isFocusMode ? 320 : 104)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            // 专注模式底部留白加大，让最后一个动作也能滚到屏幕中间。
-            .padding(.bottom, isFocusMode ? 320 : 104)
         }
         .scrollPosition(id: $scrolledExerciseId, anchor: .center)
         .scrollDisabled(isReorderingPlan)
         .dismissKeyboardOnTap()
         .background(Color.appBackground.ignoresSafeArea())
-        .dismissKeyboardOnTap()
         .overlay(alignment: .bottom) {
             if let toast = replanToast {
                 replanToastView(toast)

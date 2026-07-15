@@ -6,9 +6,10 @@ struct HistoryScreen: View {
     @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(spacing: 0) {
-            dateHeader
-            ScrollView {
+        ScrollView {
+            VStack(spacing: 0) {
+                // Header 随信息流上滑收起，回到顶部时复位，把滚动后的空间让给内容。
+                dateHeader
                 VStack(spacing: 16) {
                     sessionList
                 }
