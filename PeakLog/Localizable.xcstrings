@@ -3496,6 +3496,74 @@
         }
       }
     },
+    "profile.support.help.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find answers to common questions, or contact us from inside the app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看常见问题解答，或在应用内联系我们。"
+          }
+        }
+      }
+    },
+    "profile.support.privacy.body": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PeakLog stores your training data locally and syncs only with your signed-in account."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PeakLog 将你的训练数据保存在本地，仅与你的登录账户同步。"
+          }
+        }
+      }
+    },
+    "profile.empty.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载个人资料"
+          }
+        }
+      }
+    },
+    "profile.empty.retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        }
+      }
+    },
     "profile.sync.idle": {
       "extractionState": "manual",
       "localizations": {
