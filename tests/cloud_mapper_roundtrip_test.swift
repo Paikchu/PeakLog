@@ -102,6 +102,30 @@ struct CloudMapperRoundtripTest {
         precondition(back.profile.preferences.language == .simplifiedChinese, "language")
         precondition(back.profile.preferences.timezone == "Asia/Shanghai", "timezone")
 
+        // Cloud rows with seconds that aren't a multiple of 60 must round, not truncate (issue #16).
+        var oddSeconds = bundle.sessions[0]
+        oddSeconds.duration_seconds = 90
+        let rounded = CloudMapper.assembleSnapshot(userId: userId,
+            profileRow: bundle.profile, preferencesRow: bundle.preferences,
+            goalSpecRow: bundle.goalSpec,
+            customRows: bundle.customExercises, sessionRows: [oddSeconds],
+            exerciseRows: bundle.exercises, setRows: bundle.exerciseSets,
+            runningRows: bundle.running, planRows: bundle.plans, planDayRows: bundle.planDays,
+            planExerciseRows: bundle.planExercises, planSetRows: bundle.planSets)
+        precondition(rounded.strengthSessions.first?.durationMinutes == 2,
+            "90s should round to 2 minutes, not truncate to 1")
+
+        oddSeconds.duration_seconds = 30
+        let short = CloudMapper.assembleSnapshot(userId: userId,
+            profileRow: bundle.profile, preferencesRow: bundle.preferences,
+            goalSpecRow: bundle.goalSpec,
+            customRows: bundle.customExercises, sessionRows: [oddSeconds],
+            exerciseRows: bundle.exercises, setRows: bundle.exerciseSets,
+            runningRows: bundle.running, planRows: bundle.plans, planDayRows: bundle.planDays,
+            planExerciseRows: bundle.planExercises, planSetRows: bundle.planSets)
+        precondition(short.strengthSessions.first?.durationMinutes == 1,
+            "30s should round to 1 minute, not truncate to 0")
+
         print("cloud_mapper_roundtrip_test passed")
     }
 }
