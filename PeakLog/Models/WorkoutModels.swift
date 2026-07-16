@@ -228,6 +228,8 @@ struct CalendarDay: Identifiable {
     let id: String
     let date: Date
     let hasWorkout: Bool
+    /// 今天或未来有计划安排（过去的日子只陈述事实，构建时不置位）。
+    var hasPlan: Bool = false
     let isToday: Bool
     let isSelected: Bool
     let isCurrentMonth: Bool
@@ -254,6 +256,11 @@ extension CalendarDay {
 
     var showsWorkoutIndicator: Bool {
         hasWorkout
+    }
+
+    /// 空心计划点：仅在没有完成记录可展示时出现，实心点优先。
+    var showsPlanIndicator: Bool {
+        hasPlan && !hasWorkout
     }
 
     var textColorRole: CalendarDayTextColorRole {

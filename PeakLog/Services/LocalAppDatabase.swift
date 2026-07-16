@@ -811,15 +811,17 @@ actor LocalAppDatabase {
         }
     }
 
-    func addPlannedExercises(_ drafts: [PlanExerciseDraft]) throws -> TrainingPlanDay {
+    /// `planDate`（"yyyy-MM-dd"）为 nil 时落到今天；传未来日期即把动作
+    /// 安排到那一天，目标日不存在时按手动训练日新建（休息日 → 训练日）。
+    func addPlannedExercises(_ drafts: [PlanExerciseDraft], planDate: String? = nil) throws -> TrainingPlanDay {
         guard !drafts.isEmpty,
               drafts.allSatisfy({ !$0.exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             throw LocalAppDatabaseError.invalidPlanExerciseName
         }
 
-        let todayDateString = Self.planDateString(from: Date())
+        let targetDateString = planDate ?? Self.planDateString(from: Date())
 
-        if let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) {
+        if let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == targetDateString }) {
             var day = state.activePlan.days[dayIndex]
             let wasEmpty = day.exercises.isEmpty
             var addedExercises: [TrainingPlanExercise] = []
@@ -861,7 +863,7 @@ actor LocalAppDatabase {
         let nextDayIndex = (state.activePlan.days.map(\.dayIndex).max() ?? 0) + 1
         let day = TrainingPlanDay(
             id: UUID().uuidString,
-            planDate: todayDateString,
+            planDate: targetDateString,
             dayIndex: nextDayIndex,
             title: String(localized: "today.plan.manual_day_title"),
             focus: nil,
@@ -884,9 +886,10 @@ actor LocalAppDatabase {
         return day
     }
 
-    func reorderPlannedExercises(orderedExerciseIds: [String]) throws -> TrainingPlanDay {
-        let todayDateString = Self.planDateString(from: Date())
-        guard let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == todayDateString }) else {
+    /// `planDate` 为 nil 时重排今天，否则重排指定日期的计划日。
+    func reorderPlannedExercises(orderedExerciseIds: [String], planDate: String? = nil) throws -> TrainingPlanDay {
+        let targetDateString = planDate ?? Self.planDateString(from: Date())
+        guard let dayIndex = state.activePlan.days.firstIndex(where: { $0.planDate == targetDateString }) else {
             throw LocalAppDatabaseError.planExerciseNotFound
         }
         let beforeNames = state.activePlan.days[dayIndex].exercises

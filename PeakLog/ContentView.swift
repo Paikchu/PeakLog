@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// App 根容器。日历/计划/我的三个 Tab 融合为单一 `TrainingScreen`
+/// 后不再有底部 dock：训练动作层（开始训练 / 训练进行中）与专注
+/// 确认栏作为底部浮层直接挂在唯一主页面上。
 struct ContentView: View {
     private static let bottomBarSpring = Animation.spring(response: 0.35, dampingFraction: 0.82)
 
@@ -7,45 +10,25 @@ struct ContentView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
 
-    @State private var selectedTab: HomeTab = .plan
     @StateObject private var todayViewModel = TodayWorkoutViewModel()
+    @StateObject private var historyViewModel = HistoryViewModel()
 
-    // 专注训练时 dock 让位给底部确认栏。
+    // 专注训练时训练动作层让位给底部确认栏。
     private var isTrainingFocusVisible: Bool {
-        selectedTab == .plan && todayViewModel.isTrainingFocusActive && todayViewModel.activeLiveWorkout != nil
+        todayViewModel.isTrainingFocusActive && todayViewModel.activeLiveWorkout != nil
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            Tab(value: HomeTab.calendar) {
-                HistoryScreen()
-                    .trainingActionInset(state: trainingActionState, action: handleTrainingAction)
-            } label: {
-                Label(HomeTab.calendar.title, systemImage: HomeTab.calendar.symbolName)
-            }
-
-            Tab(value: HomeTab.plan) {
-                TodayWorkoutScreen(viewModel: todayViewModel)
-                    .toolbarVisibility(isTrainingFocusVisible ? .hidden : .visible, for: .tabBar)
-                    .trainingActionInset(state: trainingActionState, action: handleTrainingAction)
-            } label: {
-                Label(HomeTab.plan.title, systemImage: HomeTab.plan.symbolName)
-            }
-
-            Tab(value: HomeTab.settings) {
-                ProfileScreen()
-                    .trainingActionInset(state: trainingActionState, action: handleTrainingAction)
-            } label: {
-                Label(HomeTab.settings.title, systemImage: HomeTab.settings.symbolName)
-            }
-        }
-        .modifier(TrainingActionAccessoryModifier(
-            state: trainingActionState,
-            action: handleTrainingAction
-        ))
+        TrainingScreen(
+            todayViewModel: todayViewModel,
+            historyViewModel: historyViewModel
+        )
         .safeAreaInset(edge: .bottom) {
             if isTrainingFocusVisible {
                 TrainingFocusBar(viewModel: todayViewModel)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let state = trainingActionState {
+                TrainingActionLayer(state: state, action: handleTrainingAction)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -66,14 +49,15 @@ struct ContentView: View {
         }
     }
 
-    // Tab Bar 上方的训练动作层状态：有最小化的活跃 session 时全局显示「训练进行中」；
-    // 否则仅在计划页、今日有可训练计划时显示「开始训练」。
+    // 底部训练动作层状态：有最小化的活跃 session 时，无论正在看哪一天都
+    // 显示「训练进行中」；否则仅当正在看今天、且今日有可训练计划时显示
+    // 「开始训练」——过去/未来日期没有可开始的训练。
     private var trainingActionState: TrainingActionLayer.State? {
         guard !isTrainingFocusVisible else { return nil }
         if let session = todayViewModel.activeLiveWorkout {
             return .resume(completed: session.completedSetsCount, total: session.totalSetsCount)
         }
-        guard selectedTab == .plan,
+        guard historyViewModel.isSelectedDateToday,
               let plan = todayViewModel.todayPlan,
               plan.totalSetsCount > 0 else { return nil }
         return .start
@@ -82,58 +66,15 @@ struct ContentView: View {
     private func handleTrainingAction() {
         withAnimation(Self.bottomBarSpring) {
             if todayViewModel.activeLiveWorkout != nil {
-                // 从任意 tab 一键回到训练：先切回计划页再恢复专注模式。
-                selectedTab = .plan
+                // 从任意日期一键回到训练：先跳回今天再恢复专注模式。
+                if !historyViewModel.isSelectedDateToday {
+                    Task { await historyViewModel.selectTodayAndRefresh() }
+                }
                 todayViewModel.resumeTrainingFocus()
             } else {
                 todayViewModel.startPlanLiveWorkout()
             }
         }
-    }
-}
-
-private struct TrainingActionInsetModifier: ViewModifier {
-    let state: TrainingActionLayer.State?
-    let action: () -> Void
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.1, *) {
-            content
-        } else {
-            content.safeAreaInset(edge: .bottom) {
-                if let state {
-                    TrainingActionLayer(state: state, action: action)
-                }
-            }
-        }
-    }
-}
-
-private struct TrainingActionAccessoryModifier: ViewModifier {
-    let state: TrainingActionLayer.State?
-    let action: () -> Void
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.1, *) {
-            content.tabViewBottomAccessory(isEnabled: state != nil) {
-                if let state {
-                    TrainingActionLayer(state: state, action: action)
-                }
-            }
-        } else {
-            content
-        }
-    }
-}
-
-private extension View {
-    func trainingActionInset(
-        state: TrainingActionLayer.State?,
-        action: @escaping () -> Void
-    ) -> some View {
-        modifier(TrainingActionInsetModifier(state: state, action: action))
     }
 }
 

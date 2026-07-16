@@ -41,8 +41,10 @@ struct RootPageHeader<Trailing: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            // 宽度不做硬约束：trailing 可能是单个 44pt 圆形控件，也可能是
+            // 「回到今天 + 头像」这类组合，让内容自然定宽、右上对齐。
             trailing()
-                .frame(width: RootPageHeaderMetrics.trailingControlSize, height: RootPageHeaderMetrics.trailingControlSize)
+                .frame(minHeight: RootPageHeaderMetrics.trailingControlSize, alignment: .topTrailing)
         }
         .padding(.horizontal, RootPageHeaderMetrics.horizontalPadding)
         .padding(.top, RootPageHeaderMetrics.topPadding)

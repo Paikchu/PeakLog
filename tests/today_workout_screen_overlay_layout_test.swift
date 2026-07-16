@@ -43,8 +43,8 @@ precondition(
     "Expected the today screen to stop hosting its own Start Plan button"
 )
 precondition(
-    !contentViewSource.contains("HomeDockBar") && contentViewSource.contains("TabView(selection: $selectedTab)"),
-    "Expected native tab navigation with no custom dock CTA slot"
+    !contentViewSource.contains("HomeDockBar") && contentViewSource.contains("TrainingScreen("),
+    "Expected the dockless root shell to host the unified TrainingScreen with no custom dock CTA slot"
 )
 precondition(
     actionLayerSource.contains("today.startPlan") && actionLayerSource.contains("training_focus.resumeBanner"),
