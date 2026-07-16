@@ -9,10 +9,11 @@
 | 场景 | 验证方式 | 固定验收维度 |
 |---|---|---|
 | 跨月切换日历后仍能正确选中对应日期 | `tests/history_calendar_cross_month_selection_test.swift` | 主路径 |
-| 日历上有计划的日期，详情区仍可见/可展开 | `tests/history_calendar_plan_detail_visibility_test.swift` | 主路径 |
+| 周历条只承载导航与状态圆点（实心记录/空心计划），计划明细不回流进日历组件 | `tests/history_calendar_plan_detail_visibility_test.swift` | 主路径 |
 | 已完成训练的聚合统计（次数、容量等）计算正确 | `tests/history_completed_training_aggregation_test.swift` | 主路径 |
-| 无历史记录时的空态展示 | `tests/history_empty_state_test.swift` | 空态 |
-| 按训练日分组的 Section 布局在不同数据量下正确 | `tests/history_plan_day_section_layout_test.swift` | 主路径 |
+| 无历史记录时的空态展示；过去日不展示"计划了但没练"的信息 | `tests/history_empty_state_test.swift` | 空态 |
+| 未来日编辑与今日计划共用卡片但无完成勾选/有氧开始；休息日与训练日均保留添加动作行；支持长按重排 | `tests/future_day_editor_contract_test.swift` | 主路径、空态 |
+| 选中日期相对今天/计划周的时态解析（past/today/futureInPlanWeek/futureBeyondPlan） | `tests/day_tense_test.swift` | 主路径、空态 |
 | HistoryViewModel 状态流与刷新逻辑 | `tests/history_running_view_model_test.swift` | 主路径、重复提交 |
 | 单次训练 Session 内多条记录的聚合 | `tests/history_session_aggregation_test.swift` | 主路径 |
 
@@ -46,8 +47,8 @@
 
 | 场景 | 验证方式 | 固定验收维度 |
 |---|---|---|
-| 原生 Tab Bar 贴合底部安全区且无自绘 Dock 残留 | `tests/home_dock_fixed_rail_test.swift` | 主路径 |
-| 日历、计划、设置原生 Tab 与训练态显隐正确 | `tests/home_dock_navigation_test.swift` | 主路径 |
+| 无底部 dock/tab 容器；训练动作层与专注确认栏挂在底部 safe-area inset | `tests/home_dock_fixed_rail_test.swift` | 主路径 |
+| 根壳托管统一 TrainingScreen；时态路由与专注模式下钉顶区显隐正确；开始训练仅在查看今天时出现 | `tests/home_dock_navigation_test.swift` | 主路径 |
 
 ## Auth · Sync
 

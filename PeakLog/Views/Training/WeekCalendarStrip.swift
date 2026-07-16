@@ -1,33 +1,27 @@
 import SwiftUI
 
-struct CalendarGridView: View {
+/// 统一训练页钉顶的周历条。收起态为 7 日一行（左右滑动切周），
+/// 展开态为 6×7 月网格（箭头/滑动切月）。圆点语义：实心 = 有完成
+/// 记录；空心 = 今天或未来有计划安排（见 `CalendarDay.showsPlanIndicator`）。
+struct WeekCalendarStrip: View {
     @ObservedObject var viewModel: HistoryViewModel
-    @State private var isExpanded: Bool
+    @State private var isExpanded = false
     @Environment(\.locale) private var locale
 
-    /// When true (popup mode) the grid stays in month view and the
-    /// week/month toggle is hidden.
-    private let alwaysExpanded: Bool
-
-    init(viewModel: HistoryViewModel, alwaysExpanded: Bool = false) {
-        self.viewModel = viewModel
-        self.alwaysExpanded = alwaysExpanded
-        _isExpanded = State(initialValue: alwaysExpanded)
-    }
-
+    private static let toggleSpring = Animation.spring(response: 0.38, dampingFraction: 0.82)
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
     private var weekdays: [String] {
         CalendarDateText.weekdays(locale: locale)
     }
 
-    private var displayedMonthTitle: String {
-        CalendarDateText.monthTitle(for: viewModel.displayedMonth, locale: locale)
-    }
-
     var body: some View {
-        VStack(spacing: 10) {
-            monthNavigation
+        VStack(spacing: 8) {
+            if isExpanded {
+                monthNavigation
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             weekdayHeader
 
             if isExpanded {
@@ -38,80 +32,61 @@ struct CalendarGridView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            if !alwaysExpanded {
-                expandToggle
-            }
-
-            if viewModel.hasCompletedRecords {
-                completedSummaryRow
-            }
+            expandToggle
         }
         .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, viewModel.hasCompletedRecords ? 12 : 6)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
+        .padding(.top, 4)
         .clipped()
-        .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isExpanded)
-    }
-
-    // MARK: - Completed Day Summary (merged, compact)
-    private var completedSummaryRow: some View {
-        let summary = viewModel.completedDaySummary
-        return VStack(alignment: .leading, spacing: 8) {
-            Divider().background(Color.appSeparator)
-
-            HStack(spacing: 8) {
-                if summary.strengthExerciseCount > 0 {
-                    summaryPill(
-                        value: LocalizedPlanText.completedStrengthValue(summary.strengthExerciseCount, locale: locale),
-                        tint: .accentPrimary
-                    )
-                }
-                if summary.strengthSetCount > 0 {
-                    summaryPill(
-                        value: LocalizedPlanText.completedSetValue(summary.strengthSetCount, locale: locale),
-                        tint: .green
-                    )
-                }
-                if summary.cardioRecordCount > 0 {
-                    summaryPill(
-                        value: LocalizedPlanText.completedCardioValue(summary.cardioRecordCount, locale: locale),
-                        tint: .teal
-                    )
-                }
-                Spacer(minLength: 0)
-            }
+        .contentShape(Rectangle())
+        .gesture(horizontalPagingGesture)
+        .animation(Self.toggleSpring, value: isExpanded)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.appSeparator)
+                .frame(height: 0.5)
         }
+        .background(Color.appBackground)
     }
 
-    private func summaryPill(value: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(tint)
-                .frame(width: 5, height: 5)
-            Text(value)
-                .appFont(size: 12, weight: .semibold)
-                .foregroundColor(.textPrimary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(tint.opacity(0.1))
-        .clipShape(Capsule())
-    }
+    // MARK: - Paging (swipe left/right)
 
-    // MARK: - Month Navigation
-    private var monthNavigation: some View {
-        HStack {
-            Button {
+    /// 横向滑动翻页：收起态切周，展开态切月。竖向为主的拖动直接放行，
+    /// 避免与页面滚动/日期点按抢手势。
+    private var horizontalPagingGesture: some Gesture {
+        DragGesture(minimumDistance: 25)
+            .onEnded { value in
+                let horizontal = value.translation.width
+                guard abs(horizontal) > 40, abs(horizontal) > abs(value.translation.height) else { return }
                 if isExpanded {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                        viewModel.goToPreviousMonth()
+                    withAnimation(Self.toggleSpring) {
+                        if horizontal > 0 {
+                            viewModel.goToPreviousMonth()
+                        } else {
+                            viewModel.goToNextMonth()
+                        }
                     }
                     Task { await viewModel.loadCalendar() }
                 } else {
-                    Task { await viewModel.goToPreviousWeekAndRefresh() }
+                    Task {
+                        if horizontal > 0 {
+                            await viewModel.goToPreviousWeekAndRefresh()
+                        } else {
+                            await viewModel.goToNextWeekAndRefresh()
+                        }
+                    }
                 }
+            }
+    }
+
+    // MARK: - Month Navigation (expanded only)
+
+    private var monthNavigation: some View {
+        HStack {
+            Button {
+                withAnimation(Self.toggleSpring) {
+                    viewModel.goToPreviousMonth()
+                }
+                Task { await viewModel.loadCalendar() }
             } label: {
                 Image(systemName: "chevron.left")
                     .appFont(size: 14, weight: .semibold)
@@ -121,21 +96,17 @@ struct CalendarGridView: View {
 
             Spacer()
 
-            Text(displayedMonthTitle)
+            Text(CalendarDateText.monthTitle(for: viewModel.displayedMonth, locale: locale))
                 .appFont(size: 15, weight: .bold)
                 .foregroundColor(.textPrimary)
 
             Spacer()
 
             Button {
-                if isExpanded {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                        viewModel.goToNextMonth()
-                    }
-                    Task { await viewModel.loadCalendar() }
-                } else {
-                    Task { await viewModel.goToNextWeekAndRefresh() }
+                withAnimation(Self.toggleSpring) {
+                    viewModel.goToNextMonth()
                 }
+                Task { await viewModel.loadCalendar() }
             } label: {
                 Image(systemName: "chevron.right")
                     .appFont(size: 14, weight: .semibold)
@@ -146,6 +117,7 @@ struct CalendarGridView: View {
     }
 
     // MARK: - Weekday Header
+
     private var weekdayHeader: some View {
         HStack(spacing: 0) {
             ForEach(weekdays, id: \.self) { day in
@@ -158,6 +130,7 @@ struct CalendarGridView: View {
     }
 
     // MARK: - Week Row (collapsed)
+
     private var weekRow: some View {
         HStack(spacing: 0) {
             ForEach(viewModel.currentWeekDays()) { day in
@@ -169,6 +142,7 @@ struct CalendarGridView: View {
     }
 
     // MARK: - Day Grid (expanded)
+
     private var dayGrid: some View {
         LazyVGrid(columns: columns, spacing: 4) {
             ForEach(viewModel.calendarDays()) { day in
@@ -180,9 +154,10 @@ struct CalendarGridView: View {
     }
 
     // MARK: - Expand Toggle
+
     private var expandToggle: some View {
         Button {
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            withAnimation(Self.toggleSpring) {
                 isExpanded.toggle()
             }
         } label: {
@@ -191,9 +166,11 @@ struct CalendarGridView: View {
                 .foregroundColor(.textMuted)
                 .frame(maxWidth: .infinity)
                 .frame(height: 22)
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel(Text(isExpanded ? "training.calendar.collapse" : "training.calendar.expand"))
+        .accessibilityIdentifier("training.calendar.expandToggle")
     }
-
 }
 
 // MARK: - Day Cell
@@ -219,7 +196,7 @@ private struct DayCell: View {
                 }
 
                 VStack(spacing: 3) {
-                    Text(dayNumber(day.date))
+                    Text(CalendarDateText.dayNumber(for: day.date, locale: locale))
                         .appFont(size: 14, weight: day.isToday || day.isSelected ? .bold : .regular)
                         .foregroundColor(textColor)
 
@@ -227,6 +204,13 @@ private struct DayCell: View {
                         Circle()
                             .fill(day.isSelected ? Color.white : Color.accentPrimary)
                             .frame(width: 4, height: 4)
+                    } else if day.showsPlanIndicator {
+                        Circle()
+                            .strokeBorder(
+                                day.isSelected ? Color.white : Color.accentPrimary,
+                                lineWidth: 1
+                            )
+                            .frame(width: 5, height: 5)
                     } else {
                         Color.clear.frame(width: 4, height: 4)
                     }
@@ -248,14 +232,12 @@ private struct DayCell: View {
             return .textDarkMuted
         }
     }
-
-    private func dayNumber(_ date: Date) -> String {
-        CalendarDateText.dayNumber(for: date, locale: locale)
-    }
 }
 
+// MARK: - Cached Formatters
+
 @MainActor
-private enum CalendarDateText {
+enum CalendarDateText {
     private static var weekdayFormatters: [String: DateFormatter] = [:]
     private static var monthTitleFormatters: [String: DateFormatter] = [:]
     private static var dayNumberFormatters: [String: DateFormatter] = [:]
@@ -308,8 +290,7 @@ private enum CalendarDateText {
 }
 
 #Preview {
-    CalendarGridView(viewModel: HistoryViewModel())
-        .padding()
+    WeekCalendarStrip(viewModel: HistoryViewModel())
         .background(Color.appBackground)
         .preferredColorScheme(.dark)
 }

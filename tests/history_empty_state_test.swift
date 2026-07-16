@@ -21,13 +21,19 @@ struct HistoryEmptyStateTestRunner {
         )
         precondition(!pastContent.isToday, "Past date must not use today state")
 
-        let historySource = try! String(
-            contentsOfFile: "PeakLog/Views/History/HistoryScreen.swift",
+        // 过去日内容区（原 HistoryScreen 的空态承载方）保持只读事实陈述：
+        // 不重复头部日期、不提供补录表单，也不展示"计划了但没练"的信息。
+        let pastDaySource = try! String(
+            contentsOfFile: "PeakLog/Views/Training/PastDayContent.swift",
             encoding: .utf8
         )
-        precondition(!historySource.contains("Text(selectedDateLabel)"), "Empty state must not repeat the header date")
-        precondition(!historySource.contains("showsDailyRecordSheet"), "History empty state must not present a record form")
-        precondition(!historySource.contains("history.empty.addRecord"), "History empty state must not contain an add-record action")
+        precondition(!pastDaySource.contains("Text(selectedDateLabel)"), "Empty state must not repeat the header date")
+        precondition(!pastDaySource.contains("showsDailyRecordSheet"), "Past day empty state must not present a record form")
+        precondition(!pastDaySource.contains("history.empty.addRecord"), "Past day empty state must not contain an add-record action")
+        precondition(
+            !pastDaySource.contains("PlanDayPreviewSection") && !pastDaySource.contains("selectedPlanDay"),
+            "Past days must not surface planned-but-unexecuted plan details"
+        )
         print("history_empty_state_test passed")
     }
 }

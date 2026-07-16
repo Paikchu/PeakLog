@@ -250,6 +250,7 @@ final class HistoryViewModel: ObservableObject {
             return []
         }
         let weekStart = weekInterval.start
+        let planned = plannedDates
 
         return (0..<7).compactMap { i in
             guard let date = calendar.date(byAdding: .day, value: i, to: weekStart) else { return nil }
@@ -260,6 +261,7 @@ final class HistoryViewModel: ObservableObject {
                 id: "week-\(i)",
                 date: date,
                 hasWorkout: hasWorkout(on: date),
+                hasPlan: startOfDay >= today && planned.contains(workoutDateFormatter.string(from: date)),
                 isToday: startOfDay == today,
                 isSelected: startOfDay == selectedDay,
                 isCurrentMonth: monthOfDate == monthOfDisplay
@@ -270,6 +272,30 @@ final class HistoryViewModel: ObservableObject {
     // MARK: - Helpers
     func hasWorkout(on date: Date) -> Bool {
         activeDates.contains(workoutDateFormatter.string(from: date))
+    }
+
+    /// 激活计划里有实际动作安排的日期 key 集合，用于周条空心点。
+    var plannedDates: Set<String> {
+        guard let activePlan else { return [] }
+        return Set(activePlan.days.filter { !$0.exercises.isEmpty }.map(\.planDate))
+    }
+
+    var isSelectedDateToday: Bool {
+        Calendar.current.isDateInToday(selectedDate)
+    }
+
+    /// 统一训练页的时态（past / today / futureInPlanWeek / futureBeyondPlan）。
+    var selectedDayTense: DayTense {
+        DayTense.resolve(
+            selectedDate: selectedDate,
+            today: Date(),
+            planWeekStartDate: activePlan?.weekStartDate,
+            formatter: workoutDateFormatter
+        )
+    }
+
+    func selectTodayAndRefresh() async {
+        await selectDateAndRefresh(Date())
     }
 
     var completedDaySummary: CompletedDaySummary {
@@ -319,6 +345,11 @@ final class HistoryViewModel: ObservableObject {
 
         let firstWeekday = calendar.component(.weekday, from: monthStart) - 1
         let totalDays = calendar.component(.day, from: monthEnd)
+        let planned = plannedDates
+
+        func hasPlan(on date: Date) -> Bool {
+            calendar.startOfDay(for: date) >= today && planned.contains(workoutDateFormatter.string(from: date))
+        }
 
         var days: [CalendarDay] = []
 
@@ -329,6 +360,7 @@ final class HistoryViewModel: ObservableObject {
                     id: "prev-\(i)",
                     date: prevDate,
                     hasWorkout: hasWorkout(on: prevDate),
+                    hasPlan: hasPlan(on: prevDate),
                     isToday: calendar.startOfDay(for: prevDate) == today,
                     isSelected: calendar.startOfDay(for: prevDate) == selectedDay,
                     isCurrentMonth: false
@@ -343,6 +375,7 @@ final class HistoryViewModel: ObservableObject {
                     id: "day-\(day)",
                     date: date,
                     hasWorkout: hasWorkout(on: date),
+                    hasPlan: hasPlan(on: date),
                     isToday: calendar.startOfDay(for: date) == today,
                     isSelected: calendar.startOfDay(for: date) == selectedDay,
                     isCurrentMonth: true
@@ -358,6 +391,7 @@ final class HistoryViewModel: ObservableObject {
                     id: "next-\(i)",
                     date: nextDate,
                     hasWorkout: hasWorkout(on: nextDate),
+                    hasPlan: hasPlan(on: nextDate),
                     isToday: calendar.startOfDay(for: nextDate) == today,
                     isSelected: calendar.startOfDay(for: nextDate) == selectedDay,
                     isCurrentMonth: false

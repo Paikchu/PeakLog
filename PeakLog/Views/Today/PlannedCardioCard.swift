@@ -2,6 +2,8 @@ import SwiftUI
 
 struct PlannedCardioCard: View {
     let exercise: TrainingPlanExercise
+    /// 未来日编辑模式隐藏"开始"入口——不能开始一个未来的有氧。
+    var showsStartAction: Bool = true
     let onStart: () -> Void
 
     var body: some View {
@@ -43,7 +45,7 @@ struct PlannedCardioCard: View {
                 }
             }
 
-            if !exercise.isCardioCompleted {
+            if !exercise.isCardioCompleted && showsStartAction {
                 Button(action: onStart) {
                     Label("cardio.plan.start", systemImage: "play.fill")
                         .appFont(size: 15, weight: .bold)
