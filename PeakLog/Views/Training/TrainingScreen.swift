@@ -61,6 +61,11 @@ struct TrainingScreen: View {
                 PastDayContent(viewModel: historyViewModel)
             case .futureInPlanWeek, .futureBeyondPlan:
                 FutureDayContent(tense: tense, historyViewModel: historyViewModel)
+                    // 未来日之间切换共用同一调用点，SwiftUI 会复用视图身份，
+                    // isReordering/draftOrder 等编辑状态会跨日期泄漏（重排中
+                    // 切日后提交会拿旧日期的动作 id 写新日期，PR #115 review）。
+                    // 按"天"作为身份键，换天即重建整棵编辑状态。
+                    .id(Calendar.current.startOfDay(for: historyViewModel.selectedDate))
             }
         }
     }

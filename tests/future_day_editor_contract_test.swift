@@ -49,4 +49,19 @@ precondition(
     "Expected the shared set row to gate its completion control behind showsCompletionControl"
 )
 
+// 未来日之间切换必须重建 FutureDayContent（PR #115 review）：否则
+// isReordering/draftOrder 跨日期泄漏，重排提交会把旧日期的动作 id
+// 写到新选中的日期上。
+let trainingScreenSource = try String(
+    contentsOf: rootURL.appendingPathComponent("PeakLog/Views/Training/TrainingScreen.swift"),
+    encoding: .utf8
+)
+precondition(
+    trainingScreenSource.range(
+        of: #"FutureDayContent\(tense: tense, historyViewModel: historyViewModel\)[\s\S]{0,400}?\.id\(Calendar\.current\.startOfDay\(for: historyViewModel\.selectedDate\)\)"#,
+        options: .regularExpression
+    ) != nil,
+    "Expected FutureDayContent to be identity-keyed by the selected day so editing state resets across future dates"
+)
+
 print("future_day_editor_contract_test passed")
