@@ -47,8 +47,37 @@ nonisolated struct SupabaseDataClient: Sendable {
         guard !rows.isEmpty else { return }
         var request = try await makeRequest(table: table, method: "POST", queryItems: [])
         request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try JSONEncoder().encode(rows)
+        request.httpBody = try Self.normalizedBulkBody(rows)
         _ = try await send(request)
+    }
+
+    /// PostgREST rejects a bulk payload whose objects don't all carry the same
+    /// key set (PGRST102 "All object keys must match"), and the server predates
+    /// `Prefer: missing=default` — while Swift's synthesized `Encodable` omits
+    /// nil optionals, so two rows of the same type can encode different key
+    /// sets (e.g. a plan day with `focus` next to a rest day without; the bug
+    /// that silently failed every plan push). Normalize: union the keys across
+    /// rows and fill each row's gaps with explicit JSON `null`, which is what
+    /// the omitted optional means here (full-state reconcile: nil is the local
+    /// truth for that column). A key omitted by *every* row (e.g.
+    /// `training_plans.revision`, deliberately never encoded) stays omitted,
+    /// preserving its untouched-on-conflict semantics.
+    static func normalizedBulkBody<Row: Encodable>(_ rows: [Row]) throws -> Data {
+        let encoded = try JSONEncoder().encode(rows)
+        guard rows.count > 1,
+              let objects = try JSONSerialization.jsonObject(with: encoded) as? [[String: Any]]
+        else { return encoded }
+
+        var allKeys = Set<String>()
+        for object in objects { allKeys.formUnion(object.keys) }
+        guard objects.contains(where: { $0.count != allKeys.count }) else { return encoded }
+
+        let filled = objects.map { object -> [String: Any] in
+            var object = object
+            for key in allKeys where object[key] == nil { object[key] = NSNull() }
+            return object
+        }
+        return try JSONSerialization.data(withJSONObject: filled)
     }
 
     /// PATCH the row(s) matched by `match`. Used for tables that already have a
@@ -93,7 +122,7 @@ nonisolated struct SupabaseDataClient: Sendable {
         guard !rows.isEmpty else { return }
         var request = try await makeRequest(table: table, method: "POST", queryItems: [])
         request.setValue("resolution=ignore-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try JSONEncoder().encode(rows)
+        request.httpBody = try Self.normalizedBulkBody(rows)
         _ = try await send(request)
     }
 

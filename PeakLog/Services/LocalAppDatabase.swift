@@ -77,6 +77,17 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     /// Monotonic counter backing `PlanEditEvent.clientSeq`. Persisted so a
     /// restart never reuses or rewinds a sequence number (EV3).
     var editEventSeq: Int64
+    /// True while a signed-in user's local mutation has not been confirmed
+    /// pushed to the cloud. Persisted (unlike the coordinator's in-memory
+    /// copy) so a cold start knows it still owes the cloud a push — without
+    /// this, `CloudSyncCoordinator.start()` pulled cloud-as-truth over the
+    /// unpushed edits and every local change made before a failed push died
+    /// with the process (the restart-lost-edits bug).
+    var hasUnpushedChanges: Bool
+    /// Monotonic counter bumped by every owned mutation. A push snapshots it
+    /// and acknowledges that value on success, so a mutation landing while a
+    /// push is in flight can never be wrongly marked clean.
+    var localMutationSeq: Int64
 
     init(
         ownerUserId: String? = nil,
@@ -87,7 +98,9 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         customExercises: [ExerciseDefinition] = [],
         goalSpec: GoalSpec? = nil,
         pendingEditEvents: [PlanEditEvent] = [],
-        editEventSeq: Int64 = 0
+        editEventSeq: Int64 = 0,
+        hasUnpushedChanges: Bool = false,
+        localMutationSeq: Int64 = 0
     ) {
         self.ownerUserId = ownerUserId
         self.profile = profile
@@ -98,6 +111,8 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         self.goalSpec = goalSpec
         self.pendingEditEvents = pendingEditEvents
         self.editEventSeq = editEventSeq
+        self.hasUnpushedChanges = hasUnpushedChanges
+        self.localMutationSeq = localMutationSeq
     }
 
     // Custom decode keeps state files written before newer fields existed loadable.
@@ -112,6 +127,8 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         goalSpec = try container.decodeIfPresent(GoalSpec.self, forKey: .goalSpec)
         pendingEditEvents = try container.decodeIfPresent([PlanEditEvent].self, forKey: .pendingEditEvents) ?? []
         editEventSeq = try container.decodeIfPresent(Int64.self, forKey: .editEventSeq) ?? 0
+        hasUnpushedChanges = try container.decodeIfPresent(Bool.self, forKey: .hasUnpushedChanges) ?? false
+        localMutationSeq = try container.decodeIfPresent(Int64.self, forKey: .localMutationSeq) ?? 0
     }
 }
 
@@ -1212,6 +1229,16 @@ actor LocalAppDatabase {
 
     private func persist() throws {
         guard recoveryStatus == .healthy else { throw LocalAppDatabaseError.recoveryRequired }
+        // Mark the outbox dirty in the same atomic write as the mutation
+        // itself, so a crash can never persist an edit without also
+        // persisting the fact that it still owes the cloud a push. Gated on
+        // ownership (not on the push hook): a mutation made after sign-in but
+        // before the hook is armed — e.g. while the initial pull is failing
+        // offline — must still survive the next cold start's pull.
+        if state.ownerUserId != nil {
+            state.localMutationSeq += 1
+            state.hasUnpushedChanges = true
+        }
         do {
             try writeStateToDisk()
             lastPersistedState = state
@@ -1241,8 +1268,31 @@ actor LocalAppDatabase {
             runningRecords: state.runningRecords,
             customExercises: state.customExercises,
             goalSpec: state.goalSpec,
-            pendingEditEvents: state.pendingEditEvents
+            pendingEditEvents: state.pendingEditEvents,
+            mutationSeq: state.localMutationSeq
         )
+    }
+
+    /// Whether a previous run left local mutations the cloud never confirmed.
+    /// Read by `CloudSyncCoordinator.start()` to choose push-first over
+    /// pull-first on a cold start.
+    func hasUnpushedLocalChanges() -> Bool {
+        state.hasUnpushedChanges
+    }
+
+    /// Marks the outbox clean — but only if `mutationSeq` still matches, i.e.
+    /// no mutation landed after the snapshot the successful push was built
+    /// from. Persisted immediately so the flag survives a kill right after
+    /// the push. Does not fire `onChange` (this is the sync bookkeeping, not
+    /// a user mutation).
+    func acknowledgePushedState(mutationSeq: Int64) {
+        guard state.hasUnpushedChanges, state.localMutationSeq == mutationSeq else { return }
+        state.hasUnpushedChanges = false
+        if (try? writeStateToDisk()) != nil {
+            lastPersistedState = state
+        } else {
+            state = lastPersistedState
+        }
     }
 
     func localStateRecoveryStatus() -> LocalStateRecoveryStatus {

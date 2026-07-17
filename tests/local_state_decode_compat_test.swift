@@ -8,6 +8,7 @@ struct LocalStateDecodeCompatTestRunner {
         await legacyStateFileWithoutPhase1FieldsLoads()
         await legacyStateFileWithDarkModePreferenceLoads()
         await unknownCardioActivityDoesNotResetState()
+        await legacyStateFileWithoutUnpushedFlagLoads()
         print("local_state_decode_compat_test passed")
     }
 
@@ -45,6 +46,43 @@ struct LocalStateDecodeCompatTestRunner {
             "A state file carrying the removed darkModeEnabled key must still load")
         precondition(planAfterReopen?.id == originalPlan?.id,
             "Loading such a file must not fall back to a fresh seed")
+    }
+
+    /// Simulates a state file written before the persisted unpushed-changes
+    /// flag (hasUnpushedChanges / localMutationSeq) existed. A file missing
+    /// these keys must load with a clean outbox, not fail or reseed.
+    private static func legacyStateFileWithoutUnpushedFlagLoads() async {
+        let seededURL = tempFileURL("unpushed-seeded.json")
+        let seededDatabase = LocalAppDatabase(fileURL: seededURL)
+        let originalProfile = await seededDatabase.fetchProfile()
+
+        guard let data = try? Data(contentsOf: seededURL),
+              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            preconditionFailure("Expected seeded state file to be readable JSON")
+        }
+        for key in ["hasUnpushedChanges", "localMutationSeq"] {
+            precondition(json[key] != nil, "Seeded file should contain the new key \(key)")
+            json.removeValue(forKey: key)
+        }
+
+        let legacyURL = tempFileURL("unpushed-legacy.json")
+        try? FileManager.default.createDirectory(
+            at: legacyURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        guard let legacyData = try? JSONSerialization.data(withJSONObject: json) else {
+            preconditionFailure("Expected legacy JSON to serialize")
+        }
+        try? legacyData.write(to: legacyURL)
+
+        let legacyDatabase = LocalAppDatabase(fileURL: legacyURL)
+        let profile = await legacyDatabase.fetchProfile()
+        precondition(profile.id == originalProfile.id, "Legacy file must load, not be replaced by a fresh seed")
+
+        let dirty = await legacyDatabase.hasUnpushedLocalChanges()
+        precondition(!dirty, "Missing flag keys decode as a clean outbox")
+        let seq = await legacyDatabase.snapshot().mutationSeq
+        precondition(seq == 0, "Missing localMutationSeq decodes as 0")
     }
 
     private static func unknownCardioActivityDoesNotResetState() async {

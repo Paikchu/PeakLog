@@ -14,4 +14,9 @@ nonisolated struct LocalDataSnapshot: Sendable {
     /// assembled from a *pull* leaves this empty — pulled data represents
     /// cloud truth, not local outbox facts.
     let pendingEditEvents: [PlanEditEvent]
+    /// `LocalAppDatabase`'s mutation counter at snapshot time. A successful
+    /// push hands it back to `acknowledgePushedState` so the persisted
+    /// "owes a push" flag is only cleared when nothing mutated mid-push.
+    /// Snapshots assembled from a pull leave the default.
+    var mutationSeq: Int64 = 0
 }
