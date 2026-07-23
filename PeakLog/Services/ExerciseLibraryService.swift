@@ -176,7 +176,16 @@ nonisolated enum ExerciseLibraryEngine {
 // MARK: - Seed Library Loading
 
 nonisolated enum ExerciseSeedLibrary {
+    /// The seed is ~1,300 entries, and `fetchLibrary()` is called on every
+    /// picker appearance and recommendation refresh, so the main-bundle copy is
+    /// decoded once and shared. `static let` gives us the thread-safe lazy init.
+    private static let mainBundleSeed: [ExerciseDefinition] = decode(bundle: .main)
+
     static func load(bundle: Bundle = .main) -> [ExerciseDefinition] {
+        bundle === Bundle.main ? mainBundleSeed : decode(bundle: bundle)
+    }
+
+    private static func decode(bundle: Bundle) -> [ExerciseDefinition] {
         guard let url = bundle.url(forResource: "exercise_library", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let file = try? JSONDecoder().decode(ExerciseLibraryFile.self, from: data) else {

@@ -1506,11 +1506,23 @@ actor LocalAppDatabase {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
 
+        // Sample data is user-visible in local mode, so it has to follow the app
+        // language like the rest of the UI. Free text uses String(localized:);
+        // exercise names are pulled from the library by their stable slug so they
+        // stay the single source of truth (and gain a linked mediaId).
+        let language = AppLanguage.bestMatch(
+            for: Bundle.main.preferredLocalizations + Locale.preferredLanguages
+        )
+        let library = Dictionary(
+            ExerciseSeedLibrary.load().map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
         let plan = TrainingPlan(
             id: "local-plan",
             weekStartDate: planDateString(from: weekStart),
-            goalSummary: "Build muscle with extra focus on upper body strength and consistent weekly progress.",
-            coachSummary: "4 training days this week. Keep one hard lower-body day and one lighter conditioning day.",
+            goalSummary: String(localized: "seed.goal_summary"),
+            coachSummary: String(localized: "seed.coach_summary"),
             days: (0..<7).map { offset in
                 let date = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? today
                 let isToday = calendar.isDate(date, inSameDayAs: today)
@@ -1518,10 +1530,10 @@ actor LocalAppDatabase {
                     id: "plan-day-\(offset + 1)",
                     planDate: planDateString(from: date),
                     dayIndex: offset + 1,
-                    title: isToday ? "Today's Strength Session" : sampleDayTitle(for: offset),
+                    title: isToday ? String(localized: "seed.day.today_title") : sampleDayTitle(for: offset),
                     focus: sampleDayFocus(for: offset),
                     status: isToday ? "planned" : "upcoming",
-                    exercises: samplePlanExercises(for: offset)
+                    exercises: samplePlanExercises(for: offset, language: language, library: library)
                 )
             }
         )
@@ -1531,11 +1543,12 @@ actor LocalAppDatabase {
             userId: "local-user",
             date: yesterday,
             durationMinutes: 45,
-            label: "Pull Day",
+            label: String(localized: "seed.session.pull_day"),
             exercises: [
                 Exercise(
                     id: "seed-exercise-1",
-                    name: "Deadlift",
+                    name: seedExerciseName("deadlift", in: library, language: language),
+                    exerciseId: "deadlift",
                     sets: [
                         ExerciseSet(id: "seed-set-1", setIndex: 1, weight: 120, weightUnit: .kg, reps: 5, rpe: nil),
                         ExerciseSet(id: "seed-set-2", setIndex: 2, weight: 120, weightUnit: .kg, reps: 5, rpe: nil)
@@ -1543,7 +1556,8 @@ actor LocalAppDatabase {
                 ),
                 Exercise(
                     id: "seed-exercise-2",
-                    name: "Pull Up",
+                    name: seedExerciseName("pull-up", in: library, language: language),
+                    exerciseId: "pull-up",
                     sets: [
                         ExerciseSet(id: "seed-set-3", setIndex: 1, weight: nil, weightUnit: .kg, reps: 10, rpe: nil),
                         ExerciseSet(id: "seed-set-4", setIndex: 2, weight: nil, weightUnit: .kg, reps: 9, rpe: nil)
@@ -1568,12 +1582,12 @@ actor LocalAppDatabase {
         var state = LocalAppState(
             profile: UserProfile(
                 id: "local-user",
-                displayName: "PeakLog Athlete",
+                displayName: String(localized: "seed.profile.display_name"),
                 avatarURL: nil,
                 membershipLevel: .premium,
                 stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: 0, prCount: 0),
                 preferences: .defaults(),
-                fitnessGoalSummary: "Build muscle with extra focus on upper body strength and consistent weekly progress.",
+                fitnessGoalSummary: String(localized: "seed.goal_summary"),
                 exercisePRs: []
             ),
             activePlan: plan,
@@ -1587,17 +1601,35 @@ actor LocalAppDatabase {
         return state
     }
 
-    private static func samplePlanExercises(for offset: Int) -> [TrainingPlanExercise] {
+    /// Localized display name for a seed exercise, sourced from the library so
+    /// it matches what the picker/detail screens show. Falls back to the slug's
+    /// title-cased form only if the library somehow lacks the entry.
+    private static func seedExerciseName(
+        _ slug: String,
+        in library: [String: ExerciseDefinition],
+        language: AppLanguage
+    ) -> String {
+        library[slug]?.displayName(for: language)
+            ?? slug.split(separator: "-").map(\.capitalized).joined(separator: " ")
+    }
+
+    private static func samplePlanExercises(
+        for offset: Int,
+        language: AppLanguage,
+        library: [String: ExerciseDefinition]
+    ) -> [TrainingPlanExercise] {
+        func name(_ slug: String) -> String { seedExerciseName(slug, in: library, language: language) }
         switch offset {
         case 0:
             return [
                 TrainingPlanExercise(
                     id: "plan-ex-1",
                     orderIndex: 0,
-                    exerciseName: "Bench Press",
+                    exerciseName: name("barbell-bench-press"),
+                    exerciseId: "barbell-bench-press",
                     exerciseLoadType: .weighted,
                     progressionMode: "weight_first",
-                    notes: "Stop 1 rep before failure on the first two sets.",
+                    notes: String(localized: "seed.note.bench"),
                     previousPerformanceSummary: nil,
                     aiSuggestion: nil,
                     sets: [
@@ -1612,10 +1644,11 @@ actor LocalAppDatabase {
                 TrainingPlanExercise(
                     id: "plan-ex-2",
                     orderIndex: 0,
-                    exerciseName: "Squat",
+                    exerciseName: name("barbell-squat"),
+                    exerciseId: "barbell-squat",
                     exerciseLoadType: .weighted,
                     progressionMode: "volume_first",
-                    notes: "Focus on full depth and steady tempo.",
+                    notes: String(localized: "seed.note.squat"),
                     previousPerformanceSummary: nil,
                     aiSuggestion: nil,
                     sets: [
@@ -1629,10 +1662,11 @@ actor LocalAppDatabase {
                 TrainingPlanExercise(
                     id: "plan-ex-3",
                     orderIndex: 0,
-                    exerciseName: "Pull Up",
+                    exerciseName: name("pull-up"),
+                    exerciseId: "pull-up",
                     exerciseLoadType: .bodyweight,
                     progressionMode: "rep_first",
-                    notes: "Add a pause at the top of each rep.",
+                    notes: String(localized: "seed.note.pullup"),
                     previousPerformanceSummary: nil,
                     aiSuggestion: nil,
                     sets: [
@@ -1648,22 +1682,22 @@ actor LocalAppDatabase {
 
     private static func sampleDayTitle(for offset: Int) -> String {
         switch offset {
-        case 1: return "Recovery + Zone 2"
-        case 2: return "Lower Strength"
-        case 3: return "Mobility"
-        case 4: return "Upper Pull"
-        case 5: return "Conditioning"
-        default: return "Rest"
+        case 1: return String(localized: "seed.day_title.recovery")
+        case 2: return String(localized: "seed.day_title.lower_strength")
+        case 3: return String(localized: "seed.day_title.mobility")
+        case 4: return String(localized: "seed.day_title.upper_pull")
+        case 5: return String(localized: "seed.day_title.conditioning")
+        default: return String(localized: "seed.day_title.rest")
         }
     }
 
     private static func sampleDayFocus(for offset: Int) -> String? {
         switch offset {
-        case 0: return "Pressing strength"
-        case 1: return "Easy aerobic work"
-        case 2: return "Leg drive and bracing"
-        case 4: return "Back volume and grip"
-        case 5: return "Light conditioning"
+        case 0: return String(localized: "seed.focus.pressing")
+        case 1: return String(localized: "seed.focus.aerobic")
+        case 2: return String(localized: "seed.focus.leg_drive")
+        case 4: return String(localized: "seed.focus.back_volume")
+        case 5: return String(localized: "seed.focus.light_conditioning")
         default: return nil
         }
     }

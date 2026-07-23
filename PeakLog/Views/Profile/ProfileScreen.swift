@@ -43,6 +43,7 @@ struct ProfileScreen: View {
                         prSection
                         preferencesSection
                         supportSection
+                        mediaCredit
                     }
                     .padding(.bottom, 40)
                 }
@@ -344,6 +345,16 @@ struct ProfileScreen: View {
                 showingPrivacy = true
             }
         }
+    }
+
+    /// The bundled exercise demonstrations are licensed media, not ours; the
+    /// rights holder requires the credit to travel with them.
+    private var mediaCredit: some View {
+        Text("settings.media_credit")
+            .appFont(size: 11)
+            .foregroundColor(.textDarkMuted)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
     }
 
     private func openAppSettings() {
