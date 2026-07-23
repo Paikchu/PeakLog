@@ -28,6 +28,7 @@ struct ExercisePickerScreen: View {
     @State private var selection: [ExercisePickerItem] = []
     @State private var showsCreateSheet = false
     @State private var category: ExercisePickerCategory = .all
+    @State private var detailDefinition: ExerciseDefinition?
 
     private var pickerSpring: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)
@@ -142,6 +143,10 @@ struct ExercisePickerScreen: View {
                 await createCustomExercise(name: name, muscleGroup: muscleGroup, loadType: loadType)
             }
             .presentationDetents([.height(280)])
+        }
+        .sheet(item: $detailDefinition) { definition in
+            ExerciseDetailSheet(definition: definition)
+                .environmentObject(localizationManager)
         }
     }
 
@@ -275,36 +280,79 @@ struct ExercisePickerScreen: View {
         let isAdded = alreadyAddedItemIDs.contains(item.id)
         let isSelected = selection.contains { $0.id == item.id }
 
-        return Button {
-            guard !isAdded else { return }
-            withAnimation(pickerSpring) { toggle(item) }
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.displayName(for: localizationManager.appLanguage))
-                        .appFont(size: 15, weight: .semibold)
-                        .foregroundColor(isAdded ? .textMuted : (isSelected ? .accentValue : .textPrimary))
+        return HStack(spacing: 0) {
+            Button {
+                guard !isAdded else { return }
+                withAnimation(pickerSpring) { toggle(item) }
+            } label: {
+                HStack(spacing: 12) {
+                    leadingThumbnail(for: item)
 
-                    metaLine(for: item, recentEntry: recentEntry)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.displayName(for: localizationManager.appLanguage))
+                            .appFont(size: 15, weight: .semibold)
+                            .foregroundColor(isAdded ? .textMuted : (isSelected ? .accentValue : .textPrimary))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .multilineTextAlignment(.leading)
+
+                        metaLine(for: item, recentEntry: recentEntry)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    trailingIndicator(isAdded: isAdded, isSelected: isSelected)
                 }
-
-                Spacer(minLength: 8)
-
-                trailingIndicator(isAdded: isAdded, isSelected: isSelected)
+                .padding(.leading, 16)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(Color.appSeparator)
-                    .frame(height: 0.5)
-                    .padding(.leading, 16)
-            }
+            .buttonStyle(.plain)
+            .disabled(isAdded)
+
+            infoButton(for: item)
         }
-        .buttonStyle(.plain)
-        .disabled(isAdded)
+        .padding(.trailing, 16)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.appSeparator)
+                .frame(height: 0.5)
+                .padding(.leading, 16)
+        }
         .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func leadingThumbnail(for item: ExercisePickerItem) -> some View {
+        switch item {
+        case .strength(let definition):
+            ExerciseThumbnailView(
+                mediaId: definition.mediaId,
+                muscleGroup: definition.muscleGroup
+            )
+        case .cardio:
+            ExerciseThumbnailView(mediaId: nil, muscleGroup: .fullBody)
+        }
+    }
+
+    /// Separate hit target from the row itself: tapping the row selects the
+    /// exercise, tapping the glyph explains it.
+    @ViewBuilder
+    private func infoButton(for item: ExercisePickerItem) -> some View {
+        if case .strength(let definition) = item {
+            Button {
+                detailDefinition = definition
+            } label: {
+                Image(systemName: "info.circle")
+                    .appFont(size: 16, weight: .regular)
+                    .foregroundColor(.textDarkMuted)
+                    .padding(.leading, 10)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("exercise_detail.open_accessibility"))
+        }
     }
 
     @ViewBuilder

@@ -22,6 +22,7 @@
 - `PeakLog/Services/Auth/`：iOS 侧 Supabase Auth、会话持久化与认证状态。
 - `PeakLogTests/`：XCTest 覆盖的 iOS 单元测试。
 - `tests/`：可独立运行的 Swift 回归与契约测试。
+- `tools/exercise-media/`：动作库与演示动画的生成脚本与输入数据；`PeakLog/Resources/` 下的 `exercise_library.json`、`exercise_details.json`、`ExerciseMedia/` 都是生成物，改动作库请改这里的输入再重跑，勿直接编辑生成物。媒体版权属 Gym visual，署名不可移除，详见该目录 README。
 - `backend/supabase/`：Supabase 后端源码和 CLI 配置。
 - `backend/supabase/config.toml`：本地 Supabase 项目配置与 Auth Provider 配置；不得写入密钥。
 - `backend/supabase/migrations/`：Postgres Schema、RLS、RPC、触发器、Storage 与定时任务迁移；只新增迁移，不改写已部署迁移。

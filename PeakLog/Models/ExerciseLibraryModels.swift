@@ -63,6 +63,10 @@ nonisolated struct ExerciseDefinition: Identifiable, Codable, Equatable, Sendabl
     var loadType: ExerciseLoadType
     var popularity: Int
     var isCustom: Bool
+    /// Key into the bundled animation/thumbnail pair, when one exists. Nil for
+    /// user-created exercises and for the handful of seed entries the media
+    /// library has no matching demonstration for.
+    var mediaId: String?
 
     init(
         id: String,
@@ -73,7 +77,8 @@ nonisolated struct ExerciseDefinition: Identifiable, Codable, Equatable, Sendabl
         equipment: Equipment,
         loadType: ExerciseLoadType,
         popularity: Int = 50,
-        isCustom: Bool = false
+        isCustom: Bool = false,
+        mediaId: String? = nil
     ) {
         self.id = id
         self.nameEN = nameEN
@@ -84,9 +89,10 @@ nonisolated struct ExerciseDefinition: Identifiable, Codable, Equatable, Sendabl
         self.loadType = loadType
         self.popularity = popularity
         self.isCustom = isCustom
+        self.mediaId = mediaId
     }
 
-    // Lenient decode so the seed JSON can omit aliases/popularity/isCustom.
+    // Lenient decode so the seed JSON can omit aliases/popularity/isCustom/mediaId.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -98,6 +104,7 @@ nonisolated struct ExerciseDefinition: Identifiable, Codable, Equatable, Sendabl
         loadType = try container.decode(ExerciseLoadType.self, forKey: .loadType)
         popularity = try container.decodeIfPresent(Int.self, forKey: .popularity) ?? 50
         isCustom = try container.decodeIfPresent(Bool.self, forKey: .isCustom) ?? false
+        mediaId = try container.decodeIfPresent(String.self, forKey: .mediaId)
     }
 
     func displayName(for language: AppLanguage) -> String {
