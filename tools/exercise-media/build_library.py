@@ -307,6 +307,11 @@ def main():
             continue
         best, best_score = None, 0.0
         for record in records:
+            # Skip records already claimed by a manual mapping or an earlier
+            # auto-match, so two curated entries can never share one mediaId
+            # (same demonstration under two different names).
+            if record["id"] in used:
+                continue
             score = match_score(entry, record, groups[record["id"]])
             if score > best_score:
                 best, best_score = record, score

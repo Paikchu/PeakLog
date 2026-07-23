@@ -23,15 +23,23 @@ struct ExerciseThumbnailView: View {
     let muscleGroup: MuscleGroup
     var size: CGFloat = 44
 
+    @State private var decoded: UIImage?
+    /// Distinguishes "still decoding" from "decoded and there's nothing" so we
+    /// don't flash the fallback glyph before a poster that's about to load.
+    @State private var resolved = false
+
     var body: some View {
-        let poster = ExerciseThumbnailCache.shared.image(for: mediaId)
+        // An in-memory hit resolves synchronously so rows we've already scrolled
+        // past never flicker; only a genuine miss defers to the async decode.
+        let poster = decoded ?? ExerciseThumbnailCache.shared.cachedImage(for: mediaId)
+        let showsGlyph = poster == nil && (mediaId == nil || resolved)
         return Group {
             if let poster {
                 Image(uiImage: poster)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .padding(1)
-            } else {
+            } else if showsGlyph {
                 Image(systemName: muscleGroup.symbolName)
                     .appFont(size: size * 0.4, weight: .medium)
                     .foregroundColor(.textMuted)
@@ -40,10 +48,18 @@ struct ExerciseThumbnailView: View {
         .frame(width: size, height: size)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.md)
-                .fill(poster == nil ? Color.workoutPanel : Color.exerciseMediaTile)
+                .fill(showsGlyph ? Color.workoutPanel : Color.exerciseMediaTile)
         )
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.md))
         .accessibilityHidden(true)
+        .task(id: mediaId) {
+            resolved = false
+            decoded = nil
+            if ExerciseThumbnailCache.shared.cachedImage(for: mediaId) == nil {
+                decoded = await ExerciseThumbnailCache.shared.image(for: mediaId)
+            }
+            resolved = true
+        }
     }
 }
 
@@ -59,16 +75,28 @@ final class ExerciseThumbnailCache: @unchecked Sendable {
         cache.countLimit = 240
     }
 
-    func image(for mediaId: String?) -> UIImage? {
+    /// In-memory hit only — safe and instant to call from a SwiftUI body on the
+    /// main thread. Returns nil when the poster hasn't been decoded yet.
+    func cachedImage(for mediaId: String?) -> UIImage? {
+        guard let mediaId else { return nil }
+        return cache.object(forKey: mediaId as NSString)
+    }
+
+    /// Reads and decodes the poster off the caller's thread on a miss, so a fast
+    /// scroll over never-seen rows doesn't block the main thread on disk I/O.
+    func image(for mediaId: String?) async -> UIImage? {
         guard let mediaId else { return nil }
         if let hit = cache.object(forKey: mediaId as NSString) { return hit }
-        guard let url = ExerciseMedia.thumbnailURL(for: mediaId),
-              let image = UIImage(contentsOfFile: url.path)
-        else {
-            return nil
-        }
-        cache.setObject(image, forKey: mediaId as NSString)
-        return image
+        let cache = self.cache
+        return await Task.detached(priority: .utility) {
+            guard let url = ExerciseMedia.thumbnailURL(for: mediaId),
+                  let image = UIImage(contentsOfFile: url.path)
+            else {
+                return nil
+            }
+            cache.setObject(image, forKey: mediaId as NSString)
+            return image
+        }.value
     }
 }
 
@@ -81,17 +109,22 @@ struct ExerciseAnimationView: View {
     let muscleGroup: MuscleGroup
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var posterFrame: UIImage?
+
+    private var showsVideo: Bool {
+        !reduceMotion && ExerciseMedia.animationURL(for: mediaId) != nil
+    }
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: AppRadius.xl)
                 .fill(Color.exerciseMediaTile)
 
-            if let url = ExerciseMedia.animationURL(for: mediaId), !reduceMotion {
+            if showsVideo, let url = ExerciseMedia.animationURL(for: mediaId) {
                 LoopingVideoView(url: url)
                     .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl))
-            } else if let image = ExerciseThumbnailCache.shared.image(for: mediaId) {
-                Image(uiImage: image)
+            } else if let posterFrame {
+                Image(uiImage: posterFrame)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
             } else {
@@ -102,6 +135,12 @@ struct ExerciseAnimationView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityLabel(Text("exercise_detail.animation_accessibility"))
+        .task(id: mediaId) {
+            // Only the Reduce Motion / no-video path renders the poster, but it
+            // decodes off the main thread either way.
+            guard !showsVideo else { return }
+            posterFrame = await ExerciseThumbnailCache.shared.image(for: mediaId)
+        }
     }
 }
 

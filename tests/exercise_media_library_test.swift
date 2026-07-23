@@ -68,6 +68,12 @@ struct ExerciseMediaLibraryTestRunner {
         let names = Set(exercises.map(\.nameZH))
         precondition(names.count == exercises.count, "duplicate Chinese names would make the picker ambiguous")
 
+        // Each demonstration belongs to exactly one exercise; a shared mediaId
+        // means one clip is playing under two different names — the "宁可无动画
+        // 也不配错" rule the builder is supposed to enforce.
+        let mediaIds = exercises.compactMap(\.mediaId)
+        precondition(Set(mediaIds).count == mediaIds.count, "two exercises reference the same mediaId")
+
         precondition(details.attribution.contains("Gym visual"), "media attribution must ship with the details file")
     }
 
