@@ -53,10 +53,16 @@ struct ExerciseThumbnailView: View {
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.md))
         .accessibilityHidden(true)
         .task(id: mediaId) {
+            let requested = mediaId
             resolved = false
             decoded = nil
-            if ExerciseThumbnailCache.shared.cachedImage(for: mediaId) == nil {
-                decoded = await ExerciseThumbnailCache.shared.image(for: mediaId)
+            if ExerciseThumbnailCache.shared.cachedImage(for: requested) == nil {
+                let image = await ExerciseThumbnailCache.shared.image(for: requested)
+                // image(for:) decodes on a detached task that doesn't inherit
+                // this task's cancellation, so a mediaId that changed mid-decode
+                // would otherwise let a stale poster overwrite the new one.
+                guard !Task.isCancelled, requested == mediaId else { return }
+                decoded = image
             }
             resolved = true
         }
@@ -139,7 +145,12 @@ struct ExerciseAnimationView: View {
             // Only the Reduce Motion / no-video path renders the poster, but it
             // decodes off the main thread either way.
             guard !showsVideo else { return }
-            posterFrame = await ExerciseThumbnailCache.shared.image(for: mediaId)
+            let requested = mediaId
+            let image = await ExerciseThumbnailCache.shared.image(for: requested)
+            // The detached decode doesn't inherit cancellation; discard the
+            // result if mediaId changed out from under us mid-decode.
+            guard !Task.isCancelled, requested == mediaId else { return }
+            posterFrame = image
         }
     }
 }
