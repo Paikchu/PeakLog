@@ -29,13 +29,25 @@ precondition(
     thumbnail.contains(".task(id: mediaId)"),
     "Thumbnail still has to decode its poster off the main thread via .task"
 )
+
+// Narrow to the content Group itself, so an `else` and a placeholder that
+// merely both exist somewhere in the struct can't satisfy the check — they
+// have to be the same branch of the same chain.
+guard let groupStart = thumbnail.range(of: "Group {"),
+      let groupEnd = thumbnail.range(of: ".frame(width: size, height: size)")
+else {
+    fatalError("ExerciseThumbnailView no longer builds its content as a Group sized by .frame(width: size, height: size)")
+}
+let contentGroup = String(thumbnail[groupStart.upperBound..<groupEnd.lowerBound])
+
+guard let elseBranch = contentGroup.range(of: "} else {") else {
+    preconditionFailure(
+        "Thumbnail's content Group needs an else branch — an empty Group is a nil view and drops the .task that loads the poster"
+    )
+}
 precondition(
-    thumbnail.contains("} else {"),
-    "Thumbnail's content Group needs an else branch — an empty Group is a nil view and drops the .task that loads the poster"
-)
-precondition(
-    thumbnail.contains("Color.clear"),
-    "The loading branch must render a concrete placeholder so the tile keeps its frame while decoding"
+    contentGroup[elseBranch.upperBound...].contains("Color.clear"),
+    "The Group's else branch must render a concrete placeholder so the tile keeps its frame while decoding"
 )
 
 // The detail-screen animation reserves its frame with an always-present tile
