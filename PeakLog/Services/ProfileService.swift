@@ -2,7 +2,6 @@ import Foundation
 
 struct UpdatePreferencesRequest: Encodable {
     let notificationsEnabled: Bool?
-    let darkModeEnabled: Bool?
     let weightUnit: WeightUnit?
     let timezone: String?
     let language: AppLanguage?

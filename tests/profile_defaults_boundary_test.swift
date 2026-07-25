@@ -8,11 +8,10 @@ import Foundation
 //      "empty profile".
 //   2. A brand-new signup (no profiles/user_preferences rows in the cloud)
 //      assembles to the same defaults via CloudMapper.profile.
-//   3. darkModeEnabled is device-local and never synced:
+//   3. Appearance is not a synced preference — it lives in ThemeManager, and
+//      the vestigial server column stays out of the client's way:
 //      a. the pushed PreferencesRow carries no dark_mode_enabled field;
-//      b. pulling a server row that still has the column decodes fine;
-//      c. mergeFromCloud keeps the local darkModeEnabled instead of the
-//         cloud-assembled placeholder.
+//      b. pulling a server row that still has the column decodes fine.
 //
 // Compile with:
 //   swiftc -parse-as-library \
@@ -34,7 +33,6 @@ struct ProfileDefaultsBoundaryTest {
         await testFreshDatabaseServesDefaultPreferences()
         try testBrandNewSignupAssemblesDefaults()
         try testDarkModeIsNotOnTheWire()
-        try await testMergeFromCloudPreservesLocalDarkMode()
         print("profile_defaults_boundary_test passed")
     }
 
@@ -52,8 +50,6 @@ struct ProfileDefaultsBoundaryTest {
         precondition(!profile.id.isEmpty, "fresh profile must have an id")
         precondition(profile.preferences.notificationsEnabled == defaults.notificationsEnabled,
             "fresh profile must carry default notificationsEnabled")
-        precondition(profile.preferences.darkModeEnabled == defaults.darkModeEnabled,
-            "fresh profile must carry default darkModeEnabled")
         precondition(profile.preferences.weightUnit == defaults.weightUnit,
             "fresh profile must carry default weightUnit")
         precondition(profile.preferences.language == defaults.language,
@@ -79,11 +75,10 @@ struct ProfileDefaultsBoundaryTest {
             "signup profile must fall back to UTC until reconcileDeviceTimezone runs")
     }
 
-    // 3a/3b. dark_mode_enabled never leaves the device, and a server row that
+    // 3a/3b. The client never writes dark_mode_enabled, and a server row that
     // still has the (now vestigial) column decodes fine.
     static func testDarkModeIsNotOnTheWire() throws {
-        var prefs = UserPreferences.defaults(timezone: "UTC")
-        prefs.darkModeEnabled = true
+        let prefs = UserPreferences.defaults(timezone: "UTC")
         let profile = UserProfile(id: "u1", displayName: "T", avatarURL: nil,
             membershipLevel: .free,
             stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: 0, prCount: 0),
@@ -100,34 +95,5 @@ struct ProfileDefaultsBoundaryTest {
         """.utf8)
         let row = try JSONDecoder().decode(PreferencesRow.self, from: serverJSON)
         precondition(row.user_id == "u1", "server row with legacy column must still decode")
-    }
-
-    // 3c. A pull merge keeps the device's darkModeEnabled.
-    static func testMergeFromCloudPreservesLocalDarkMode() async throws {
-        let db = LocalAppDatabase(fileURL: tempURL())
-        // Flip away from the default so preservation is distinguishable from
-        // "merge happened to write the same value".
-        let localDefault = UserPreferences.defaults().darkModeEnabled
-        _ = try await db.updatePreferences(UpdatePreferencesRequest(
-            notificationsEnabled: nil, darkModeEnabled: !localDefault,
-            weightUnit: nil, timezone: nil, language: nil))
-
-        let cloudProfile = CloudMapper.profile(
-            userId: "11111111-1111-1111-1111-111111111111",
-            profileRow: nil, preferencesRow: nil)
-        precondition(cloudProfile.preferences.darkModeEnabled == localDefault,
-            "placeholder must differ from the flipped local value for this test to prove anything")
-
-        await db.mergeFromCloud(
-            profile: cloudProfile,
-            activePlan: TrainingPlan(id: "cloud-plan", weekStartDate: "2026-07-13",
-                goalSummary: "g", coachSummary: "c", days: []),
-            strengthSessions: [], runningRecords: [], customExercises: [], goalSpec: nil)
-
-        let merged = await db.fetchProfile()
-        precondition(merged.preferences.darkModeEnabled == !localDefault,
-            "mergeFromCloud must keep the device-local darkModeEnabled")
-        precondition(merged.id == "11111111-1111-1111-1111-111111111111",
-            "everything else about the profile is still cloud-wins")
     }
 }

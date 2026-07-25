@@ -169,7 +169,6 @@ final class ExercisePRUnitAndVolumeDisplayTests: XCTestCase {
             stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: totalVolumeKg, prCount: 0),
             preferences: UserPreferences(
                 notificationsEnabled: true,
-                darkModeEnabled: false,
                 weightUnit: unit,
                 timezone: "UTC",
                 language: .english

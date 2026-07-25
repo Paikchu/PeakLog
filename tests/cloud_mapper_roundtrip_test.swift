@@ -74,7 +74,7 @@ struct CloudMapperRoundtripTest {
         let profile = UserProfile(id: userId, displayName: "Tester", avatarURL: nil,
             membershipLevel: .free,
             stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: 0, prCount: 0),
-            preferences: UserPreferences(notificationsEnabled: true, darkModeEnabled: false,
+            preferences: UserPreferences(notificationsEnabled: true,
                 weightUnit: .kg, timezone: "Asia/Shanghai", language: AppLanguage.simplifiedChinese),
             fitnessGoalSummary: "get stronger", exercisePRs: [])
 
