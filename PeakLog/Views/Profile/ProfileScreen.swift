@@ -7,19 +7,19 @@ struct ProfileScreen: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingWeightUnitPicker = false
+    @State private var showingAppearancePicker = false
     @State private var showingGoalSpecEditor = false
     @State private var showingHelp = false
     @State private var showingPrivacy = false
-    // Local optimistic mirrors for the preference toggles. SwiftUI's Toggle
+    // Local optimistic mirror for the notifications toggle. SwiftUI's Toggle
     // needs the Binding's `get` to reflect the new value the instant the
     // user taps, but the real source of truth (`viewModel.profile?.preferences`)
     // only updates after the async save round-trips. Mirroring it locally lets
-    // the switch flip immediately; `onChange` below resyncs these mirrors
+    // the switch flip immediately; `onChange` below resyncs the mirror
     // whenever the real preference changes (successful save, load, or a
-    // change from elsewhere), and the toggle `set` closures roll the mirror
+    // change from elsewhere), and the toggle `set` closure rolls the mirror
     // back if a save fails.
     @State private var notificationsOptimistic = false
-    @State private var darkModeOptimistic = false
 
     init() {
         _viewModel = StateObject(
@@ -50,21 +50,18 @@ struct ProfileScreen: View {
             }
         }
         .background(Color.appBackground.ignoresSafeArea())
+        // This screen is presented as a sheet, and a sheet does not follow
+        // changes to the app root's override — and the appearance control
+        // lives right here, so without this the screen keeps rendering in the
+        // old scheme while the rest of the app switches under it.
+        .appAppearance()
         .task {
             await viewModel.loadProfile()
             await viewModel.loadGoalSpec()
-            if let preferences = viewModel.profile?.preferences {
-                themeManager.isDarkMode = preferences.darkModeEnabled
-            }
         }
         .onChange(of: viewModel.profile?.preferences.notificationsEnabled, initial: true) { _, newValue in
             if let newValue {
                 notificationsOptimistic = newValue
-            }
-        }
-        .onChange(of: viewModel.profile?.preferences.darkModeEnabled, initial: true) { _, newValue in
-            if let newValue {
-                darkModeOptimistic = newValue
             }
         }
         .alert("common.error_title", isPresented: Binding(
@@ -82,18 +79,21 @@ struct ProfileScreen: View {
             ) { spec in
                 try await viewModel.saveGoalSpec(spec)
             }
+            .appAppearance()
         }
         .sheet(isPresented: $showingHelp) {
             ProfileInfoSheet(
                 titleKey: "profile.support.help",
                 bodyKey: "profile.support.help.body"
             )
+            .appAppearance()
         }
         .sheet(isPresented: $showingPrivacy) {
             ProfileInfoSheet(
                 titleKey: "profile.support.privacy",
                 bodyKey: "profile.support.privacy.body"
             )
+            .appAppearance()
         }
     }
 
@@ -303,29 +303,27 @@ struct ProfileScreen: View {
                     .background(Color.appSeparator)
                     .padding(.horizontal, 16)
 
-                PreferenceToggleRow(
-                    icon: "moon",
-                    title: "profile.preferences.dark_mode",
-                    isOn: Binding(
-                        get: { darkModeOptimistic },
-                        set: { newValue in
-                            let previous = darkModeOptimistic
-                            darkModeOptimistic = newValue
-                            themeManager.isDarkMode = newValue
-                            Task {
-                                await viewModel.toggleDarkMode()
-                                if viewModel.profile?.preferences.darkModeEnabled != newValue {
-                                    // Save failed (or lost a race) — roll back both the
-                                    // optimistic mirror and the theme so they don't
-                                    // drift from the persisted preference.
-                                    darkModeOptimistic = previous
-                                    themeManager.isDarkMode = previous
-                                }
-                            }
+                // Appearance is device-local and owned by ThemeManager
+                // (UserDefaults): it applies synchronously, so there is no
+                // async save to mirror optimistically or roll back.
+                PreferenceNavRow(
+                    icon: "circle.lefthalf.filled",
+                    title: "profile.preferences.appearance",
+                    detail: themeManager.mode.localizedDisplayName
+                ) {
+                    showingAppearancePicker = true
+                }
+                .confirmationDialog(
+                    "profile.preferences.appearance.choose",
+                    isPresented: $showingAppearancePicker,
+                    titleVisibility: .visible
+                ) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Button(mode.localizedDisplayName) {
+                            themeManager.mode = mode
                         }
-                    ),
-                    isLoading: viewModel.isSaving
-                )
+                    }
+                }
             }
         }
     }
@@ -431,12 +429,20 @@ private struct ProfileInfoSheet: View {
 
 #Preview("Dark") {
     ProfileScreen()
-        .environmentObject(ThemeManager())
+        .environmentObject(previewThemeManager(.dark))
         .environmentObject(LocalizationManager())
 }
 
 #Preview("Light") {
     ProfileScreen()
-        .environmentObject({ let t = ThemeManager(); t.isDarkMode = false; return t }())
+        .environmentObject(previewThemeManager(.light))
         .environmentObject(LocalizationManager())
+}
+
+@MainActor
+private func previewThemeManager(_ mode: AppearanceMode) -> ThemeManager {
+    // A throwaway suite keeps previews from writing over the real choice.
+    let manager = ThemeManager(defaults: UserDefaults(suiteName: "peaklog.preview") ?? .standard)
+    manager.mode = mode
+    return manager
 }

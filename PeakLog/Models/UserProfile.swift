@@ -24,7 +24,11 @@ nonisolated struct ExercisePR: Codable, Equatable, Identifiable, Sendable {
 // MARK: - User Preferences
 nonisolated struct UserPreferences: Codable, Sendable {
     var notificationsEnabled: Bool
-    var darkModeEnabled: Bool     // device-local; never synced to the cloud
+    /// Legacy: the app's appearance is owned by `ThemeManager`
+    /// (`AppearanceMode`, UserDefaults) since it gained "follow system".
+    /// Kept so the persisted local snapshot and the cloud merge rules keep
+    /// decoding unchanged; device-local, never synced to the cloud.
+    var darkModeEnabled: Bool
     var weightUnit: WeightUnit
     var timezone: String          // IANA timezone, e.g. "Asia/Shanghai"
     var language: AppLanguage

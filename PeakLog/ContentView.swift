@@ -7,7 +7,6 @@ struct ContentView: View {
     private static let bottomBarSpring = Animation.spring(response: 0.35, dampingFraction: 0.82)
 
     @Environment(\.scenePhase) private var scenePhase
-    @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
 
     @StateObject private var todayViewModel = TodayWorkoutViewModel()
@@ -34,7 +33,6 @@ struct ContentView: View {
         }
         .animation(Self.bottomBarSpring, value: isTrainingFocusVisible)
         .animation(Self.bottomBarSpring, value: trainingActionState)
-        .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:

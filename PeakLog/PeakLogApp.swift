@@ -17,7 +17,7 @@ struct PeakLogApp: App {
                 .environmentObject(syncController)
                 .environmentObject(authManager)
                 .environment(\.locale, localizationManager.locale)
-                .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
+                .rootAppearance(themeManager)
                 .task {
                     // Subscribe before restore so the first state transition is
                     // observed and the sync lifecycle tracks auth synchronously.

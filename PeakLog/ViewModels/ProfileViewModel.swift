@@ -57,16 +57,9 @@ final class ProfileViewModel: ObservableObject {
         ))
     }
 
-    func toggleDarkMode() async {
-        guard let current = profile?.preferences.darkModeEnabled else { return }
-        await updatePreferences(UpdatePreferencesRequest(
-            notificationsEnabled: nil,
-            darkModeEnabled: !current,
-            weightUnit: nil,
-            timezone: nil,
-            language: nil
-        ))
-    }
+    // Appearance is no longer a profile preference: `ThemeManager` owns it
+    // (device-local, UserDefaults) so it applies synchronously at launch and
+    // supports "follow system", which a Bool can't express.
 
     func setWeightUnit(_ unit: WeightUnit) async {
         await updatePreferences(UpdatePreferencesRequest(
