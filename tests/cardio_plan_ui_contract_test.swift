@@ -69,6 +69,9 @@ precondition(!history.contains("record.rpe"))
 // TodayWorkoutScreen 通过 TodayPlannedExerciseCard 渲染它。
 precondition(planEditing.contains("today.plan.complete_with_rpe"), "Strength completion RPE must remain available")
 precondition(screen.contains("TodayPlannedExerciseCard("), "Today screen must still render the strength card that owns the RPE menu")
+// showsCompletionControl 默认为 true，今天页刻意不传；只有 FutureDayContent 会传 false 来隐藏勾选。
+// 今天页一旦传了 false，RPE 菜单就静默消失，但上面的调用点断言仍会通过，所以这里额外守一道。
+precondition(!screen.contains("showsCompletionControl: false"), "Today screen must keep the completion control enabled, otherwise the RPE menu silently disappears")
 precondition(history.contains("set.rpe"), "Strength history RPE must remain visible")
 precondition(workoutModels.contains("case .running: return String(localized: \"cardio.activity.running\")"))
 precondition(workoutModels.contains("case .cycling: return String(localized: \"cardio.activity.cycling\")"))
