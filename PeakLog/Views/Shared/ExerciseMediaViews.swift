@@ -43,6 +43,12 @@ struct ExerciseThumbnailView: View {
                 Image(systemName: muscleGroup.symbolName)
                     .appFont(size: size * 0.4, weight: .medium)
                     .foregroundColor(.textMuted)
+            } else {
+                // Must render *something* while the poster decodes: an empty
+                // `if` branch collapses the Group to a nil view, and SwiftUI
+                // drops every modifier on it — including the `.task` below, so
+                // the decode would never start and the row would stay blank.
+                Color.clear
             }
         }
         .frame(width: size, height: size)
