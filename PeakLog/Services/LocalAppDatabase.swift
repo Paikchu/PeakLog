@@ -1394,6 +1394,48 @@ actor LocalAppDatabase {
         }
     }
 
+    /// The record half of `mergeFromCloud`: folds cloud sessions, cardio
+    /// records and custom exercises into the cache and leaves `activePlan`,
+    /// `profile` and `goalSpec` exactly as they are.
+    ///
+    /// This is the merge a device holding *unpushed local edits* can safely
+    /// run before pushing (see `CloudSyncCoordinator.performPush`). Record
+    /// merging is last-write-wins on `updatedAt` and keeps local-only
+    /// user-generated rows, so it cannot revert a local edit — whereas the
+    /// cloud-wins halves (plan structure, profile, goal spec) could, which is
+    /// why they are excluded here. Without it, the push's full-state
+    /// `deleteNotIn` would delete rows another device added while this device
+    /// was away and which this cache therefore never saw.
+    ///
+    /// Like `mergeFromCloud`: does NOT fire `onChange`, and (writing through
+    /// `writeStateToDisk` rather than `persist`) does not advance
+    /// `localMutationSeq` or touch the persisted unpushed-changes flag — the
+    /// pending push is still pending, and its acknowledgement must still
+    /// match the counter.
+    func mergeCloudRecordsPreservingLocalState(
+        strengthSessions: [WorkoutSession],
+        runningRecords: [RunningWorkoutRecord],
+        customExercises: [ExerciseDefinition]
+    ) {
+        let ownerUserId = state.ownerUserId
+        state.strengthSessions = mergeRecords(
+            cloud: strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            local: state.strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId }
+        )
+        state.runningRecords = mergeRecords(
+            cloud: runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            local: state.runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId }
+        )
+        state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
+        sanitizePlanCompletionLinks()
+        recalculateDerivedProfile()
+        if (try? writeStateToDisk()) != nil {
+            lastPersistedState = state
+        } else {
+            state = lastPersistedState
+        }
+    }
+
     private func sanitizePlanCompletionLinks() {
         let loggedSetIds = Set(state.strengthSessions.flatMap { session in
             session.exercises.flatMap { exercise in

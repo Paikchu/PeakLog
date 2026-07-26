@@ -59,6 +59,20 @@ PostgREST 要求批量 insert/upsert 数组里**每个对象的键集合完全�
 - `CloudSyncCoordinator.start()`:检测到持久化欠推送时**改为 push-first**,
   不再 pull 覆盖;`performPush` 原有 revision guard 仍保护服务端 replan
   (服务端 revision 前进时先 pull-merge 再推)。
+- **推送前的记录级合并守卫**(PR review 反馈):`performPush` 是全量对账,
+  `deleteNotIn` 会删掉"云端有、本地快照没有"的行。push-first 跳过了完整
+  pull,而 revision guard 只覆盖 `training_plans`,因此设备 A 带欠推送编辑
+  冷启动时,会把设备 B 期间新增的 `workout_sessions`/`running_workouts`/
+  `custom_exercises`(以及嵌在 session 里的 `exercises`/`exercise_sets`)
+  从云端删除——真实的跨端数据丢失。修法:新增
+  `LocalAppDatabase.mergeCloudRecordsPreservingLocalState`(只合并记录三表,
+  不动 plan/profile/goalSpec),由 `performPush` 在本协调器生命周期内**首次**
+  推送前调用(`hasMergedCloudState` 门控,完整 pull 成功也置位,不产生重复
+  请求)。记录合并是 `updatedAt` LWW + 保留本地独有行,不可能回退本地未推送
+  编辑;而 cloud-wins 的那几半(计划结构/profile/goalSpec)才会,所以排除在外。
+  读云失败则抛错中止推送,脏标志保留、编辑留在本地等下次重试——与 push-first
+  之前"初次 pull 失败就不推送"的行为一致,无退化。该守卫放在 `performPush`
+  而非 `start()`,所以 onForeground 重试路径同样被覆盖。
 - `onForeground()` 未武装分支改为复用 `start()`:离线冷启动(初次 pull 失败)
   期间做的编辑同样标脏,回前台后走 push-first,堵住同一 bug 的第二个入口。
 - 推送/拉取失败现在写 `os.Logger`(subsystem `com.max.PeakLog`, category
@@ -78,6 +92,14 @@ PostgREST 要求批量 insert/upsert 数组里**每个对象的键集合完全�
   - 新增 `tests/cloud_unpushed_flag_test.swift`:无主变更不标脏、有主变更标脏且
     随变更原子落盘、过期 acknowledge 不清标志、匹配 acknowledge 持久清除、
     pull-merge 不动标志与计数、换账号重置。
+  - 新增 `tests/cloud_push_first_guard_test.swift`(**协调器级**,PR review
+    反馈):用 stub `URLProtocol` + 可注入 `URLSession` 驱动真实
+    `CloudSyncCoordinator`/`CloudSnapshotLoader`/`SupabaseDataClient`,断言
+    ① 脏冷启动确实推送本地未推送编辑(62.5 进入 `training_plan_sets` 请求体)
+    且云端独有 session 被合并进来、出现在 prune 的 `not.in` 保留名单里而不是
+    被删;② 干净冷启动仍走 pull(云端 30 获胜)且不发任何写请求;③ 云端不可达时
+    完全不触达 prune 步骤(零 DELETE),脏标志保留。已反向验证:去掉守卫后
+    用例①立即失败。
   - `tests/local_state_decode_compat_test.swift` 增补:缺新键的旧状态文件
     正常加载且出箱干净。
   - 回归:`cloud_pull_merge_test`、`cloud_mapper_roundtrip_test`、
@@ -86,10 +108,12 @@ PostgREST 要求批量 insert/upsert 数组里**每个对象的键集合完全�
 
 ## 残余风险与后续事项
 
-- **多端并发**:push-first 沿用现有"最后一次全量推送获胜"语义,与前台重试路径
-  一致;A 端欠推送冷启动时会以 A 的全量状态对账,B 端在此期间的**客户端**编辑
-  可能被 prune(服务端 replan 有 revision guard 保护,不受影响)。本次未扩大
-  也未收窄该既有语义。
+- **多端并发**:记录三表(力量 session/有氧记录/自定义动作)现在由推送前的
+  记录级合并守卫保护,不会再被 prune 误删;服务端 replan 由 revision guard
+  保护。仍未覆盖的是**设备 B 对同一份计划做的客户端编辑**:A 端推送仍是
+  "最后一次全量推送获胜",B 的计划编辑若未被 A 的快照包含会被覆盖。这是
+  既有语义(前台重试路径一直如此),本次未收窄,彻底解决需要计划子表的
+  双向合并或服务端冲突检测,建议另立需求。
 - **同步失败无 UI 呈现**:`CloudSyncStatus` 注释声称 "Surfaced minimally in
   ProfileScreen",实际无任何 UI 消费 `syncStatus`——建议后续补一个轻量指示器,
   已另开任务。
