@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Owns the read/write sync loop for a signed-in user.
 ///
@@ -16,10 +17,24 @@ actor CloudSyncCoordinator {
 
     private var isPushing = false
     private var pushAgain = false
-    private var hasCompletedInitialPull = false
+    /// True once the coordinator holds a state it may push from — either the
+    /// initial pull landed, or a previous run left persisted unpushed changes
+    /// (in which case local, not cloud, is the current truth). Gates
+    /// `requestPush` so a mutation can never push seed/partial state.
+    private var isArmed = false
+    /// True once cloud state has been merged into the cache during this
+    /// coordinator's life. Until then a full-state push must not prune: the
+    /// local snapshot may not know about rows another device added while this
+    /// device was away, and `deleteNotIn` would delete them.
+    private var hasMergedCloudState = false
     private(set) var hasUnpushedChanges = false
     private(set) var lastErrorDescription: String?
     private let onStatusChange: (@Sendable (CloudSyncStatus) -> Void)?
+
+    /// Sync failures are otherwise invisible (no UI consumes the error text
+    /// today), which let a deterministic push failure go unnoticed for days —
+    /// keep them findable in Console.app.
+    private static let logger = Logger(subsystem: "com.max.PeakLog", category: "CloudSync")
 
     /// Latest sync error and whether a push is still owed — for diagnostics.
     func diagnostics() -> (error: String?, pending: Bool) {
@@ -47,6 +62,9 @@ actor CloudSyncCoordinator {
     /// while still dropping seed rows (non-UUID ids) so a later push can
     /// never send non-cloud rows. See `LocalAppDatabase.mergeFromCloud`
     /// (Issue #1 fix).
+    ///
+    /// Exception: when the previous run left persisted unpushed changes,
+    /// local is the truth and the order inverts to push-first (see below).
     @discardableResult
     func start() async -> Bool {
         guard await database.isCloudSyncSafe() else {
@@ -56,8 +74,24 @@ actor CloudSyncCoordinator {
             return false
         }
         await database.prepareForCloudUser(userId)
+        // A previous run persisted mutations the cloud never confirmed —
+        // local is the truth right now, so push first instead of pulling.
+        // A full `pull()` here would merge cloud-as-truth over the unpushed
+        // edits and silently revert them (the restart-lost-edits bug).
+        // `performPush` still folds in cloud-only *records* before it prunes
+        // (see `mergeCloudRecordsPreservingLocalEdits`), and its revision
+        // guard still pull-merges when a server-side replan landed.
+        if await database.hasUnpushedLocalChanges() {
+            hasUnpushedChanges = true
+            isArmed = true
+            await installChangeHook()
+            await requestPush()
+            // Even if the push failed (still offline), stay armed on local
+            // state; `onForeground` retries the push rather than pulling.
+            return true
+        }
         guard await pull() else { return false }
-        hasCompletedInitialPull = true
+        isArmed = true
         await installChangeHook()
         return true
     }
@@ -67,12 +101,13 @@ actor CloudSyncCoordinator {
     }
 
     /// On returning to the foreground: if we owe the cloud a push, retry it;
-    /// otherwise pull to pick up anything changed on another device.
+    /// otherwise pull to pick up anything changed on another device. Before
+    /// the coordinator is armed this re-runs `start()`, which also rechecks
+    /// the persisted outbox — an edit made while the initial pull kept
+    /// failing offline must be pushed, not overwritten by the retried pull.
     func onForeground() async {
-        guard hasCompletedInitialPull else {
-            guard await pull() else { return }
-            hasCompletedInitialPull = true
-            await installChangeHook()
+        guard isArmed else {
+            await start()
             return
         }
         if hasUnpushedChanges {
@@ -105,14 +140,39 @@ actor CloudSyncCoordinator {
                 customExercises: snapshot.customExercises,
                 goalSpec: snapshot.goalSpec
             )
+            hasMergedCloudState = true
             lastErrorDescription = nil
             return true
         } catch {
             let description = "\(error)"
+            Self.logger.error("cloud pull failed: \(description, privacy: .public)")
             lastErrorDescription = "pull: \(description)"
             onStatusChange?(.pendingRetry(description))
             return false
         }
+    }
+
+    /// Folds cloud-only *records* (strength sessions, cardio records, custom
+    /// exercises) into the cache while leaving the local plan, profile and
+    /// goal spec untouched — the half of a pull that cannot lose unpushed
+    /// local edits, because record merging is last-write-wins on `updatedAt`
+    /// and keeps local-only user rows.
+    ///
+    /// Required before the first push of a coordinator's life: `performPush`
+    /// reconciles full state, so its `deleteNotIn` would delete any row
+    /// another device added while this device was away and which the local
+    /// snapshot therefore never saw. The plan child tables are covered
+    /// separately by the revision guard; these three (plus `exercises` /
+    /// `exercise_sets`, which are nested inside the sessions) are what the
+    /// guard does not cover.
+    private func mergeCloudRecordsPreservingLocalEdits() async throws {
+        let snapshot = try await loader.load(userId: userId)
+        await database.mergeCloudRecordsPreservingLocalState(
+            strengthSessions: snapshot.strengthSessions,
+            runningRecords: snapshot.runningRecords,
+            customExercises: snapshot.customExercises
+        )
+        hasMergedCloudState = true
     }
 
     // MARK: - Push
@@ -128,7 +188,7 @@ actor CloudSyncCoordinator {
     /// at most one in-flight push plus one queued re-run that captures the
     /// latest snapshot.
     func requestPush() async {
-        guard hasCompletedInitialPull else { return }
+        guard isArmed else { return }
         hasUnpushedChanges = true
         if isPushing {
             pushAgain = true
@@ -142,20 +202,38 @@ actor CloudSyncCoordinator {
             pushAgain = false
             do {
                 try await performPush()
-                hasUnpushedChanges = false
                 lastErrorDescription = nil
             } catch {
-                // Leave hasUnpushedChanges set so onForeground retries later.
+                // Leave hasUnpushedChanges set so onForeground retries later
+                // (and, persisted in the database, so a cold start after a
+                // kill pushes instead of pulling over the unpushed edits).
                 let description = "\(error)"
+                Self.logger.error("cloud push failed: \(description, privacy: .public)")
                 lastErrorDescription = "push: \(description)"
                 onStatusChange?(.pendingRetry(description))
                 return
             }
         } while pushAgain
+        // Cleared only once the whole coalescing loop drains: clearing after
+        // each performPush would leave the flag false when a queued re-run
+        // (pushAgain) subsequently fails, and onForeground would then pull
+        // over the very mutation that re-run was carrying.
+        hasUnpushedChanges = false
         onStatusChange?(.idle)
     }
 
     private func performPush() async throws {
+        // Never prune against a snapshot that has never seen cloud state (the
+        // push-first cold start, or a foreground retry whose initial pull
+        // failed): fold in cloud-only records first, or the `deleteNotIn`
+        // calls below would delete another device's rows. Throwing on failure
+        // leaves the persisted dirty flag set, so the edits stay local and
+        // the next foreground retries — the same outcome a failed initial
+        // pull had before push-first existed.
+        if !hasMergedCloudState {
+            try await mergeCloudRecordsPreservingLocalEdits()
+        }
+
         var snapshot = await database.snapshot()
 
         // Revision guard (Phase 3): if the server's copy of the active plan
@@ -237,6 +315,11 @@ actor CloudSyncCoordinator {
         try await client.deleteNotIn(table: "workout_sessions", keepIds: bundle.sessions.map(\.id))
         try await client.deleteNotIn(table: "running_workouts", keepIds: bundle.running.map(\.id))
         try await client.deleteNotIn(table: "custom_exercises", keepIds: bundle.customExercises.map(\.id))
+
+        // The cloud now holds everything up to the snapshot we sent; clear
+        // the persisted "owes a push" flag (no-op if a mutation landed
+        // mid-push — the coalescing loop re-pushes and re-acknowledges).
+        await database.acknowledgePushedState(mutationSeq: snapshot.mutationSeq)
     }
 
     /// Lightweight check: has the server's active-plan `revision` moved past the
