@@ -12,6 +12,7 @@ let dailyRecord = try source("PeakLog/Views/Today/DailyRecordSheet.swift")
 let addPlan = try source("PeakLog/Views/Today/AddPlanExerciseSheet.swift")
 let picker = try source("PeakLog/Views/Today/ExercisePickerScreen.swift")
 let recordCard = try source("PeakLog/Views/Today/RunningRecordCard.swift")
+let planEditing = try source("PeakLog/Views/Today/PlanExerciseEditingComponents.swift")
 let history = try source("PeakLog/Views/History/HistoryCompletedTrainingSection.swift")
 let localizations = try source("PeakLog/Localizable.xcstrings")
 let workoutModels = try source("PeakLog/Models/WorkoutModels.swift")
@@ -64,7 +65,13 @@ precondition(!addPlan.contains("cardioRPE"))
 precondition(!sheet.contains("rpeText"))
 precondition(!recordCard.contains("record.rpe"))
 precondition(!history.contains("record.rpe"))
-precondition(screen.contains("today.plan.complete_with_rpe"), "Strength completion RPE must remain available")
+// 力量组的 RPE 完成入口已随 d6823ec 迁到 TodayPlannedSetRow（PlanExerciseEditingComponents.swift），
+// TodayWorkoutScreen 通过 TodayPlannedExerciseCard 渲染它。
+precondition(planEditing.contains("today.plan.complete_with_rpe"), "Strength completion RPE must remain available")
+precondition(screen.contains("TodayPlannedExerciseCard("), "Today screen must still render the strength card that owns the RPE menu")
+// showsCompletionControl 默认为 true，今天页刻意不传；只有 FutureDayContent 会传 false 来隐藏勾选。
+// 今天页一旦传了 false，RPE 菜单就静默消失，但上面的调用点断言仍会通过，所以这里额外守一道。
+precondition(!screen.contains("showsCompletionControl: false"), "Today screen must keep the completion control enabled, otherwise the RPE menu silently disappears")
 precondition(history.contains("set.rpe"), "Strength history RPE must remain visible")
 precondition(workoutModels.contains("case .running: return String(localized: \"cardio.activity.running\")"))
 precondition(workoutModels.contains("case .cycling: return String(localized: \"cardio.activity.cycling\")"))
