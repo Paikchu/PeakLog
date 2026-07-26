@@ -249,9 +249,6 @@ actor LocalAppDatabase {
         if let value = prefs.notificationsEnabled {
             state.profile.preferences.notificationsEnabled = value
         }
-        if let value = prefs.darkModeEnabled {
-            state.profile.preferences.darkModeEnabled = value
-        }
         if let value = prefs.weightUnit {
             state.profile.preferences.weightUnit = value
         }
@@ -1278,10 +1275,6 @@ actor LocalAppDatabase {
         customExercises: [ExerciseDefinition],
         goalSpec: GoalSpec?
     ) {
-        var profile = profile
-        // darkModeEnabled is device-local and never synced; the incoming
-        // cloud-assembled profile only carries a placeholder for it.
-        profile.preferences.darkModeEnabled = state.profile.preferences.darkModeEnabled
         state.profile = profile
         state.activePlan = activePlan
         state.strengthSessions = strengthSessions
@@ -1314,9 +1307,7 @@ actor LocalAppDatabase {
     ///   (completion is monotonic). A local seed plan (different id) is
     ///   replaced wholesale.
     /// - `profile` / `goalSpec`: cloud wins (confirmed decision; timezone
-    ///   self-heals via `reconcileDeviceTimezone`) — except
-    ///   `preferences.darkModeEnabled`, which is device-local, never synced,
-    ///   and always kept from the local state.
+    ///   self-heals via `reconcileDeviceTimezone`).
     /// - `pendingEditEvents` / `editEventSeq`: untouched (EV1).
     ///
     /// Like `replaceAll`, this does NOT fire `onChange`: it is the sync
@@ -1331,10 +1322,6 @@ actor LocalAppDatabase {
         goalSpec: GoalSpec?
     ) {
         let ownerUserId = state.ownerUserId
-        var profile = profile
-        // darkModeEnabled is device-local and never synced; the incoming
-        // cloud-assembled profile only carries a placeholder for it.
-        profile.preferences.darkModeEnabled = state.profile.preferences.darkModeEnabled
         state.profile = profile
         state.activePlan = mergePlanPreservingCompletions(cloud: activePlan, local: state.activePlan)
         state.strengthSessions = mergeRecords(

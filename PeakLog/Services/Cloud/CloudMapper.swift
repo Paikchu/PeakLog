@@ -316,13 +316,9 @@ nonisolated enum CloudMapper {
         // A brand-new signup has no profile/preferences rows yet; fall back
         // to the same `UserPreferences.defaults` the local seed uses so the
         // "never configured" boundary is defined in one place (Issue #35).
-        // `darkModeEnabled` is device-local and never synced — the value
-        // assembled here is a placeholder that `mergeFromCloud`/`replaceAll`
-        // replace with the local one.
         let defaults = UserPreferences.defaults(timezone: profileRow?.timezone ?? "UTC")
         let preferences = UserPreferences(
             notificationsEnabled: preferencesRow?.notifications_enabled ?? defaults.notificationsEnabled,
-            darkModeEnabled: defaults.darkModeEnabled,
             weightUnit: preferencesRow.flatMap { WeightUnit(rawValue: $0.weight_unit) } ?? defaults.weightUnit,
             timezone: defaults.timezone,
             language: preferencesRow.flatMap { AppLanguage(rawValue: $0.language) } ?? defaults.language

@@ -24,11 +24,6 @@ nonisolated struct ExercisePR: Codable, Equatable, Identifiable, Sendable {
 // MARK: - User Preferences
 nonisolated struct UserPreferences: Codable, Sendable {
     var notificationsEnabled: Bool
-    /// Legacy: the app's appearance is owned by `ThemeManager`
-    /// (`AppearanceMode`, UserDefaults) since it gained "follow system".
-    /// Kept so the persisted local snapshot and the cloud merge rules keep
-    /// decoding unchanged; device-local, never synced to the cloud.
-    var darkModeEnabled: Bool
     var weightUnit: WeightUnit
     var timezone: String          // IANA timezone, e.g. "Asia/Shanghai"
     var language: AppLanguage
@@ -36,10 +31,12 @@ nonisolated struct UserPreferences: Codable, Sendable {
     /// The single definition of "a user who has never configured anything".
     /// Both the local seed state and the cloud pull's missing-row fallback
     /// build on this, so the two can't drift apart (Issue #35).
+    ///
+    /// Appearance is deliberately absent: it lives in `ThemeManager`
+    /// (`AppearanceMode`, UserDefaults), device-local and never synced.
     static func defaults(timezone: String = TimeZone.current.identifier) -> UserPreferences {
         UserPreferences(
             notificationsEnabled: true,
-            darkModeEnabled: true,
             weightUnit: .kg,
             timezone: timezone,
             language: .english

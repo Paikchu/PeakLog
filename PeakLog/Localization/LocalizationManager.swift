@@ -34,7 +34,6 @@ final class LocalizationManager: ObservableObject {
             _ = try await profileService.updatePreferences(
                 UpdatePreferencesRequest(
                     notificationsEnabled: nil,
-                    darkModeEnabled: nil,
                     weightUnit: nil,
                     timezone: nil,
                     language: appLanguage

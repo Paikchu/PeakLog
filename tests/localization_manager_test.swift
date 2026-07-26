@@ -76,7 +76,6 @@ private actor RecordingProfileService: ProfileServiceProtocol {
             stats: UserStats(workoutsCount: 1, streakDays: 2, totalVolumeKg: 3, prCount: 4),
             preferences: UserPreferences(
                 notificationsEnabled: true,
-                darkModeEnabled: false,
                 weightUnit: .kg,
                 timezone: "Asia/Shanghai",
                 language: .english
@@ -89,7 +88,6 @@ private actor RecordingProfileService: ProfileServiceProtocol {
         lastUpdatedRequest = prefs
         return UserPreferences(
             notificationsEnabled: true,
-            darkModeEnabled: false,
             weightUnit: .kg,
             timezone: "Asia/Shanghai",
             language: prefs.language ?? .english

@@ -108,7 +108,7 @@ struct CloudPullMergeTest {
             membershipLevel: .free,
             stats: UserStats(workoutsCount: 0, streakDays: 0, totalVolumeKg: 0, prCount: 0),
             preferences: UserPreferences(
-                notificationsEnabled: true, darkModeEnabled: false,
+                notificationsEnabled: true,
                 weightUnit: .kg, timezone: "UTC", language: .english
             ),
             fitnessGoalSummary: "cloud goal",

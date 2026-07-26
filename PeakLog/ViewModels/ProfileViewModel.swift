@@ -50,7 +50,6 @@ final class ProfileViewModel: ObservableObject {
         guard let current = profile?.preferences.notificationsEnabled else { return }
         await updatePreferences(UpdatePreferencesRequest(
             notificationsEnabled: !current,
-            darkModeEnabled: nil,
             weightUnit: nil,
             timezone: nil,
             language: nil
@@ -64,7 +63,6 @@ final class ProfileViewModel: ObservableObject {
     func setWeightUnit(_ unit: WeightUnit) async {
         await updatePreferences(UpdatePreferencesRequest(
             notificationsEnabled: nil,
-            darkModeEnabled: nil,
             weightUnit: unit,
             timezone: nil,
             language: nil
@@ -74,7 +72,6 @@ final class ProfileViewModel: ObservableObject {
     func setLanguage(_ language: AppLanguage) async {
         await updatePreferences(UpdatePreferencesRequest(
             notificationsEnabled: nil,
-            darkModeEnabled: nil,
             weightUnit: nil,
             timezone: nil,
             language: language

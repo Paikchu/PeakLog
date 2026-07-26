@@ -13,8 +13,7 @@ final class LocalAppDatabaseWriteRollbackTests: XCTestCase {
 
         do {
             _ = try await database.updatePreferences(UpdatePreferencesRequest(
-                notificationsEnabled: nil,
-                darkModeEnabled: false,
+                notificationsEnabled: false,
                 weightUnit: nil,
                 timezone: nil,
                 language: nil

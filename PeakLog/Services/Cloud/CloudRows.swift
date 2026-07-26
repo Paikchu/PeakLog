@@ -48,9 +48,9 @@ nonisolated struct PreferencesRow: Codable, Sendable {
     let user_id: String
     var notifications_enabled: Bool
     // `dark_mode_enabled` still exists server-side but is deliberately
-    // unmapped: dark mode is a device-local preference and never syncs
-    // (Issue #35). Push PATCHes only the fields here, so the column is
-    // simply left untouched; pull ignores the extra JSON key.
+    // unmapped: appearance is a device-local choice owned by `ThemeManager`
+    // and never syncs (Issue #35). Push PATCHes only the fields here, so the
+    // column is simply left untouched; pull ignores the extra JSON key.
     var weight_unit: String
     var language: String
 }

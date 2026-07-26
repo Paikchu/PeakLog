@@ -6,8 +6,45 @@ struct LocalStateDecodeCompatTestRunner {
         await legacyStateFileWithoutCustomExercisesLoads()
         await customExercisesPersistAcrossReopen()
         await legacyStateFileWithoutPhase1FieldsLoads()
+        await legacyStateFileWithDarkModePreferenceLoads()
         await unknownCardioActivityDoesNotResetState()
         print("local_state_decode_compat_test passed")
+    }
+
+    /// Simulates a state file written before appearance moved out of
+    /// `UserPreferences` and into `ThemeManager`: the dropped
+    /// `darkModeEnabled` key must be ignored, not treated as corruption.
+    private static func legacyStateFileWithDarkModePreferenceLoads() async {
+        let seededURL = tempFileURL("dark-mode-seeded.json")
+        let seededDatabase = LocalAppDatabase(fileURL: seededURL)
+        let originalProfile = await seededDatabase.fetchProfile()
+        let originalPlan = await seededDatabase.activePlan()
+
+        guard let data = try? Data(contentsOf: seededURL),
+              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              var profile = json["profile"] as? [String: Any],
+              var preferences = profile["preferences"] as? [String: Any] else {
+            preconditionFailure("Expected seeded state to contain profile preferences")
+        }
+        preferences["darkModeEnabled"] = true
+        profile["preferences"] = preferences
+        json["profile"] = profile
+        guard let mutated = try? JSONSerialization.data(withJSONObject: json) else {
+            preconditionFailure("Expected mutated state to serialize")
+        }
+
+        let legacyURL = tempFileURL("dark-mode-legacy.json")
+        try? FileManager.default.createDirectory(
+            at: legacyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? mutated.write(to: legacyURL)
+
+        let reopened = LocalAppDatabase(fileURL: legacyURL)
+        let profileAfterReopen = await reopened.fetchProfile()
+        let planAfterReopen = await reopened.activePlan()
+        precondition(profileAfterReopen.id == originalProfile.id,
+            "A state file carrying the removed darkModeEnabled key must still load")
+        precondition(planAfterReopen?.id == originalPlan?.id,
+            "Loading such a file must not fall back to a fresh seed")
     }
 
     private static func unknownCardioActivityDoesNotResetState() async {

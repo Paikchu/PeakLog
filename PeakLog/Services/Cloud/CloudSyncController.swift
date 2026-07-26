@@ -79,7 +79,6 @@ final class CloudSyncController: ObservableObject {
         guard profile.preferences.timezone != deviceTimezone else { return }
         _ = try? await database.updatePreferences(UpdatePreferencesRequest(
             notificationsEnabled: nil,
-            darkModeEnabled: nil,
             weightUnit: nil,
             timezone: deviceTimezone,
             language: nil
