@@ -110,11 +110,11 @@ struct TrainingScreen: View {
         case .dateOnly:
             return nil
         case .freeRecordDay:
-            return String(localized: "today.summary.free_record_day.subtitle")
+            return nil
         case .runningOnly:
             return runningOnlyLine
         case .emptyDay:
-            return String(localized: "today.summary.empty.subtitle")
+            return nil
         case .completedMuscles:
             return muscleFocusLine
         }
@@ -183,15 +183,13 @@ struct TrainingScreen: View {
         Button {
             isPresentingProfile = true
         } label: {
-            Image(systemName: "person.crop.circle")
-                .appFont(size: 20, weight: .semibold)
+            Image(systemName: "person")
+                .appFont(size: 20, weight: .medium)
                 .foregroundColor(.accentPrimary)
                 .frame(
                     width: RootPageHeaderMetrics.trailingControlSize,
                     height: RootPageHeaderMetrics.trailingControlSize
                 )
-                .background(Color.appSurface)
-                .clipShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("training.profile.open"))

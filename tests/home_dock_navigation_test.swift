@@ -66,5 +66,22 @@ precondition(
     !todaySource.contains("RootPageHeader("),
     "Expected the page title to move up into TrainingScreen's pinned header"
 )
+precondition(
+    trainingScreenSource.contains("        case .freeRecordDay:\n            return nil"),
+    "Expected today's free-record state to keep the date header subtitle-free"
+)
+precondition(
+    trainingScreenSource.contains("        case .emptyDay:\n            return nil"),
+    "Expected today's empty state to keep the date header subtitle-free"
+)
+precondition(
+    trainingScreenSource.contains("Image(systemName: \"person\")")
+        && !trainingScreenSource.contains("Image(systemName: \"person.crop.circle\")"),
+    "Expected the profile control to use the simple line person symbol"
+)
+precondition(
+    !trainingScreenSource.contains(".clipShape(Circle())"),
+    "Expected the profile control to have no visible outer circle"
+)
 
 print("home_dock_navigation_test passed")
