@@ -6,3 +6,13 @@ build/
 # Python
 __pycache__/
 *.pyc
+
+# Signing material — never commit. This repo is public; a leaked distribution
+# certificate or App Store Connect key lets anyone sign and upload builds as us.
+# These belong in GitHub Secrets (see .github/workflows/testflight.yml).
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
