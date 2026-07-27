@@ -118,6 +118,15 @@ jobs:
           fi
           echo "--- signing identities ---"
           security find-identity -v -p codesigning | sed 's/[0-9A-F]\{40\}/<HASH>/g'
+          # Does this key/issuer pair authenticate at all? Separates a bad
+          # credential from a credential that authenticates but lacks the
+          # scope xcodebuild needs for provisioning. Also reveals whether the
+          # App Store Connect app record exists.
+          echo "--- App Store Connect API auth test ---"
+          xcrun altool --list-apps \
+            --apiKey "$ASC_API_KEY_ID" \
+            --apiIssuer "$ASC_API_ISSUER_ID" 2>&1 | head -40 \
+            || echo "(altool exited non-zero)"
 
       - name: Archive
         env:
