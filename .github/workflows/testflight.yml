@@ -132,38 +132,6 @@ jobs:
           done
           rm -rf "$TMP"
 
-      # TEMPORARY diagnostic. Prints lengths and structure only, never values;
-      # GitHub masks secret values in logs anyway, but lengths are what matter
-      # here (a trailing newline from `gh secret set` shifts them by one).
-      - name: Diagnose signing inputs
-        env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
-        run: |
-          echo "key id length:  ${#ASC_API_KEY_ID}   (expect 10)"
-          echo "issuer length:  ${#ASC_API_ISSUER_ID}   (expect 36)"
-          echo "--- private_keys dir ---"
-          ls -la "$HOME/.appstoreconnect/private_keys/" || echo "DIR MISSING"
-          KEY="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
-          if [ -f "$KEY" ]; then
-            echo "key file: $(wc -c < "$KEY") bytes"
-            echo "first line: $(head -1 "$KEY")"
-            echo "last line:  $(tail -1 "$KEY")"
-          else
-            echo "KEY FILE MISSING at: $KEY"
-          fi
-          echo "--- signing identities ---"
-          security find-identity -v -p codesigning | sed 's/[0-9A-F]\{40\}/<HASH>/g'
-          # Does this key/issuer pair authenticate at all? Separates a bad
-          # credential from a credential that authenticates but lacks the
-          # scope xcodebuild needs for provisioning. Also reveals whether the
-          # App Store Connect app record exists.
-          echo "--- App Store Connect API auth test ---"
-          xcrun altool --list-apps \
-            --apiKey "$ASC_API_KEY_ID" \
-            --apiIssuer "$ASC_API_ISSUER_ID" 2>&1 | head -40 \
-            || echo "(altool exited non-zero)"
-
       # No -allowProvisioningUpdates and no API key: signing settings live in
       # the Release configs and the profiles are already on disk.
       - name: Archive
