@@ -121,13 +121,17 @@ jobs:
             cp "$p" "$LEGACY/$UUID.mobileprovision"
             cp "$p" "$MODERN/$UUID.mobileprovision"
             # The name must match PROVISIONING_PROFILE_SPECIFIER exactly, and
-            # the profile must carry the App Group -- a profile created before
-            # the capability was enabled silently lacks it and fails to sign.
+            # the profile must carry the App Group. A profile minted before the
+            # capability was enabled lacks the entitlement; archive would catch
+            # it, but four minutes later and behind a wall of signing errors.
+            # Failing here names the offending profile and the fix directly.
             printf "installed %-32s uuid=%s\n" "'$NAME'" "$UUID"
             if echo "$PLIST" | grep -q "group.com.max.PeakForm"; then
               echo "    app group: present"
             else
-              echo "    app group: MISSING -- recreate this profile after enabling App Groups"
+              echo "    app group: MISSING in '$NAME'" >&2
+              echo "    enable App Groups on this profile's App ID, then regenerate it" >&2
+              exit 1
             fi
           done
           rm -rf "$TMP"
