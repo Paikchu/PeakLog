@@ -1,141 +1,62 @@
-import Foundation
 import Combine
+import Foundation
 
-/// Bridges the `@MainActor` auth manager to the `Sendable` `TokenProviding`
-/// seam the data layer expects. Holding the manager (itself `Sendable`) is safe;
-/// the `await` hops to the main actor for the actual refresh.
 private struct AuthTokenProvider: TokenProviding {
     let auth: AuthStateManager
+
     func validToken() async throws -> String {
         try await auth.validToken()
     }
 }
 
-/// The app's authentication gate state. `RootView` renders off this.
 enum AuthGateState: Equatable {
-    /// Restoring a persisted session on launch — show a splash, not the login.
     case checking
-    /// No valid session — show `AuthView`.
     case signedOut
-    /// Authenticated against Supabase — show the app, sync is allowed.
     case signedIn(AuthedUser)
-    /// DEBUG-only local mode: seed data, no cloud, no sync. Never reachable in
-    /// release builds. Lets development iterate without a live account.
     case localOnly
 }
 
-/// Owns the session lifecycle: restore on launch, sign in / out, refresh.
-/// Provider-agnostic — it drives `AuthProviding` and never mentions Supabase.
 @MainActor
 final class AuthStateManager: ObservableObject {
     @Published private(set) var state: AuthGateState = .checking
-    @Published private(set) var isBusy: Bool = false
+    @Published private(set) var isBusy = false
     @Published var errorMessage: String?
 
     private let provider: AuthProviding
-    private let store: AuthSessionStoring
-    private var session: AuthSession?
-    private var refreshTask: Task<AuthSession, Error>?
+    private var eventTask: Task<Void, Never>?
 
-    init(
-        provider: AuthProviding = SupabaseAuthProvider(),
-        store: AuthSessionStoring = KeychainAuthSessionStore()
-    ) {
+    init(provider: AuthProviding = SupabaseAuthProvider()) {
         self.provider = provider
-        self.store = store
     }
 
-    /// The RLS subject for the signed-in user, if any. Step 4's remote services
-    /// read this to scope requests.
+    deinit {
+        eventTask?.cancel()
+    }
+
     var currentUserId: String? {
         if case let .signedIn(user) = state { return user.id }
         return nil
     }
 
-    // MARK: - Launch restore
-
-    /// Restore a persisted session. Valid → straight in; expired → refresh.
-    /// A refresh that fails because the refresh token was rejected
-    /// (`invalidCredentials`) → signed out. A refresh that fails for any other
-    /// reason (network/server/transport) → keep the cached session rather than
-    /// force a logout while offline. Nothing stored → signed out.
-    func restore(now: Date = Date()) async {
-        guard let stored = store.load() else {
+    func restore() async {
+        observeProvider()
+        if let user = await provider.restoreUser() {
+            state = .signedIn(user)
+        } else {
             state = .signedOut
-            return
-        }
-
-        if !stored.isExpired(now: now) {
-            session = stored
-            state = .signedIn(stored.user)
-            return
-        }
-
-        do {
-            let refreshed = try await provider.refresh(refreshToken: stored.refreshToken)
-            persist(refreshed)
-        } catch AuthError.invalidCredentials {
-            // The refresh token itself was rejected (revoked/expired server-side).
-            // This is the only case where forcing a sign-out is correct.
-            store.clear()
-            session = nil
-            state = .signedOut
-        } catch {
-            // Network/server/transport failure: we can't confirm the session is
-            // actually invalid, so don't clear it or kick the user to the login
-            // screen. Keep the last-known session and surface the app as signed
-            // in; the next `validToken()` call naturally retries the refresh.
-            session = stored
-            state = .signedIn(stored.user)
         }
     }
 
-    // MARK: - Token vending
-
-    /// A valid access token, refreshed if the cached one is within the skew
-    /// window. Throws `.invalidCredentials` if there is no session or the
-    /// refresh token was rejected — the caller should treat that as
-    /// signed-out. A network/server/transport failure keeps the cached
-    /// session intact and rethrows the original error so the caller can
-    /// retry later instead of being forced out.
-    func validToken(now: Date = Date()) async throws -> String {
-        guard let current = session else { throw AuthError.invalidCredentials }
-        if !current.isExpired(now: now) { return current.accessToken }
-
+    func validToken() async throws -> String {
         do {
-            if let refreshTask {
-                let refreshed = try await refreshTask.value
-                persist(refreshed)
-                return refreshed.accessToken
-            } else {
-                let provider = provider
-                let token = current.refreshToken
-                let task = Task { try await provider.refresh(refreshToken: token) }
-                refreshTask = task
-                defer { refreshTask = nil }
-                let refreshed = try await task.value
-                persist(refreshed)
-                return refreshed.accessToken
-            }
-        } catch AuthError.invalidCredentials {
-            // The refresh token itself was rejected (revoked/expired
-            // server-side). This is the only case where forcing a sign-out
-            // is correct.
-            if session?.refreshToken == current.refreshToken {
-                store.clear()
-                session = nil
-                state = .signedOut
-            }
-            throw AuthError.invalidCredentials
+            return try await provider.validToken()
+        } catch AppAuthError.invalidCredentials {
+            state = .signedOut
+            throw AppAuthError.invalidCredentials
         } catch {
-            // Network/server/transport failure: we can't confirm the
-            // session is actually invalid, so don't clear it or sign the
-            // user out. Keep the cached session and let the caller retry.
             throw error
         }
     }
-
-    // MARK: - Sign in / out
 
     func signIn(email: String, password: String) async {
         guard !isBusy else { return }
@@ -151,9 +72,10 @@ final class AuthStateManager: ObservableObject {
         defer { isBusy = false }
 
         do {
-            let newSession = try await provider.signIn(email: trimmedEmail, password: password)
-            persist(newSession)
-        } catch let error as AuthError {
+            state = .signedIn(
+                try await provider.signIn(email: trimmedEmail, password: password)
+            )
+        } catch let error as AppAuthError {
             errorMessage = message(for: error)
         } catch {
             errorMessage = message(for: .network)
@@ -161,38 +83,45 @@ final class AuthStateManager: ObservableObject {
     }
 
     func signOut() async {
-        if let token = session?.accessToken {
-            await provider.signOut(accessToken: token)
-        }
-        store.clear()
-        session = nil
+        await provider.signOut()
         errorMessage = nil
         state = .signedOut
     }
 
     #if DEBUG
-    /// Enter local seed-data mode without authenticating. DEBUG only.
     func enterLocalMode() {
         errorMessage = nil
         state = .localOnly
     }
     #endif
 
-    // MARK: - Helpers
-
-    private func persist(_ newSession: AuthSession) {
-        session = newSession
-        store.save(newSession)
-        state = .signedIn(newSession.user)
-    }
-
-    /// A `Sendable` token source the background data layer can hold without
-    /// capturing the `@MainActor` manager's mutable state directly.
     func makeTokenProvider() -> TokenProviding {
         AuthTokenProvider(auth: self)
     }
 
-    private func message(for error: AuthError) -> String {
+    private func observeProvider() {
+        guard eventTask == nil else { return }
+        let changes = provider.stateChanges()
+        eventTask = Task { [weak self] in
+            for await event in changes {
+                guard !Task.isCancelled else { return }
+                self?.apply(event)
+            }
+        }
+    }
+
+    private func apply(_ event: AuthProviderEvent) {
+        switch event {
+        case .initialSession(let user):
+            state = user.map(AuthGateState.signedIn) ?? .signedOut
+        case .signedIn(let user), .tokenRefreshed(let user):
+            state = .signedIn(user)
+        case .signedOut:
+            state = .signedOut
+        }
+    }
+
+    private func message(for error: AppAuthError) -> String {
         switch error {
         case .invalidCredentials:
             return String(localized: "auth.error.invalid_credentials")

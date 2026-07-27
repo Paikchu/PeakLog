@@ -57,10 +57,14 @@ nonisolated struct SupabaseClientFactory: Sendable {
     }
 
     private static func makeSession(timeout: TimeInterval) -> URLSession {
+        URLSession(configuration: sessionConfiguration(timeout: timeout))
+    }
+
+    static func sessionConfiguration(timeout: TimeInterval) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout
-        return URLSession(configuration: configuration)
+        return configuration
     }
 }
 

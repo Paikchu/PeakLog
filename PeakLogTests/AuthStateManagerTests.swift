@@ -2,202 +2,182 @@ import XCTest
 @testable import PeakLog
 
 final class AuthStateManagerTests: XCTestCase {
-    func testConcurrentExpiredTokenRequestsUseOneRefresh() async throws {
-        let oldSession = session(accessToken: "expired", refreshToken: "refresh-old", expiresAt: 1)
-        let refreshedSession = session(accessToken: "fresh", refreshToken: "refresh-new", expiresAt: 20_000)
-        let gate = RefreshGate()
-        let provider = RefreshingProvider(gate: gate)
-        let manager = await AuthStateManager(
-            provider: provider,
-            store: InMemoryAuthSessionStore(seed: oldSession)
-        )
+    func testRestoreUsesProviderSession() async {
+        let provider = TestAuthProvider(restoredUser: .fixture)
+        let manager = await AuthStateManager(provider: provider)
 
-        await manager.restore(now: Date(timeIntervalSince1970: 0))
-        let refreshNow = Date(timeIntervalSince1970: 10_000)
-        async let first = manager.validToken(now: refreshNow)
-        await gate.waitForRefresh()
-        async let second = manager.validToken(now: refreshNow)
-        await Task.yield()
+        await manager.restore()
 
-        let refreshCountBeforeCompletion = await gate.refreshCount()
-        XCTAssertEqual(refreshCountBeforeCompletion, 1)
-        await gate.complete(with: refreshedSession)
-        let firstToken = try await first
-        let secondToken = try await second
-        let refreshCountAfterCompletion = await gate.refreshCount()
-        XCTAssertEqual(firstToken, "fresh")
-        XCTAssertEqual(secondToken, "fresh")
-        XCTAssertEqual(refreshCountAfterCompletion, 1)
+        let state = await manager.state
+        XCTAssertEqual(state, .signedIn(.fixture))
     }
 
-    // MARK: - Issue #9: signIn isBusy guard
+    func testRestoreWithoutProviderSessionSignsOut() async {
+        let provider = TestAuthProvider(restoredUser: nil)
+        let manager = await AuthStateManager(provider: provider)
 
-    func testSignInGuardsAgainstDoubleSubmission() async throws {
+        await manager.restore()
+
+        let state = await manager.state
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    func testSignedOutEventClosesTheAuthGate() async {
+        let provider = TestAuthProvider(restoredUser: .fixture)
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        provider.emit(.signedOut)
+
+        await waitUntil { await manager.state == .signedOut }
+        let state = await manager.state
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    func testValidTokenNetworkFailureKeepsSignedInState() async {
+        let provider = TestAuthProvider(restoredUser: .fixture, tokenError: .network)
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        do {
+            _ = try await manager.validToken()
+            XCTFail("Expected the network failure")
+        } catch AppAuthError.network {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let state = await manager.state
+        XCTAssertEqual(state, .signedIn(.fixture))
+    }
+
+    func testValidTokenRejectedRefreshSignsOut() async {
+        let provider = TestAuthProvider(restoredUser: .fixture, tokenError: .invalidCredentials)
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        do {
+            _ = try await manager.validToken()
+            XCTFail("Expected invalid credentials")
+        } catch AppAuthError.invalidCredentials {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let state = await manager.state
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    func testSignInGuardsAgainstDoubleSubmission() async {
         let gate = SignInGate()
-        let provider = GatedSignInProvider(gate: gate)
-        let manager = await AuthStateManager(
-            provider: provider,
-            store: InMemoryAuthSessionStore()
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            signIn: { _, _ in try await gate.signIn() }
         )
+        let manager = await AuthStateManager(provider: provider)
 
         async let first: Void = manager.signIn(email: "user@example.com", password: "password")
         await gate.waitForSignIn()
-        // The manager is already `isBusy` at this point (set synchronously
-        // before the first `await`), so this second call must bail out
-        // immediately without invoking the provider again.
         async let second: Void = manager.signIn(email: "user@example.com", password: "password")
         await Task.yield()
 
         let callsBeforeCompletion = await gate.callCount()
         XCTAssertEqual(callsBeforeCompletion, 1)
-
-        await gate.complete(with: session(accessToken: "fresh", refreshToken: "refresh-new", expiresAt: 20_000))
-        _ = await first
-        _ = await second
+        await gate.complete(with: .fixture)
+        _ = await (first, second)
 
         let callsAfterCompletion = await gate.callCount()
+        let state = await manager.state
         XCTAssertEqual(callsAfterCompletion, 1)
-
-        let state = await manager.state
-        guard case .signedIn(let user) = state else {
-            XCTFail("Expected signedIn state after the single successful sign-in")
-            return
-        }
-        XCTAssertEqual(user.id, "user-1")
+        XCTAssertEqual(state, .signedIn(.fixture))
     }
 
-    // MARK: - Issue #10: restore() network-vs-invalidCredentials handling
+    func testSignOutAlwaysClosesTheLocalGate() async {
+        let provider = TestAuthProvider(restoredUser: .fixture)
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
 
-    func testRestoreKeepsLocalSessionOnNetworkFailure() async throws {
-        let expired = session(accessToken: "expired", refreshToken: "refresh-1", expiresAt: 1)
-        let store = InMemoryAuthSessionStore(seed: expired)
-        let manager = await AuthStateManager(
-            provider: FailingRefreshProvider(error: AuthError.network),
-            store: store
-        )
+        await manager.signOut()
 
-        await manager.restore(now: Date(timeIntervalSince1970: 10_000))
-
-        let state = await manager.state
-        guard case .signedIn(let user) = state else {
-            XCTFail("Expected signedIn state to be preserved on a network failure")
-            return
-        }
-        XCTAssertEqual(user.id, "user-1")
-        XCTAssertNotNil(store.load(), "Local session must not be cleared on a network failure")
-
-        // The still-expired session should be retried (not just discarded) on
-        // the next token vend.
-        do {
-            _ = try await manager.validToken(now: Date(timeIntervalSince1970: 10_000))
-            XCTFail("Expected validToken to retry the refresh and fail again while offline")
-        } catch {
-            // Expected: the underlying provider still fails.
-        }
-    }
-
-    func testRestoreSignsOutOnInvalidCredentials() async throws {
-        let expired = session(accessToken: "expired", refreshToken: "refresh-1", expiresAt: 1)
-        let store = InMemoryAuthSessionStore(seed: expired)
-        let manager = await AuthStateManager(
-            provider: FailingRefreshProvider(error: AuthError.invalidCredentials),
-            store: store
-        )
-
-        await manager.restore(now: Date(timeIntervalSince1970: 10_000))
-
+        XCTAssertEqual(provider.signOutCallCount, 1)
         let state = await manager.state
         XCTAssertEqual(state, .signedOut)
-        XCTAssertNil(store.load(), "Local session must be cleared when the refresh token is rejected")
     }
 
-    // MARK: - validToken() network-vs-invalidCredentials handling
-
-    func testValidTokenKeepsSessionOnNetworkFailure() async throws {
-        // expiresAt is chosen so the session is still valid at `restore`'s
-        // `now` (avoiding restore's own, separately-tracked refresh path)
-        // but expired by the time `validToken` is called.
-        let expired = session(accessToken: "expired", refreshToken: "refresh-1", expiresAt: 5_000)
-        let store = InMemoryAuthSessionStore(seed: expired)
-        let manager = await AuthStateManager(
-            provider: FailingRefreshProvider(error: AuthError.network),
-            store: store
-        )
-
-        await manager.restore(now: Date(timeIntervalSince1970: 0))
-
-        do {
-            _ = try await manager.validToken(now: Date(timeIntervalSince1970: 10_000))
-            XCTFail("Expected validToken to rethrow the network failure")
-        } catch AuthError.network {
-            // Expected.
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        condition: @escaping @Sendable () async -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return }
+            await Task.yield()
         }
-
-        let state = await manager.state
-        guard case .signedIn(let user) = state else {
-            XCTFail("Expected signedIn state to be preserved on a network failure")
-            return
-        }
-        XCTAssertEqual(user.id, "user-1")
-        XCTAssertNotNil(store.load(), "Local session must not be cleared on a network failure")
-    }
-
-    func testValidTokenSignsOutOnInvalidCredentials() async throws {
-        let expired = session(accessToken: "expired", refreshToken: "refresh-1", expiresAt: 5_000)
-        let store = InMemoryAuthSessionStore(seed: expired)
-        let manager = await AuthStateManager(
-            provider: FailingRefreshProvider(error: AuthError.invalidCredentials),
-            store: store
-        )
-
-        await manager.restore(now: Date(timeIntervalSince1970: 0))
-
-        do {
-            _ = try await manager.validToken(now: Date(timeIntervalSince1970: 10_000))
-            XCTFail("Expected validToken to throw invalidCredentials")
-        } catch AuthError.invalidCredentials {
-            // Expected.
-        }
-
-        let state = await manager.state
-        XCTAssertEqual(state, .signedOut)
-        XCTAssertNil(store.load(), "Local session must be cleared when the refresh token is rejected")
-    }
-
-    private func session(accessToken: String, refreshToken: String, expiresAt: TimeInterval) -> AuthSession {
-        AuthSession(
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-            expiresAt: Date(timeIntervalSince1970: expiresAt),
-            user: AuthedUser(id: "user-1", email: "user@example.com")
-        )
     }
 }
 
-private struct FailingRefreshProvider: AuthProviding {
-    let error: AuthError
-
-    func signIn(email: String, password: String) async throws -> AuthSession { throw AuthError.network }
-    func refresh(refreshToken: String) async throws -> AuthSession { throw error }
-    func signOut(accessToken: String) async {}
+private extension AuthedUser {
+    static let fixture = AuthedUser(id: "user-1", email: "user@example.com")
 }
 
-private struct GatedSignInProvider: AuthProviding {
-    let gate: SignInGate
+private final class TestAuthProvider: AuthProviding, @unchecked Sendable {
+    private let restoredUser: AuthedUser?
+    private let tokenError: AppAuthError?
+    private let signInHandler: @Sendable (String, String) async throws -> AuthedUser
+    private let stream: AsyncStream<AuthProviderEvent>
+    private let continuation: AsyncStream<AuthProviderEvent>.Continuation
+    private let lock = NSLock()
+    private var _signOutCallCount = 0
 
-    func signIn(email: String, password: String) async throws -> AuthSession {
-        try await gate.signIn()
+    init(
+        restoredUser: AuthedUser?,
+        tokenError: AppAuthError? = nil,
+        signIn: @escaping @Sendable (String, String) async throws -> AuthedUser = { _, _ in .fixture }
+    ) {
+        self.restoredUser = restoredUser
+        self.tokenError = tokenError
+        self.signInHandler = signIn
+        (stream, continuation) = AsyncStream.makeStream()
     }
-    func refresh(refreshToken: String) async throws -> AuthSession { throw AuthError.network }
-    func signOut(accessToken: String) async {}
+
+    var signOutCallCount: Int {
+        lock.withLock { _signOutCallCount }
+    }
+
+    func restoreUser() async -> AuthedUser? {
+        restoredUser
+    }
+
+    func stateChanges() -> AsyncStream<AuthProviderEvent> {
+        stream
+    }
+
+    func signIn(email: String, password: String) async throws -> AuthedUser {
+        try await signInHandler(email, password)
+    }
+
+    func signOut() async {
+        lock.withLock {
+            _signOutCallCount += 1
+        }
+    }
+
+    func validToken() async throws -> String {
+        if let tokenError { throw tokenError }
+        return "token"
+    }
+
+    func emit(_ event: AuthProviderEvent) {
+        continuation.yield(event)
+    }
 }
 
 private actor SignInGate {
     private var count = 0
-    private var waiter: CheckedContinuation<AuthSession, Error>?
+    private var waiter: CheckedContinuation<AuthedUser, Error>?
     private var signInStarted: CheckedContinuation<Void, Never>?
 
-    func signIn() async throws -> AuthSession {
+    func signIn() async throws -> AuthedUser {
         count += 1
         signInStarted?.resume()
         signInStarted = nil
@@ -209,43 +189,12 @@ private actor SignInGate {
         await withCheckedContinuation { signInStarted = $0 }
     }
 
-    func complete(with session: AuthSession) {
-        waiter?.resume(returning: session)
+    func complete(with user: AuthedUser) {
+        waiter?.resume(returning: user)
         waiter = nil
     }
 
-    func callCount() -> Int { count }
-}
-
-private struct RefreshingProvider: AuthProviding {
-    let gate: RefreshGate
-
-    func signIn(email: String, password: String) async throws -> AuthSession { throw AuthError.network }
-    func refresh(refreshToken: String) async throws -> AuthSession { try await gate.refresh() }
-    func signOut(accessToken: String) async {}
-}
-
-private actor RefreshGate {
-    private var count = 0
-    private var waiter: CheckedContinuation<AuthSession, Error>?
-    private var refreshStarted: CheckedContinuation<Void, Never>?
-
-    func refresh() async throws -> AuthSession {
-        count += 1
-        refreshStarted?.resume()
-        refreshStarted = nil
-        return try await withCheckedThrowingContinuation { waiter = $0 }
+    func callCount() -> Int {
+        count
     }
-
-    func waitForRefresh() async {
-        if count > 0 { return }
-        await withCheckedContinuation { refreshStarted = $0 }
-    }
-
-    func complete(with session: AuthSession) {
-        waiter?.resume(returning: session)
-        waiter = nil
-    }
-
-    func refreshCount() -> Int { count }
 }

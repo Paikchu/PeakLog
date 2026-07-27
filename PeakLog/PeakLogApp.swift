@@ -6,8 +6,15 @@ struct PeakLogApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var localizationManager = LocalizationManager()
-    @StateObject private var authManager = AuthStateManager()
-    @StateObject private var syncController = CloudSyncController()
+    @StateObject private var authManager: AuthStateManager
+    @StateObject private var syncController: CloudSyncController
+
+    init() {
+        let factory = SupabaseClientFactory()
+        let provider = SupabaseAuthProvider(client: factory.makeAuthClient())
+        _authManager = StateObject(wrappedValue: AuthStateManager(provider: provider))
+        _syncController = StateObject(wrappedValue: CloudSyncController())
+    }
 
     var body: some Scene {
         WindowGroup {
