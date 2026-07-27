@@ -6,8 +6,6 @@ struct StatCardView: View {
     let value: String
     let label: LocalizedStringKey
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
@@ -29,19 +27,6 @@ struct StatCardView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(
-                    colorScheme == .light ? Color(hex: "#f3f4f6") : Color.clear,
-                    lineWidth: 0.75
-                )
-        )
-        .shadow(
-            color: colorScheme == .light ? Color.black.opacity(0.07) : .clear,
-            radius: 3, x: 0, y: 1
-        )
     }
 }
 

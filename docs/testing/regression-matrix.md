@@ -70,6 +70,7 @@
 | 头像卡片横排展示：头像、昵称、会员等级左对齐一行（含无头像 fallback），不含任何同步状态 | 模拟器手测 | 主路径、空态 |
 | 目标区仅一张「训练目标」入口卡，无独立 Fitness Goal 文本卡；点击可打开 GoalSpecEditor | 模拟器手测 | 主路径 |
 | Profile 各卡片宽度与其他 section 对齐（无双层 padding） | 模拟器手测 | 主路径 |
+| 无点击行为的资料、统计和 PR 列表使用无边框静态样式；真实入口保留卡片与右箭头 | `tests/profile_static_affordance_test.swift`、iPhone 17 Pro Max 浅色/深色模拟器手测 | 主路径、空态 |
 
 ## Exercise Library / Picker
 

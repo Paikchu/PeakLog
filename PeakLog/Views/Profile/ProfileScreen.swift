@@ -5,7 +5,6 @@ struct ProfileScreen: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
     @Environment(\.openURL) private var openURL
-    @Environment(\.colorScheme) private var colorScheme
     @State private var showingWeightUnitPicker = false
     @State private var showingAppearancePicker = false
     @State private var showingGoalSpecEditor = false
@@ -101,7 +100,14 @@ struct ProfileScreen: View {
     private var prSection: some View {
         let prs = viewModel.sortedExercisePRs
         if !prs.isEmpty {
-            SettingsSection(title: "PRs") {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("PRs")
+                    .appFont(size: 11, weight: .semibold)
+                    .foregroundColor(.textMuted)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 6)
+                    .textCase(.uppercase)
+
                 ForEach(Array(prs.enumerated()), id: \.element.id) { index, pr in
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -129,21 +135,21 @@ struct ProfileScreen: View {
                     }
                 }
             }
+            .padding(.horizontal, 16)
         }
     }
 
     // MARK: - Header
     private var header: some View {
         RootPageHeader(title: String(localized: "profile.title"))
+            .padding(.top, 16)
     }
 
     // MARK: - Avatar
     private var avatarSection: some View {
         HStack(spacing: 14) {
             if viewModel.isLoading {
-                // Skeleton fill must contrast with the enclosing appSurface
-                // card in BOTH themes: appSurface would vanish into the card,
-                // and appBackground is darker than the card in dark mode.
+                // Keep the loading avatar visible against both page themes.
                 Circle()
                     .fill(Color.appSeparator)
                     .frame(width: 52, height: 52)
@@ -163,7 +169,6 @@ struct ProfileScreen: View {
                 }
                 .frame(width: 52, height: 52)
                 .clipShape(Circle())
-                .overlay(Circle().strokeBorder(Color.accentBorder.opacity(0.5), lineWidth: 2))
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -180,16 +185,6 @@ struct ProfileScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(Color.appSeparator, lineWidth: 0.5)
-        )
-        .shadow(
-            color: colorScheme == .light ? Color.black.opacity(0.06) : .clear,
-            radius: 3, x: 0, y: 1
-        )
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
