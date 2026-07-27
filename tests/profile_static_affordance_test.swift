@@ -54,15 +54,23 @@ let support = section(
     from: "private var supportSection",
     to: "private var mediaCredit"
 )
+let mediaCredit = section(
+    in: profile,
+    from: "private var mediaCredit",
+    to: "private func openAppSettings"
+)
 
 precondition(
-    header.contains(".padding(.top, 16)")
-        && avatar.contains(".padding(.horizontal, 20)")
+    header.contains(".appFont(size: 32, weight: .bold, relativeTo: .largeTitle)")
+        && header.contains(".padding(.horizontal, ProfileLayout.horizontalPadding)")
+        && header.contains(".padding(.top, 48)")
+        && header.contains(".padding(.bottom, 24)")
+        && avatar.contains(".padding(.horizontal, ProfileLayout.horizontalPadding)")
         && avatar.contains(".frame(width: 56, height: 56)")
         && avatar.contains(".appFont(size: 20, weight: .semibold, relativeTo: .title3)")
         && avatar.contains(".appFont(size: 14, relativeTo: .subheadline)")
-        && avatar.contains(".padding(.top, 16)")
-        && avatar.contains(".padding(.bottom, 8)"),
+        && !avatar.contains(".padding(.top")
+        && !avatar.contains(".padding(.bottom"),
     "The profile identity must use the coordinated A2 type scale, avatar size, and insets"
 )
 precondition(
@@ -73,10 +81,16 @@ precondition(
 )
 precondition(
     stats.contains("struct ProfilePerformanceDashboard")
+        && stats.contains("static let horizontalPadding: CGFloat = 20")
+        && stats.contains("static let sectionSpacing: CGFloat = 32")
+        && stats.contains("static let cardRadius: CGFloat = 18")
         && stats.contains("ProfileMetricRow")
         && stats.contains("Divider()")
         && stats.contains(".background(Color.appSurface)")
-        && stats.contains(".cornerRadius(AppRadius.xl)")
+        && stats.contains(".cornerRadius(ProfileLayout.cardRadius)")
+        && stats.contains(".appFont(size: 32, weight: .bold")
+        && stats.contains(".appFont(size: 16, weight: .bold")
+        && stats.contains(".frame(minHeight: 144)")
         && !stats.contains(".strokeBorder")
         && !stats.contains(".shadow("),
     "Statistics must use one borderless A2 split dashboard"
@@ -102,10 +116,23 @@ precondition(
         && preferences.contains("Image(systemName: \"chevron.right\")")
         && goal.contains("ProfileGoalButton")
         && !goal.contains("SettingsSection(")
+        && preferenceList.contains("style: .profile")
+        && preferenceList.contains(".padding(.leading, 48)")
+        && preferenceList.contains("showsBorder: false")
         && preferenceList.contains("PreferenceNavRow(")
         && preferenceList.contains("PreferenceToggleRow(")
-        && support.contains("PreferenceNavRow("),
+        && support.contains("PreferenceNavRow(")
+        && support.contains("style: .profile")
+        && support.contains(".padding(.leading, 48)")
+        && support.contains("showsBorder: false"),
     "Goal, preference, and support rows must retain their interactive disclosure affordance"
+)
+precondition(
+    mediaCredit.contains("Link(urlString, destination:")
+        && mediaCredit.contains(".foregroundColor(.blue)")
+        && !mediaCredit.contains(".background(")
+        && !mediaCredit.contains(".strokeBorder"),
+    "The blue Gym visual URL must be a real link without a card affordance"
 )
 
 print("profile_static_affordance_test passed")

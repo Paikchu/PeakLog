@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum ProfileLayout {
+    static let horizontalPadding: CGFloat = 20
+    static let sectionSpacing: CGFloat = 32
+    static let cardRadius: CGFloat = 18
+}
+
 struct ProfilePerformanceDashboard: View {
     let volume: String
     let workouts: String
@@ -25,14 +31,14 @@ struct ProfilePerformanceDashboard: View {
 
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(volumeParts.value)
-                        .appFont(size: 30, weight: .bold, design: .rounded, relativeTo: .title)
+                        .appFont(size: 32, weight: .bold, design: .rounded, relativeTo: .title)
                         .foregroundColor(.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
 
                     if !volumeParts.unit.isEmpty {
                         Text(volumeParts.unit)
-                            .appFont(size: 15, weight: .bold, design: .rounded, relativeTo: .body)
+                            .appFont(size: 16, weight: .bold, design: .rounded, relativeTo: .body)
                             .foregroundColor(.accentValue)
                     }
                 }
@@ -58,8 +64,9 @@ struct ProfilePerformanceDashboard: View {
             .frame(maxWidth: .infinity)
         }
         .padding(20)
+        .frame(minHeight: 144)
         .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
+        .cornerRadius(ProfileLayout.cardRadius)
     }
 }
 

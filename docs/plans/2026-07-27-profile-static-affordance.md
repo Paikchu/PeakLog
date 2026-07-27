@@ -3,12 +3,14 @@
 ## 改动边界
 
 - `PeakLog/Views/Profile/ProfileScreen.swift`
-  - 保留标题顶部留白，按 A2 调整资料信息、训练目标和区块间距。
+  - 按 A2 对齐 32pt 标题、资料信息、训练目标和 32pt 区块间距。
   - 使用单一统计仪表盘替代四个并列统计项。
   - 将 PR 列表改为带上下分隔线的静态分组。
 - `PeakLog/Views/Profile/StatCardView.swift`
   - 将旧统计卡组件替换为 A2 左右分栏仪表盘。
   - 左侧展示总训练量，右侧展示三行紧凑指标，不提供点击行为。
+- `PeakLog/Views/Profile/PreferenceRowView.swift`
+  - 为个人资料页提供 A2 的 17pt/15pt 行字号、20pt 图标与无边框 18pt 分组样式，同时保留其他页面默认值。
 - `tests/profile_static_affordance_test.swift`
   - 锁定 A2 分栏结构、静态元素和真实入口的视觉语义边界。
 

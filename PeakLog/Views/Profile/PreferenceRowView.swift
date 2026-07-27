@@ -1,5 +1,32 @@
 import SwiftUI
 
+struct PreferenceRowStyle {
+    let contentSpacing: CGFloat
+    let iconSize: CGFloat
+    let titleFont: AppFont
+    let valueFont: AppFont
+    let verticalPadding: CGFloat
+    let chevronSize: CGFloat
+
+    static let standard = PreferenceRowStyle(
+        contentSpacing: 14,
+        iconSize: 16,
+        titleFont: .settingTitle,
+        valueFont: .settingValue,
+        verticalPadding: 14,
+        chevronSize: 12
+    )
+
+    static let profile = PreferenceRowStyle(
+        contentSpacing: 12,
+        iconSize: 20,
+        titleFont: AppFont(size: 17, weight: .medium, relativeTo: .body),
+        valueFont: AppFont(size: 15, relativeTo: .subheadline),
+        verticalPadding: 11,
+        chevronSize: 18
+    )
+}
+
 // MARK: - Toggle Preference Row
 struct PreferenceToggleRow: View {
     let icon: String
@@ -7,16 +34,17 @@ struct PreferenceToggleRow: View {
     @Binding var isOn: Bool
     var isLoading: Bool = false
     var onChange: ((Bool) -> Void)? = nil
+    var style: PreferenceRowStyle = .standard
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: style.contentSpacing) {
             Image(systemName: icon)
-                .appFont(size: 16)
+                .appFont(size: style.iconSize)
                 .foregroundColor(.textSecondary)
                 .frame(width: 24)
 
             Text(title)
-                .appFont(.settingTitle)
+                .appFont(style.titleFont)
                 .foregroundColor(.textPrimary)
 
             Spacer()
@@ -26,16 +54,16 @@ struct PreferenceToggleRow: View {
                     .scaleEffect(0.7)
             } else {
                 Text(isOn ? "common.on" : "common.off")
-                    .appFont(.settingValue)
+                    .appFont(style.valueFont)
                     .foregroundColor(.textMuted)
 
                 Image(systemName: "chevron.right")
-                    .appFont(size: 12, weight: .semibold)
+                    .appFont(size: style.chevronSize, weight: .semibold)
                     .foregroundColor(.textDarkMuted)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, style.verticalPadding)
         .contentShape(Rectangle())
         .onTapGesture {
             isOn.toggle()
@@ -49,34 +77,35 @@ struct PreferenceNavRow: View {
     let icon: String
     let title: LocalizedStringKey
     var detail: String? = nil
+    var style: PreferenceRowStyle = .standard
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
+            HStack(spacing: style.contentSpacing) {
                 Image(systemName: icon)
-                    .appFont(size: 16)
+                    .appFont(size: style.iconSize)
                     .foregroundColor(.textSecondary)
                     .frame(width: 24)
 
                 Text(title)
-                    .appFont(.settingTitle)
+                    .appFont(style.titleFont)
                     .foregroundColor(.textPrimary)
 
                 Spacer()
 
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .appFont(.settingValue)
+                        .appFont(style.valueFont)
                         .foregroundColor(.textMuted)
                 }
 
                 Image(systemName: "chevron.right")
-                    .appFont(size: 12, weight: .semibold)
+                    .appFont(size: style.chevronSize, weight: .semibold)
                     .foregroundColor(.textDarkMuted)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.vertical, style.verticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -86,7 +115,11 @@ struct PreferenceNavRow: View {
 // MARK: - Section Container
 struct SettingsSection<Content: View>: View {
     let title: LocalizedStringKey
-    @ViewBuilder var content: Content
+    var horizontalPadding: CGFloat = 16
+    var titleHorizontalPadding: CGFloat = 20
+    var cornerRadius: CGFloat = AppRadius.xl
+    var showsBorder = true
+    @ViewBuilder var content: () -> Content
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -95,24 +128,28 @@ struct SettingsSection<Content: View>: View {
             Text(title)
                 .appFont(size: 11, weight: .semibold)
                 .foregroundColor(.textMuted)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, titleHorizontalPadding)
                 .padding(.bottom, 6)
                 .textCase(.uppercase)
 
             VStack(spacing: 0) {
-                content
+                content()
             }
             .background(Color.appSurface)
-            .cornerRadius(AppRadius.xl)
+            .cornerRadius(cornerRadius)
             .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.xl)
-                    .strokeBorder(Color.appSeparator, lineWidth: 0.5)
+                Group {
+                    if showsBorder {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .strokeBorder(Color.appSeparator, lineWidth: 0.5)
+                    }
+                }
             )
             .shadow(
-                color: colorScheme == .light ? Color.black.opacity(0.06) : .clear,
+                color: showsBorder && colorScheme == .light ? Color.black.opacity(0.06) : .clear,
                 radius: 3, x: 0, y: 1
             )
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, horizontalPadding)
     }
 }

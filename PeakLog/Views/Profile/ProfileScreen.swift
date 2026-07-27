@@ -35,7 +35,7 @@ struct ProfileScreen: View {
                     emptyState
                         .padding(.bottom, 40)
                 } else {
-                    VStack(spacing: 24) {
+                    VStack(spacing: ProfileLayout.sectionSpacing) {
                         avatarSection
                         goalSection
                         statsSection
@@ -105,8 +105,9 @@ struct ProfileScreen: View {
                     .appFont(size: 11, weight: .semibold)
                     .foregroundColor(.textMuted)
                     .padding(.horizontal, 4)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 8)
                     .textCase(.uppercase)
+                    .tracking(0.5)
 
                 Divider()
                     .background(Color.appSeparator)
@@ -140,14 +141,19 @@ struct ProfileScreen: View {
                 Divider()
                     .background(Color.appSeparator)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, ProfileLayout.horizontalPadding)
         }
     }
 
     // MARK: - Header
     private var header: some View {
-        RootPageHeader(title: String(localized: "profile.title"))
-            .padding(.top, 16)
+        Text("profile.title")
+            .appFont(size: 32, weight: .bold, relativeTo: .largeTitle)
+            .foregroundColor(.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, ProfileLayout.horizontalPadding)
+            .padding(.top, 48)
+            .padding(.bottom, 24)
     }
 
     // MARK: - Avatar
@@ -192,16 +198,14 @@ struct ProfileScreen: View {
 
             Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
+        .padding(.horizontal, ProfileLayout.horizontalPadding)
     }
 
     private var goalSection: some View {
         ProfileGoalButton {
             showingGoalSpecEditor = true
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ProfileLayout.horizontalPadding)
     }
 
     // MARK: - Stats
@@ -212,30 +216,38 @@ struct ProfileScreen: View {
             streak: "\(viewModel.profile?.stats.streakDays ?? 0)d",
             personalRecords: "\(viewModel.profile?.stats.prCount ?? 0)"
         )
-        .padding(.horizontal, 16)
+        .padding(.horizontal, ProfileLayout.horizontalPadding)
     }
 
     // MARK: - Preferences
     @ViewBuilder
     private var preferencesSection: some View {
         if let prefs = viewModel.profile?.preferences {
-            SettingsSection(title: "profile.section.preferences") {
+            SettingsSection(
+                title: "profile.section.preferences",
+                horizontalPadding: ProfileLayout.horizontalPadding,
+                titleHorizontalPadding: 0,
+                cornerRadius: ProfileLayout.cardRadius,
+                showsBorder: false
+            ) {
                 PreferenceNavRow(
-                    icon: "globe",
+                    icon: "character",
                     title: "profile.preferences.language",
-                    detail: localizationManager.appLanguage.nativeDisplayName
+                    detail: localizationManager.appLanguage.nativeDisplayName,
+                    style: .profile
                 ) {
                     openAppSettings()
                 }
 
                 Divider()
                     .background(Color.appSeparator)
-                    .padding(.horizontal, 16)
+                    .padding(.leading, 48)
 
                 PreferenceNavRow(
-                    icon: "scalemass",
+                    icon: "ruler",
                     title: "profile.preferences.weight_unit",
-                    detail: prefs.weightUnit.display
+                    detail: prefs.weightUnit.display,
+                    style: .profile
                 ) {
                     showingWeightUnitPicker = true
                 }
@@ -253,7 +265,7 @@ struct ProfileScreen: View {
 
                 Divider()
                     .background(Color.appSeparator)
-                    .padding(.horizontal, 16)
+                    .padding(.leading, 48)
 
                 PreferenceToggleRow(
                     icon: "bell",
@@ -274,20 +286,22 @@ struct ProfileScreen: View {
                             }
                         }
                     ),
-                    isLoading: viewModel.isSaving
+                    isLoading: viewModel.isSaving,
+                    style: .profile
                 )
 
                 Divider()
                     .background(Color.appSeparator)
-                    .padding(.horizontal, 16)
+                    .padding(.leading, 48)
 
                 // Appearance is device-local and owned by ThemeManager
                 // (UserDefaults): it applies synchronously, so there is no
                 // async save to mirror optimistically or roll back.
                 PreferenceNavRow(
-                    icon: "circle.lefthalf.filled",
+                    icon: "moon",
                     title: "profile.preferences.appearance",
-                    detail: themeManager.mode.localizedDisplayName
+                    detail: themeManager.mode.localizedDisplayName,
+                    style: .profile
                 ) {
                     showingAppearancePicker = true
                 }
@@ -308,16 +322,30 @@ struct ProfileScreen: View {
 
     // MARK: - Support
     private var supportSection: some View {
-        SettingsSection(title: "profile.section.support") {
-            PreferenceNavRow(icon: "questionmark.circle", title: "profile.support.help") {
+        SettingsSection(
+            title: "profile.section.support",
+            horizontalPadding: ProfileLayout.horizontalPadding,
+            titleHorizontalPadding: 0,
+            cornerRadius: ProfileLayout.cardRadius,
+            showsBorder: false
+        ) {
+            PreferenceNavRow(
+                icon: "questionmark.circle",
+                title: "profile.support.help",
+                style: .profile
+            ) {
                 showingHelp = true
             }
 
             Divider()
                 .background(Color.appSeparator)
-                .padding(.horizontal, 16)
+                .padding(.leading, 48)
 
-            PreferenceNavRow(icon: "doc.text", title: "profile.support.privacy") {
+            PreferenceNavRow(
+                icon: "shield",
+                title: "profile.support.privacy",
+                style: .profile
+            ) {
                 showingPrivacy = true
             }
         }
@@ -326,11 +354,20 @@ struct ProfileScreen: View {
     /// The bundled exercise demonstrations are licensed media, not ours; the
     /// rights holder requires the credit to travel with them.
     private var mediaCredit: some View {
-        Text("settings.media_credit")
+        let urlString = "https://gymvisual.com/"
+        let credit = String(localized: "settings.media_credit")
+        let prefix = credit.replacingOccurrences(of: urlString, with: "")
+
+        return HStack(spacing: 0) {
+            Text(prefix)
+                .foregroundColor(.textDarkMuted)
+
+            Link(urlString, destination: URL(string: urlString)!)
+                .foregroundColor(.blue)
+        }
             .appFont(size: 11)
-            .foregroundColor(.textDarkMuted)
             .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+            .padding(.top, -16)
     }
 
     private func openAppSettings() {
@@ -404,7 +441,7 @@ private struct ProfileGoalButton: View {
         }
         .buttonStyle(.plain)
         .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
+        .cornerRadius(ProfileLayout.cardRadius)
     }
 }
 
