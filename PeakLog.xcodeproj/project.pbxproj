@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		7A1E10042FC10000004159EF /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7A1E10032FC10000004159EF /* XCTest.framework */; };
 		9A10000C2FC20000004159EF /* PeakLogLiveActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9A1000032FC20000004159EF /* PeakLogLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C0D3A0012FF00000004159EF /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3A0032FF00000004159EF /* Supabase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,6 +91,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0D3A0012FF00000004159EF /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -164,6 +166,7 @@
 			);
 			name = PeakLog;
 			packageProductDependencies = (
+				C0D3A0032FF00000004159EF /* Supabase */,
 			);
 			productName = PeakLog;
 			productReference = 50F962232F6ADDB9004159EF /* PeakLog.app */;
@@ -245,6 +248,7 @@
 			mainGroup = 50F9621A2F6ADDB9004159EF;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				C0D3A0022FF00000004159EF /* XCRemoteSwiftPackageReference "supabase-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 50F962242F6ADDB9004159EF /* Products */;
@@ -318,6 +322,25 @@
 			targetProxy = 9A10000D2FC20000004159EF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C0D3A0022FF00000004159EF /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.53.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C0D3A0032FF00000004159EF /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0D3A0022FF00000004159EF /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		50F9622C2F6ADDBB004159EF /* Debug */ = {

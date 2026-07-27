@@ -47,7 +47,10 @@ final class SupabaseAuthProviderTests: XCTestCase {
         let session = URLSession(configuration: configuration)
 
         return SupabaseAuthProvider(
-            config: SupabaseConfig(url: URL(string: "https://example.supabase.co")!, anonKey: "anon-key"),
+            config: SupabaseConfig(
+                url: URL(string: "https://example.supabase.co")!,
+                publishableKey: "publishable-key"
+            ),
             session: session
         )
     }

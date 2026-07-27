@@ -42,7 +42,7 @@ nonisolated struct PlanReplanService: Sendable {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(RequestBody(

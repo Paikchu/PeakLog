@@ -9,22 +9,25 @@ import Foundation
 /// without a live environment (see `tests/supabase_config_test.swift`).
 nonisolated struct SupabaseConfig: Sendable {
     let url: URL
-    let anonKey: String
+    let publishableKey: String
 
     // Environment override keys, honored in DEBUG-style local runs.
     static let urlOverrideKey = "PEAKLOG_DEBUG_SUPABASE_URL"
-    static let anonKeyOverrideKey = "PEAKLOG_DEBUG_SUPABASE_ANON_KEY"
+    static let publishableKeyOverrideKey = "PEAKLOG_DEBUG_SUPABASE_PUBLISHABLE_KEY"
 
     // Production defaults (project `fqyurmsuvtdafbnynurg`).
     static let productionURL = URL(string: "https://fqyurmsuvtdafbnynurg.supabase.co")!
-    static let productionAnonKey = "sb_publishable_7UeChilW6B8aPscPF9huzg_tXniKGal"
+    static let productionPublishableKey = "sb_publishable_7UeChilW6B8aPscPF9huzg_tXniKGal"
 
     /// The configuration for the current process, applying any debug overrides.
     static var current: SupabaseConfig {
         let environment = ProcessInfo.processInfo.environment
         return SupabaseConfig(
             url: resolveURL(environment: environment, fallback: productionURL),
-            anonKey: resolveAnonKey(environment: environment, fallback: productionAnonKey)
+            publishableKey: resolvePublishableKey(
+                environment: environment,
+                fallback: productionPublishableKey
+            )
         )
     }
 
@@ -36,8 +39,8 @@ nonisolated struct SupabaseConfig: Sendable {
         return override
     }
 
-    static func resolveAnonKey(environment: [String: String], fallback: String) -> String {
-        guard let raw = environment[anonKeyOverrideKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
+    static func resolvePublishableKey(environment: [String: String], fallback: String) -> String {
+        guard let raw = environment[publishableKeyOverrideKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty
         else { return fallback }
         return raw

@@ -145,7 +145,7 @@ nonisolated struct SupabaseDataClient: Sendable {
 
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         return request

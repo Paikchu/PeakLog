@@ -44,7 +44,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = Self.requestTimeout
-        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         // Revocation is best-effort; local teardown proceeds regardless.
         _ = try? await session.data(for: request)
@@ -63,7 +63,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = Self.requestTimeout
-        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue(config.publishableKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
 
