@@ -30,7 +30,7 @@ PeakLog 是一个**本地优先（local-first）的 iOS 健身助手**，采用 
 | 本地存储 | 单一 JSON 文件（`Application Support/PeakLog/peaklog-local-state.json`），由 `actor LocalAppDatabase` 独占访问 |
 | 云端存储 | Supabase Postgres + PostgREST（非 Supabase SDK），RLS |
 | 认证 | Apple OAuth（`config.toml` 启用 `[auth.external.apple]`） |
-| 跨进程共享 | App Group `group.com.max.PeakLog`（UserDefaults）+ App Intents |
+| 跨进程共享 | App Group `group.com.max.PeakForm`（UserDefaults）+ App Intents |
 | 实时能力 | Live Activity / Dynamic Island（Widget Extension） |
 | 测试 | `PeakLogTests`（XCTest，6 文件）+ `tests/`（轻量回归脚本，25 文件） |
 
@@ -169,7 +169,7 @@ CloudSyncController          // 绑定 auth，生命周期 & 前台触发
 - `PlanLiveActivityAttributes.swift` — `ActivityAttributes` + `ContentState`（当前动作、组序号、目标负荷/次数、完成计数），并提供 `contentState(for:completedSetIDs:focusedExerciseID:)` 构造器。
 - `CompletePlanSetIntent.swift` — `LiveActivityIntent`，允许从**锁屏**直接“完成动作”，系统路由回主 App 进程。
 
-二者通过 **App Group `group.com.max.PeakLog` 的 UserDefaults**（`PlanLiveActivitySharedStore`）在 App ↔ Extension 之间传递“已完成组 id / 当前聚焦动作 id”。`PeakLogLiveActivityExtension/` 是独立 Widget 进程，仅负责渲染 Dynamic Island / 锁屏视图与“完成动作”按钮。
+二者通过 **App Group `group.com.max.PeakForm` 的 UserDefaults**（`PlanLiveActivitySharedStore`）在 App ↔ Extension 之间传递“已完成组 id / 当前聚焦动作 id”。`PeakLogLiveActivityExtension/` 是独立 Widget 进程，仅负责渲染 Dynamic Island / 锁屏视图与“完成动作”按钮。
 
 ### 3.7 后端（Supabase）
 

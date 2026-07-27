@@ -96,6 +96,42 @@ jobs:
           echo "$ASC_API_KEY_P8_BASE64" | base64 --decode \
             > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
 
+      # Manual signing: the profiles are supplied, not fetched. Nothing in the
+      # build talks to the provisioning API.
+      - name: Install provisioning profiles
+        env:
+          PROFILE_APP_BASE64: ${{ secrets.PROFILE_APP_BASE64 }}
+          PROFILE_EXTENSION_BASE64: ${{ secrets.PROFILE_EXTENSION_BASE64 }}
+        run: |
+          set -euo pipefail
+          # Xcode 16+ reads the UserData path; older tooling reads the legacy
+          # one. Install into both rather than depending on which wins.
+          LEGACY="$HOME/Library/MobileDevice/Provisioning Profiles"
+          MODERN="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          TMP="$RUNNER_TEMP/profiles"
+          mkdir -p "$LEGACY" "$MODERN" "$TMP"
+
+          echo "$PROFILE_APP_BASE64" | base64 --decode > "$TMP/app.mobileprovision"
+          echo "$PROFILE_EXTENSION_BASE64" | base64 --decode > "$TMP/ext.mobileprovision"
+
+          for p in "$TMP"/*.mobileprovision; do
+            PLIST="$(security cms -D -i "$p")"
+            UUID="$(echo "$PLIST" | plutil -extract UUID raw -)"
+            NAME="$(echo "$PLIST" | plutil -extract Name raw -)"
+            cp "$p" "$LEGACY/$UUID.mobileprovision"
+            cp "$p" "$MODERN/$UUID.mobileprovision"
+            # The name must match PROVISIONING_PROFILE_SPECIFIER exactly, and
+            # the profile must carry the App Group -- a profile created before
+            # the capability was enabled silently lacks it and fails to sign.
+            printf "installed %-32s uuid=%s\n" "'$NAME'" "$UUID"
+            if echo "$PLIST" | grep -q "group.com.max.PeakForm"; then
+              echo "    app group: present"
+            else
+              echo "    app group: MISSING -- recreate this profile after enabling App Groups"
+            fi
+          done
+          rm -rf "$TMP"
+
       # TEMPORARY diagnostic. Prints lengths and structure only, never values;
       # GitHub masks secret values in logs anyway, but lengths are what matter
       # here (a trailing newline from `gh secret set` shifts them by one).
@@ -128,10 +164,9 @@ jobs:
             --apiIssuer "$ASC_API_ISSUER_ID" 2>&1 | head -40 \
             || echo "(altool exited non-zero)"
 
+      # No -allowProvisioningUpdates and no API key: signing settings live in
+      # the Release configs and the profiles are already on disk.
       - name: Archive
-        env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -140,27 +175,15 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/PeakLog.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_API_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build_number }}
 
       - name: Export .ipa
-        env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/PeakLog.xcarchive" \
             -exportOptionsPlist ExportOptions.plist \
-            -exportPath "$RUNNER_TEMP/export" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_API_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID"
+            -exportPath "$RUNNER_TEMP/export"
           ls -lh "$RUNNER_TEMP/export"
 
       - name: Upload to TestFlight

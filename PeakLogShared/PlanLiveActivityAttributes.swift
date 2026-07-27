@@ -95,7 +95,7 @@ nonisolated struct PlanLiveActivityAttributes: ActivityAttributes, Sendable {
 }
 
 nonisolated enum PlanLiveActivitySharedStore {
-    static let appGroupIdentifier = "group.com.max.PeakLog"
+    static let appGroupIdentifier = "group.com.max.PeakForm"
 
     private static var defaults: UserDefaults {
         UserDefaults(suiteName: appGroupIdentifier) ?? .standard
