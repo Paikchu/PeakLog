@@ -1,0 +1,181 @@
+name: TestFlight
+
+# Manual-only for now. Once a dispatch run has proven the pipeline end to end,
+# uncomment the tag trigger below to get "push a tag -> build lands on the phone".
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Build number override (default: the workflow run number)"
+        required: false
+        type: string
+  # push:
+  #   tags:
+  #     - "v*"
+
+# Never let two uploads race: App Store Connect rejects duplicate build numbers,
+# and a cancelled upload can leave a half-processed build behind.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+env:
+  # Empty = use the runner's default Xcode (a 26.x on macos-26).
+  # Set to e.g. "26.4.1" to pin a specific version for reproducible releases.
+  XCODE_VERSION: ""
+
+jobs:
+  deploy:
+    name: Build and upload to TestFlight
+    # Standard macOS runners are free on public repositories.
+    # Do NOT switch to macos-26-large/-xlarge: large runners are billed even here.
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ -n "$XCODE_VERSION" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          fi
+          xcodebuild -version
+
+      - name: Resolve build number
+        id: version
+        run: |
+          set -euo pipefail
+          BUILD_NUMBER="${{ inputs.build_number }}"
+          if [ -z "$BUILD_NUMBER" ]; then
+            BUILD_NUMBER="${{ github.run_number }}"
+          fi
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Building with CFBundleVersion=$BUILD_NUMBER"
+
+      # The distribution certificate must be supplied, not auto-created:
+      # -allowProvisioningUpdates would mint a NEW certificate on every run
+      # (the runner keychain is ephemeral) and Apple caps distribution
+      # certificates at 3. Profiles are still managed automatically.
+      - name: Import distribution certificate
+        env:
+          DIST_CERT_P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/dist.p12"
+          # Generated per-run, never persisted: no secret needed for this.
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+
+          echo "$DIST_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT_PATH" -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Keep the login keychain in the search list so the toolchain still works.
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+
+          rm -f "$CERT_PATH"
+          echo "Signing identities available:"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      # Written to the location altool discovers by convention, so both
+      # xcodebuild (explicit path) and altool (auto-discovery) can use it.
+      - name: Stage App Store Connect API key
+        env:
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          echo "$ASC_API_KEY_P8_BASE64" | base64 --decode \
+            > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
+
+      - name: Archive
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project PeakLog.xcodeproj \
+            -scheme PeakLog \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/PeakLog.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build_number }}
+
+      - name: Export .ipa
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/PeakLog.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_API_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID"
+          ls -lh "$RUNNER_TEMP/export"
+
+      - name: Upload to TestFlight
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/export" -name '*.ipa' -maxdepth 1 | head -1)"
+          if [ -z "$IPA" ]; then
+            echo "No .ipa produced by exportArchive" >&2
+            exit 1
+          fi
+          echo "Uploading $IPA"
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "$ASC_API_KEY_ID" \
+            --apiIssuer "$ASC_API_ISSUER_ID"
+
+      # dSYMs are the only way to symbolicate TestFlight crashes later, and the
+      # archive is gone once the runner is torn down.
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: peaklog-build-${{ steps.version.outputs.build_number }}
+          path: |
+            ${{ runner.temp }}/export/*.ipa
+            ${{ runner.temp }}/PeakLog.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "### Uploaded to TestFlight"
+            echo ""
+            echo "- Build number: \`${{ steps.version.outputs.build_number }}\`"
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo ""
+            echo "App Store Connect processing usually takes 5-30 minutes."
+            echo "The build then auto-distributes to the internal testing group."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up secrets from runner
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -rf "$HOME/.appstoreconnect/private_keys"

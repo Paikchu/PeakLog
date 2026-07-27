@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+
+	<!-- Export the .ipa to disk; the workflow uploads it with altool in a
+	     separate step so upload failures are reported on their own. -->
+	<key>destination</key>
+	<string>export</string>
+
+	<key>teamID</key>
+	<string>FB4M276Q93</string>
+
+	<!-- Paired with `xcodebuild -allowProvisioningUpdates`: the distribution
+	     certificate comes from the keychain the workflow builds, and the
+	     provisioning profiles are fetched/created via the App Store Connect
+	     API key. -->
+	<key>signingStyle</key>
+	<string>automatic</string>
+
+	<key>uploadSymbols</key>
+	<true/>
+
+	<!-- Keep the build number the workflow injected via CURRENT_PROJECT_VERSION.
+	     Leaving this true lets Xcode rewrite it and breaks the run-number scheme. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>
