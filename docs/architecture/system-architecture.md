@@ -18,8 +18,8 @@ PeakLog 是一个**本地优先（local-first）的 iOS 健身助手**，采用 
 ### 1.1 当前真实形态（重要）
 
 - **客户端架构是本地优先的**：本地持久化是单个 JSON 文件（`LocalAppDatabase` actor），首屏渲染不依赖网络。
-- **云端同步走 Supabase PostgREST**，按 `auth.uid()` 做行级安全（RLS）隔离，作为“第二份真相”。
-- **当前代码库中没有 LLM / Agent 代码**。历史上存在的聊天页与 `ai-workout-action` Edge Function 已在 **2026-07-06** 被移除（见 `docs/logs/2026-07-06-remove-chat-code.md`、`2026-07-06-remove-ai-workout-action.md`）。Agent 能力以 **ADR-001（已采纳、未实施）** 的形式规划在服务端。因此本文档把 Agent 层标注为“规划中（dashed）”，不把它描述为已存在的行为。
+- **云端同步通过 Supabase Swift SDK 2.53.0 访问 PostgREST**，按 `auth.uid()` 做行级安全（RLS）隔离，作为“第二份真相”。
+- **计划生成 Agent 已在服务端实现**：`generate-weekly-plan` 支持每周生成与周中 replan；旧聊天页与 `ai-workout-action` 已移除。
 
 ### 1.2 技术栈
 
@@ -28,11 +28,11 @@ PeakLog 是一个**本地优先（local-first）的 iOS 健身助手**，采用 
 | 语言 / 框架 | Swift 6 模式（actor / `@MainActor`）、SwiftUI |
 | 状态管理 | `ObservableObject`（ViewModel）+ `@StateObject` 环境对象 |
 | 本地存储 | 单一 JSON 文件（`Application Support/PeakLog/peaklog-local-state.json`），由 `actor LocalAppDatabase` 独占访问 |
-| 云端存储 | Supabase Postgres + PostgREST（非 Supabase SDK），RLS |
-| 认证 | Apple OAuth（`config.toml` 启用 `[auth.external.apple]`） |
+| 云端存储 | Supabase Postgres + Supabase Swift SDK（PostgREST），RLS |
+| 认证 | Supabase Auth 邮箱密码登录；Apple Provider 已配置，客户端尚未接入 |
 | 跨进程共享 | App Group `group.com.max.PeakForm`（UserDefaults）+ App Intents |
 | 实时能力 | Live Activity / Dynamic Island（Widget Extension） |
-| 测试 | `PeakLogTests`（XCTest，6 文件）+ `tests/`（轻量回归脚本，25 文件） |
+| 测试 | `PeakLogTests`（XCTest）+ `tests/`（纯逻辑回归脚本）+ `backend/tests/` |
 
 ---
 
@@ -47,7 +47,7 @@ flowchart TB
     SVC["Service 层（协议 + Local 实现）<br/>WorkoutServiceProtocol · TrainingPlanServiceProtocol<br/>ProfileServiceProtocol · ExerciseLibraryServiceProtocol"]
     ENG["ExerciseRecommendationEngine<br/>（确定性推荐，可换模型实现）"]
     DB[("LocalAppDatabase actor<br/>单一 JSON：profile/activePlan/<br/>strengthSessions/runningRecords/customExercises")]
-    SYNC["CloudSync：Controller → Coordinator<br/>→ CloudMapper → SupabaseDataClient(PostgREST)"]
+    SYNC["CloudSync：Controller → Coordinator<br/>→ CloudMapper → SupabaseDataClient(SDK)"]
     ROOT["AppServices 组合根<br/>（装配所有 Local*Service）"]
 
     UI --> VM
@@ -68,9 +68,9 @@ flowchart TB
 
   subgraph BE["Supabase 后端"]
     PG[("Postgres + RLS<br/>workout_sessions · training_plans · running_workouts …")]
-    AUTH["Auth（Apple OAuth）"]
-    AGENT["Edge Function Agent（规划中 / ADR-001）<br/>ContextBuilder → LLM(system prompt) → Validator"]
-    PG -.未来由.-> AGENT
+    AUTH["Supabase Auth（邮箱密码）"]
+    AGENT["generate-weekly-plan Edge Function<br/>ContextBuilder → LLM → Validator"]
+    PG <--> AGENT
   end
 
   SYNC -->|upsert / pull| PG
@@ -149,17 +149,18 @@ private struct LocalAppState: Codable, Sendable {
 
 ### 3.5 云端同步（Cloud Sync）
 
-`PeakLog/Services/Cloud/` 下的同步栈（PostgREST，非 Supabase SDK）：
+`PeakLog/Services/Cloud/` 下的同步栈（Supabase Swift SDK）：
 
 ```
 CloudSyncController          // 绑定 auth，生命周期 & 前台触发
   → CloudSyncCoordinator     // 防抖/合并推送、安装 onchange 钩子
     → CloudMapper            // 本地快照 ↔ 后端行（pushBundle / deleteNotIn）
-      → SupabaseDataClient   // PostgREST upsert/select/delete（受 RLS 约束）
+      → SupabaseDataClient   // SDK select/upsert/update/delete（受 RLS 约束）
 ```
 
-- **推送方向**：本地变更 → `LocalAppDatabase.onChange` → 防抖 `requestPush` → `CloudMapper.pushBundle` → `upsert` 到 `workout_sessions / exercises / exercise_sets / running_workouts`，再 `deleteNotIn` 清理已删行。
-- **拉取方向**：登录后首次全量拉取 → `LocalAppDatabase.replaceAll(...)`，派生字段重算。
+- **推送方向**：本地变更 → `LocalAppDatabase.onChange` → 防抖 `requestPush` → `CloudMapper.pushBundle` → SDK upsert/update，再用 scoped `deleteNotIn` 清理已删行。
+- **拉取方向**：登录后首次全量拉取 → merge 到本地快照，保留离线与跨端记录，派生字段重算。
+- 所有 Database/Function 调用先通过 `TokenProviding.validToken()`；token 不可用时不发送请求。
 - RLS 保证每行只属于当前 `auth.uid()`。
 
 ### 3.6 跨进程共享（Extension ↔ App）
@@ -181,11 +182,11 @@ CloudSyncController          // 绑定 auth，生命周期 & 前台触发
 - 历史遗留（当前客户端未使用）：`conversations` / `messages` / `attachments` / `parse_tasks` / `parse_results` / `conversation_pending_actions` —— 这些是旧聊天/解析管线的产物，当前版本已不再走该路径。
 - PR：`exercise_prs`，以及自定义动作字段。
 
-`backend/supabase/config.toml`：`project_id = "peaklog-core"`，Postgres 17，Realtime 开启，Apple OAuth 客户端 `com.max.PeakLog`，`deno_version = 2`（Edge 运行时不活跃）。
+`backend/supabase/config.toml`：`project_id = "peaklog-core"`，Postgres 17，Realtime 开启，Apple OAuth 客户端 `com.max.PeakLog`，`deno_version = 2`。
 
-### 3.8 Agent / 智能化（规划中，ADR-001）
+### 3.8 Agent / 智能化
 
-详见 `docs/architecture/adr-001-llm-weekly-plan-generation.md`（Status: Accepted，Date: 2026-07-07，行动项未勾）。要点：
+详见 `docs/architecture/adr-001-llm-weekly-plan-generation.md` 与 `ai-plan-generation.md`。要点：
 
 - **服务端**每周（`pg_cron`）生成计划，无聊天 UI —— “AI 在后台工作”。
 - **LLM 是唯一的决策方**，被两层确定性“薄层”约束：
@@ -245,13 +246,14 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 
 ### 5.2 修改计划 / 页面内容
 
-- **当前（无 Agent）**：纯显式 UI 动作 → `TodayWorkoutViewModel.updatePlannedSet / addPlannedExercises / deletePlannedExercise / reorderTodayPlanExercises / addLoggedSet / updateLoggedSet / deleteExercise` → 对应 `TrainingPlanServiceProtocol` / `WorkoutServiceProtocol` 方法 → `LocalAppDatabase` 变更 → 同 §5.1 的持久化 + 云推送路径。`AddPlanExerciseSheet` 直接打开统一运动选择器；力量动作进入多组表单，有氧分类进入时长/距离表单。
+- **显式编辑**：`TodayWorkoutViewModel.updatePlannedSet / addPlannedExercises / deletePlannedExercise / reorderTodayPlanExercises / addLoggedSet / updateLoggedSet / deleteExercise` → 对应 `TrainingPlanServiceProtocol` / `WorkoutServiceProtocol` 方法 → `LocalAppDatabase` 变更 → 同 §5.1 的持久化 + 云推送路径。`AddPlanExerciseSheet` 直接打开统一运动选择器；力量动作进入多组表单，有氧分类进入时长/距离表单。
+- **Agent 重排**：Today 页记录结构化 signal 后由 `PlanReplanService` 调用 `generate-weekly-plan` 的 replan 模式；服务端应用 revision guard，成功后客户端 pull 最新计划。
 - 计划组完成会把 `TrainingPlanSet.linkedExerciseSetId` 关联到真实 `ExerciseSet`，并反向清理孤儿记录。
 
 ### 5.3 生成 7 日计划
 
-- **当前（静态）**：首次启动 `LocalAppDatabase.makeSeedState()` 用固定模板（`samplePlanExercises` 按日偏移给出 Bench/Squat/Pull-Up 等）生成固定 7 日计划与硬编码 `goalSummary`/`coachSummary`。改目标文案仅 `rebuildPlan(...)` **复制已有天数**，不调用 AI、不感知历史。
-- **规划（ADR-001）**：服务端 `pg_cron` 周级生成 → `ContextBuilder` 聚合事实 + 参考下一步重量 → LLM（训练科学 system prompt）输出整周结构化 JSON → `Validator` 钳制负荷（≤ 上周 110%）与校验 schema/库成员 → 违规则 repair 重请求 → 写 `training_plan_*` 并带溯源；客户端同步拉取，`aiSuggestion`/`coachSummary` 等字段由 Agent 填充。
+- **本地兜底**：首次启动 `LocalAppDatabase.makeSeedState()` 仍提供固定 7 日模板，保证未登录或云端计划尚未到达时可用。
+- **服务端生成（ADR-001 已实施）**：`pg_cron` 周级生成 → `ContextBuilder` 聚合事实 + 参考下一步重量 → LLM 输出整周结构化 JSON → `Validator` 钳制负荷与校验 schema/动作库成员 → 违规则 repair 重请求 → RPC 写入 `training_plan_*` 并记录溯源；客户端通过同步拉取结果。
 
 ### 5.4 云端同步方向
 
@@ -272,7 +274,7 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 4. **计划组 ↔ 真实训练组的关联**：`linkedExerciseSetId` 使完成度可溯源、可清理，是历史回写与孤儿清理的支点。
 5. **`onChange` 仅登录态安装、pull 不触发 push**：保证离线本地模式零副作用，且拉取不会回弹成推送。
 6. **App Group 跨进程桥接**：Live Activity 扩展与主 App 通过 UserDefaults 共享最小状态，避免进程间复杂通信。
-7. **Agent 层当前缺位、规划在服务端**：客户端不保留聊天/Edge Function（2026-07-06 移除）；行为智能以 prompt 为控制面，集中在 `adr-001`（未实施）。
+7. **Agent 决策集中在服务端**：客户端不保留聊天流水线，只发送结构化 replan signal 并消费计划；`generate-weekly-plan` 以 prompt、ContextBuilder、Validator 和 RPC 为控制面。
 
 ---
 
@@ -280,9 +282,9 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| LLM 周计划生成 | 规划中（ADR-001 已采纳，未实施） | 服务端 `ContextBuilder → LLM → Validator` 管线、`PlanEditEvent` 事件流、计划溯源 |
+| LLM 周计划生成 | 已实施 | 服务端 `ContextBuilder → LLM → Validator` 管线、`PlanEditEvent` 事件流、计划溯源 |
 | 客户端 Agent 入口 | 未实现 | `ExerciseRecommendationEngine` 仍是确定性规则；无对话/自然语言改计划 |
 | 历史聊天/解析表 | 遗留未用 | `conversations/messages/parse_*` 等表当前客户端不写入，待清理或复用 |
-| Edge Function 运行时 | 不活跃 | `functions/ai-workout-action` 与 `_shared` 已清空 |
+| Edge Function 运行时 | 已实施 | `generate-weekly-plan` 承担 weekly 与 replan；旧 `ai-workout-action` 已移除 |
 
 > 维护约定（见 `docs/architecture/README.md`）：数据结构/行为变化须同步更新本文档；接口字段变化须同步 `api-reference.md`；新增跨模块能力须先补架构与流程图再进入开发。

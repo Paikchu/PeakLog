@@ -19,6 +19,7 @@
 - `SupabaseAuthProvider` 包装 SDK Auth，输出用户恢复/状态事件、邮箱密码登录、local sign-out、valid token。
 - `AuthStateManager` 只保留 UI gate、重复提交、状态绑定和错误文案。
 - 删除自管 session、refresh task、Keychain 编解码与写入。
+- SDK 后台 auto-refresh 保持开启；其失败不暴露事件，400/401/403 在下一次受保护请求或 foreground sync 的 `validToken()` 中确认并 local sign-out，不重建第二套 refresh scheduler。
 - 用可注入 SDK adapter seam 覆盖离线恢复、refresh 拒绝、网络失败、local sign-out、双击登录和 SDK single-flight。
 
 ## Database 与 Functions

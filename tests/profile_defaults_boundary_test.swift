@@ -17,8 +17,6 @@ import Foundation
 //   swiftc -parse-as-library \
 //     PeakLog/Models/*.swift PeakLog/Localization/AppLanguage.swift \
 //     PeakLog/Support/WorkoutDateFormatter.swift \
-//     PeakLog/Services/SupabaseConfig.swift \
-//     PeakLog/Services/Auth/*.swift \
 //     PeakLog/Services/ProfileService.swift PeakLog/Services/WorkoutService.swift \
 //     PeakLog/Services/TrainingPlanService.swift PeakLog/Services/ExerciseLibraryService.swift \
 //     PeakLog/Services/ExerciseRecommendationEngine.swift PeakLog/Services/SetDefaultsProvider.swift \

@@ -54,6 +54,23 @@ final class PlanReplanServiceTests: XCTestCase {
         XCTAssertTrue(SDKRecordingURLProtocol.requests.isEmpty)
     }
 
+    func testFunctionUsesTheValidatedPreflightTokenWithoutASecondProviderLookup() async throws {
+        SDKRecordingURLProtocol.enqueueJSON(
+            #"{"results":[{"status":"no_op","replannedDates":null,"reason":"unchanged","error":null}]}"#
+        )
+        let tokenProvider = StubTokenProvider(.token("validated-token"))
+        let service = makeService(tokenProvider: tokenProvider)
+
+        _ = try await service.requestReplan(userId: "user-1", signal: .skipToday)
+
+        XCTAssertEqual(tokenProvider.calls, 1)
+        XCTAssertEqual(
+            SDKRecordingURLProtocol.requests.last?
+                .value(forHTTPHeaderField: "Authorization"),
+            "Bearer validated-token"
+        )
+    }
+
     func testHTTPAndDecodeErrorsAreMapped() async {
         for status in [401, 403] {
             SDKRecordingURLProtocol.enqueue(status: status, body: Data("denied".utf8))

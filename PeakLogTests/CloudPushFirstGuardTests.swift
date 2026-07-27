@@ -110,9 +110,7 @@ final class CloudPushFirstGuardTests: XCTestCase {
             ),
             authSession: session,
             apiSession: session
-        ).makeAPIClient {
-            "sdk-token"
-        }
+        ).makeAPIClient()
         return SupabaseDataClient(
             client: sdkClient,
             tokenProvider: StubTokenProvider(),

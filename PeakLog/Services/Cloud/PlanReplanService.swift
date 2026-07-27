@@ -8,24 +8,24 @@ nonisolated struct PlanReplanService: Sendable {
         case failed(reason: String)
     }
 
-    private let client: SupabaseClient
+    private let apiClient: SupabaseAPIClient
     private let tokenProvider: TokenProviding
 
-    init(client: SupabaseClient, tokenProvider: TokenProviding) {
-        self.client = client
+    init(client: SupabaseAPIClient, tokenProvider: TokenProviding) {
+        self.apiClient = client
         self.tokenProvider = tokenProvider
     }
 
     func requestReplan(userId: String, signal: ReplanSignal) async throws -> Outcome {
         do {
-            _ = try await tokenProvider.validToken()
+            try await apiClient.authorize(using: tokenProvider)
         } catch {
             throw CloudError.unauthorized
         }
 
         let decoded: ResponseEnvelope
         do {
-            decoded = try await client.functions.invoke(
+            decoded = try await apiClient.client.functions.invoke(
                 "generate-weekly-plan",
                 options: FunctionInvokeOptions(
                     body: RequestBody(

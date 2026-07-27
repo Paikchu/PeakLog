@@ -66,7 +66,7 @@ flowchart LR
     ctx -->|"读编辑信号"| events
     val -->|"install_generated_plan / replan_plan_days (RPC)"| plans
     edge -->|"写快照"| gens
-    sync <-->|"PostgREST 全量拉取 / 后台推送"| db
+    sync <-->|"Supabase Swift SDK 拉取 / 后台推送"| db
     today -.->|"只读展示"| plans
 ```
 

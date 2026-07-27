@@ -2,9 +2,9 @@
 
 ## 1. 通用说明
 
-- iOS 客户端本身**不调用任何 Edge Function**;所有读写通过 `SupabaseDataClient`(`PeakLog/Services/Cloud/`)直连 PostgREST(`rest/v1/<table>`),不经 supabase-swift SDK。唯一的 Edge Function(`generate-weekly-plan`,Phase 2)是纯服务端到服务端调用(pg_cron → 函数 → RPC),客户端从不感知它的存在,只被动读取它写入的表。
-- 认证走 GoTrue REST 端点（`SupabaseAuthProvider`），邮箱密码登录；Apple 登录待接入（需 Apple Developer 账号）。
-- 所有请求携带 publishable key（`apikey` 头）+ 当前用户 JWT（`Authorization: Bearer`），行级安全（RLS）按 `auth.uid()` 隔离，服务端是唯一的授权真相源。
+- iOS 通过 Supabase Swift SDK 2.53.0 访问 Auth、PostgREST 和 `generate-weekly-plan` 的 replan 模式；周生成仍只由 `pg_cron`/运维触发。
+- `SupabaseAuthProvider` 包装 SDK Auth，邮箱密码登录；Apple 登录待接入。
+- SDK 管理 publishable key 与用户 JWT；业务适配器在每个 Database/Function 调用前执行 `validToken()`，token 不可用时零网络请求。RLS 仍是服务端唯一授权真相源。
 - Today、History、Profile 的 UI 读写路径经由 `LocalAppDatabase`（本地优先），`CloudSyncCoordinator` 负责登录后的全量拉取与本地变更的后台推送；接口契约的关键点是**表级 RLS 策略**，不是传统意义上的 REST 端点契约。
 
 ## 2. 写入语义与陷阱（先读，避免重蹈覆辙）
@@ -19,7 +19,7 @@
 
 **另一个不直观的地方**：对没有匹配策略的 `UPDATE`/`DELETE` 请求，PostgREST/Postgres 不会返回 403——会返回 **`204`（成功，但 0 行受影响）**，因为 RLS 让该请求在服务端根本"看不见"任何可改的行。验证"这张表真的不可篡改"时，必须实际读回行内容确认没有变化，不能只看 HTTP 状态码。
 
-## 3. 核心表一览（PostgREST 直连，RLS 隔离到 `auth.uid()`）
+## 3. 核心表一览（Supabase Swift SDK / PostgREST，RLS 隔离到 `auth.uid()`）
 
 | 表 | 客户端可用动词 | 说明 |
 |---|---|---|
@@ -33,7 +33,7 @@
 | `plan_generations` | **仅 SELECT** | 计划生成溯源（Phase 1 建表，Phase 2 起真实写入）。客户端无写权限，写入方是 `generate-weekly-plan` Edge Function（`service_role`，绕过 RLS） |
 | `user_stats` / `exercise_prs` | 仅 SELECT | 派生数据，由数据库触发器维护，客户端不写 |
 
-## 4. `generate-weekly-plan` Edge Function（Phase 2，服务端到服务端，客户端不调用）
+## 4. `generate-weekly-plan` Edge Function
 
 详细设计见 ADR-001 与 `docs/plans/2026-07-08-phase2-weekly-generation-plan.md`；本节只记录接口契约。
 

@@ -18,7 +18,7 @@ final class CloudSyncController: ObservableObject {
     @Published private(set) var syncStatus: CloudSyncStatus = .idle
 
     private let database: LocalAppDatabase
-    private let apiClient: SupabaseClient?
+    private let apiClient: SupabaseAPIClient?
     private var coordinator: CloudSyncCoordinator?
     private var activeUserId: String?
     private var activeTokenProvider: TokenProviding?
@@ -30,7 +30,7 @@ final class CloudSyncController: ObservableObject {
 
     init(
         database: LocalAppDatabase = .shared,
-        apiClient: SupabaseClient? = nil
+        apiClient: SupabaseAPIClient? = nil
     ) {
         self.database = database
         self.apiClient = apiClient

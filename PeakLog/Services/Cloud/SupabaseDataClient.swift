@@ -9,16 +9,16 @@ nonisolated enum CloudError: Error, Equatable, Sendable {
 }
 
 nonisolated struct SupabaseDataClient: Sendable {
-    private let client: SupabaseClient
+    private let apiClient: SupabaseAPIClient
     private let tokenProvider: TokenProviding
     private let retryEnabled: Bool
 
     init(
-        client: SupabaseClient,
+        client: SupabaseAPIClient,
         tokenProvider: TokenProviding,
         retryEnabled: Bool = true
     ) {
-        self.client = client
+        self.apiClient = client
         self.tokenProvider = tokenProvider
         self.retryEnabled = retryEnabled
     }
@@ -30,7 +30,7 @@ nonisolated struct SupabaseDataClient: Sendable {
     ) async throws -> [Row] {
         try await authorize()
         let columns = query.first(where: { $0.name == "select" })?.value ?? "*"
-        let builder = client.from(table).select(columns)
+        let builder = apiClient.client.from(table).select(columns)
         Self.apply(query, to: builder)
         builder.retry(enabled: retryEnabled)
 
@@ -46,7 +46,7 @@ nonisolated struct SupabaseDataClient: Sendable {
         guard !rows.isEmpty else { return }
         try await authorize()
         do {
-            let builder = try client
+            let builder = try apiClient.client
                 .from(table)
                 .upsert(try Self.normalizedBulkRows(rows), returning: .minimal)
             builder.retry(enabled: retryEnabled)
@@ -63,7 +63,7 @@ nonisolated struct SupabaseDataClient: Sendable {
     ) async throws {
         try await authorize()
         do {
-            let builder = try client.from(table).update(row, returning: .minimal)
+            let builder = try apiClient.client.from(table).update(row, returning: .minimal)
             Self.apply(match, to: builder)
             builder.retry(enabled: retryEnabled)
             try await builder.execute()
@@ -78,7 +78,7 @@ nonisolated struct SupabaseDataClient: Sendable {
         extraFilters: [URLQueryItem] = []
     ) async throws {
         try await authorize()
-        let builder = client.from(table).delete(returning: .minimal)
+        let builder = apiClient.client.from(table).delete(returning: .minimal)
         Self.apply(extraFilters, to: builder)
         if keepIds.isEmpty {
             _ = builder.filter("id", operator: "not.is", value: "null")
@@ -101,7 +101,7 @@ nonisolated struct SupabaseDataClient: Sendable {
         guard !rows.isEmpty else { return }
         try await authorize()
         do {
-            let builder = try client.from(table).upsert(
+            let builder = try apiClient.client.from(table).upsert(
                 try Self.normalizedBulkRows(rows),
                 returning: .minimal,
                 ignoreDuplicates: true
@@ -129,7 +129,7 @@ nonisolated struct SupabaseDataClient: Sendable {
 
     private func authorize() async throws {
         do {
-            _ = try await tokenProvider.validToken()
+            try await apiClient.authorize(using: tokenProvider)
         } catch {
             throw CloudError.unauthorized
         }

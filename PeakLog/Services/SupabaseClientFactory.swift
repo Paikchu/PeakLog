@@ -40,20 +40,22 @@ nonisolated struct SupabaseClientFactory: Sendable {
         )
     }
 
-    func makeAPIClient(
-        accessToken: @escaping @Sendable () async throws -> String?
-    ) -> SupabaseClient {
-        SupabaseClient(
+    func makeAPIClient() -> SupabaseAPIClient {
+        let tokenRelay = ValidatedAccessTokenRelay()
+        let client = SupabaseClient(
             supabaseURL: config.url,
             supabaseKey: config.publishableKey,
             options: SupabaseClientOptions(
                 auth: .init(
                     autoRefreshToken: false,
-                    accessToken: accessToken
+                    accessToken: {
+                        await tokenRelay.accessTokenForSDK()
+                    }
                 ),
                 global: .init(session: apiSession)
             )
         )
+        return SupabaseAPIClient(client: client, tokenRelay: tokenRelay)
     }
 
     private static func makeSession(timeout: TimeInterval) -> URLSession {
@@ -68,11 +70,53 @@ nonisolated struct SupabaseClientFactory: Sendable {
     }
 }
 
+nonisolated struct SupabaseAPIClient: Sendable {
+    let client: SupabaseClient
+    private let tokenRelay: ValidatedAccessTokenRelay
+
+    fileprivate init(client: SupabaseClient, tokenRelay: ValidatedAccessTokenRelay) {
+        self.client = client
+        self.tokenRelay = tokenRelay
+    }
+
+    func authorize(using tokenProvider: TokenProviding) async throws {
+        do {
+            let token = try await tokenProvider.validToken()
+            guard !token.isEmpty else { throw AppAuthError.invalidCredentials }
+            await tokenRelay.setValidatedToken(token)
+        } catch {
+            await tokenRelay.clear()
+            throw error
+        }
+    }
+}
+
+private actor ValidatedAccessTokenRelay {
+    private var token: String?
+
+    func setValidatedToken(_ token: String) {
+        self.token = token
+    }
+
+    func clear() {
+        token = nil
+    }
+
+    func accessTokenForSDK() -> String {
+        token ?? "peaklog-missing-valid-token"
+    }
+}
+
 nonisolated struct ValidatingAuthLocalStorage: AuthLocalStorage {
     private let storage: any AuthLocalStorage
+    private let sessionKey: String
 
-    init(storage: any AuthLocalStorage) {
+    init(
+        storage: any AuthLocalStorage,
+        sessionKey: String = SupabaseClientFactory.authStorageKey
+    ) {
         self.storage = storage
+        self.sessionKey = sessionKey
     }
 
     func store(key: String, value: Data) throws {
@@ -81,6 +125,7 @@ nonisolated struct ValidatingAuthLocalStorage: AuthLocalStorage {
 
     func retrieve(key: String) throws -> Data? {
         guard let data = try storage.retrieve(key: key) else { return nil }
+        guard key == sessionKey else { return data }
         guard (try? JSONDecoder().decode(Session.self, from: data)) != nil else {
             try storage.remove(key: key)
             return nil

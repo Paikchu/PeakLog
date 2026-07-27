@@ -154,6 +154,38 @@ final class SupabaseDataClientTests: XCTestCase {
         XCTAssertTrue(SDKRecordingURLProtocol.requests.isEmpty)
     }
 
+    func testSDKUsesTheValidatedPreflightTokenWithoutASecondProviderLookup() async throws {
+        SDKRecordingURLProtocol.enqueueJSON("[]")
+        let tokenProvider = StubTokenProvider(.token("validated-token"))
+        let client = makeClient(tokenProvider: tokenProvider)
+
+        _ = try await client.fetch(TestReadRow.self, table: "profiles", query: [])
+
+        XCTAssertEqual(tokenProvider.calls, 1)
+        XCTAssertEqual(
+            SDKRecordingURLProtocol.requests.last?
+                .value(forHTTPHeaderField: "Authorization"),
+            "Bearer validated-token"
+        )
+    }
+
+    func testSDKFallbackAuthorizationIsNeverAnonymous() async throws {
+        SDKRecordingURLProtocol.enqueueJSON("[]")
+        let apiClient = SupabaseSDKTestClient.make()
+
+        let response: PostgrestResponse<[TestReadRow]> = try await apiClient.client
+            .from("profiles")
+            .select()
+            .execute()
+
+        XCTAssertTrue(response.value.isEmpty)
+        XCTAssertEqual(
+            SDKRecordingURLProtocol.requests.last?
+                .value(forHTTPHeaderField: "Authorization"),
+            "Bearer peaklog-missing-valid-token"
+        )
+    }
+
     func testGETRetries503And520WhenEnabled() async throws {
         for status in [503, 520] {
             SDKRecordingURLProtocol.reset()

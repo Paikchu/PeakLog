@@ -102,6 +102,16 @@ final class SupabaseAuthProviderTests: XCTestCase {
         XCTAssertEqual(try validating.retrieve(key: SupabaseClientFactory.authStorageKey), payload)
     }
 
+    func testNonSessionAuthPayloadIsRetained() throws {
+        let storage = TestAuthStorage()
+        let key = "\(SupabaseClientFactory.authStorageKey)-code-verifier"
+        let payload = Data("pkce-code-verifier".utf8)
+        try storage.store(key: key, value: payload)
+        let validating = ValidatingAuthLocalStorage(storage: storage)
+
+        XCTAssertEqual(try validating.retrieve(key: key), payload)
+    }
+
     private func makeProvider(storage: TestAuthStorage = TestAuthStorage()) -> SupabaseAuthProvider {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [RecordingURLProtocol.self]

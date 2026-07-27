@@ -24,7 +24,7 @@
 - SDK Keychain 固定使用 `com.max.PeakLog.auth` service 和 `current-session` key。
 - 启动前删除不能解码为 SDK `Session` 的旧格式或损坏凭据；两名现有用户升级后需重新登录。
 - 本地 session 先恢复 UI；网络 refresh 失败保持登录态。
-- refresh token 被 400、401、403 拒绝时清除本地 SDK session并进入登录页。
+- `validToken()` 在受保护请求或前台同步中收到 refresh 400、401、403 时清除本地 SDK session 并进入登录页；SDK 2.53 后台 auto-refresh 不暴露失败事件，因此不承诺后台 tick 当下关闭 UI gate。
 - 退出固定使用 local scope。
 
 ## 验收

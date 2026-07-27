@@ -32,7 +32,7 @@ final class StubTokenProvider: TokenProviding, @unchecked Sendable {
 }
 
 enum SupabaseSDKTestClient {
-    static func make() -> SupabaseClient {
+    static func make() -> SupabaseAPIClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SDKRecordingURLProtocol.self]
         configuration.timeoutIntervalForRequest = 60
@@ -45,9 +45,7 @@ enum SupabaseSDKTestClient {
             ),
             authSession: session,
             apiSession: session
-        ).makeAPIClient {
-            "sdk-token"
-        }
+        ).makeAPIClient()
     }
 }
 
