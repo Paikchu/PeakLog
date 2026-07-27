@@ -11,7 +11,7 @@
 	<string>export</string>
 
 	<key>teamID</key>
-	<string>FB4M276Q93</string>
+	<string>QNQR296DT7</string>
 
 	<!-- Paired with `xcodebuild -allowProvisioningUpdates`: the distribution
 	     certificate comes from the keychain the workflow builds, and the
