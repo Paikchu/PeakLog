@@ -87,17 +87,21 @@ struct TrainingScreen: View {
         }
     }
 
-    /// 头部标题按时态取材：今天沿用计划标题降级链；过去以日期为题、
-    /// 已练肌群降为副标题；未来只显示日期（计划细节由内容区承载）。
+    /// 头部标题恒为选中日期，不随计划标题变化——今天和其他日子一视同仁。
+    /// 副标题只在「没有它就没别处可看」时出现：今天无计划时的状态兜底、
+    /// 过去的已练肌群；有计划的今天和未来日都只留日期（细节由内容区承载）。
     private var resolvedHeader: TodayPlanHeader {
+        TodayPlanHeader(title: dateTitle, subtitle: headerSubtitle)
+    }
+
+    private var headerSubtitle: String? {
         switch tense {
         case .today:
-            return todayHeader
+            return todaySubtitle
         case .past:
-            let subtitle = historyViewModel.completedMuscleGroups.isEmpty ? nil : muscleFocusLine
-            return TodayPlanHeader(title: dateTitle, subtitle: subtitle)
+            return historyViewModel.completedMuscleGroups.isEmpty ? nil : muscleFocusLine
         case .futureInPlanWeek, .futureBeyondPlan:
-            return TodayPlanHeader(title: dateTitle, subtitle: nil)
+            return nil
         }
     }
 
@@ -112,42 +116,28 @@ struct TrainingScreen: View {
         return LocalizedPlanText.formatted("history.header.muscles", locale: locale, names)
     }
 
-    /// 今天的标题降级链：计划标题 → 加载占位 → 自由记录 → 仅跑步 → 空状态。
-    /// （原 TodayWorkoutScreen.resolvedHeader，随头部职责上移到本页。）
-    private var todayHeader: TodayPlanHeader {
-        if let plan = todayViewModel.todayPlan {
-            return TodayPlanHeader.resolve(
-                planTitle: plan.title,
-                focus: plan.focus,
-                fallbackTitle: String(localized: "today.header.default_title")
-            )
-        }
-        if todayViewModel.isLoading {
-            return TodayPlanHeader(title: String(localized: "today.header.default_title"), subtitle: nil)
+    /// 有计划（或仍在加载）时头部只留日期，计划标题与 focus 都不再上头部。
+    /// 只有没计划时才用副标题兜底说明当天状态：自由记录 → 仅跑步 → 空状态。
+    /// 这几种状态下内容区的摘要区不渲染（见 TodaySummarySection.hasScrollContent），
+    /// 这一行是当天唯一的说明文案，不能省。
+    private var todaySubtitle: String? {
+        guard todayViewModel.todayPlan == nil, !todayViewModel.isLoading else {
+            return nil
         }
         if todayViewModel.todayRecord != nil {
-            return TodayPlanHeader(
-                title: String(localized: "today.summary.free_record_day.title"),
-                subtitle: String(localized: "today.summary.free_record_day.subtitle")
-            )
+            return String(localized: "today.summary.free_record_day.subtitle")
         }
         if !todayViewModel.runningRecords.isEmpty {
             let totalDistance = todayViewModel.runningRecords.reduce(0.0) { $0 + ($1.distanceKm ?? 0) }
             let totalDuration = todayViewModel.runningRecords.reduce(0) { $0 + $1.durationMinutes }
-            return TodayPlanHeader(
-                title: String(localized: "today.summary.running_only.title"),
-                subtitle: LocalizedPlanText.todayRunningRecordsSummary(
-                    distance: totalDistance.cleanDistance,
-                    durationMinutes: totalDuration,
-                    count: todayViewModel.runningRecords.count,
-                    locale: locale
-                )
+            return LocalizedPlanText.todayRunningRecordsSummary(
+                distance: totalDistance.cleanDistance,
+                durationMinutes: totalDuration,
+                count: todayViewModel.runningRecords.count,
+                locale: locale
             )
         }
-        return TodayPlanHeader(
-            title: String(localized: "today.summary.empty.title"),
-            subtitle: String(localized: "today.summary.empty.subtitle")
-        )
+        return String(localized: "today.summary.empty.subtitle")
     }
 
     // MARK: - Header Controls
