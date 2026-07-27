@@ -11,14 +11,28 @@
 	<string>export</string>
 
 	<key>teamID</key>
-	<string>FB4M276Q93</string>
+	<string>QNQR296DT7</string>
 
-	<!-- Paired with `xcodebuild -allowProvisioningUpdates`: the distribution
-	     certificate comes from the keychain the workflow builds, and the
-	     provisioning profiles are fetched/created via the App Store Connect
-	     API key. -->
+	<!-- Manual signing. Automatic signing cannot work here: with it, `archive`
+	     signs for *development* and only `-exportArchive` re-signs for
+	     distribution, so the runner would also need a development certificate
+	     and a development profile fetched from the provisioning API. Manual
+	     signing makes both steps use the distribution identity directly and
+	     removes every provisioning-API call from the build. -->
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
+
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+
+	<!-- Must match PROVISIONING_PROFILE_SPECIFIER in the Release configs. -->
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.max.PeakLog</key>
+		<string>PeakLog App Store</string>
+		<key>com.max.PeakLog.LiveActivityExtension</key>
+		<string>PeakLog Extension App Store</string>
+	</dict>
 
 	<key>uploadSymbols</key>
 	<true/>

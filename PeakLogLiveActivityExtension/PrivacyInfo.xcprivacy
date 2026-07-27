@@ -13,7 +13,7 @@
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
-				<!-- 1C8F.1: UserDefaults(suiteName: "group.com.max.PeakLog"), shared with the
+				<!-- 1C8F.1: UserDefaults(suiteName: "group.com.max.PeakForm"), shared with the
 				     host app in the same App Group (PeakLogShared). -->
 				<string>1C8F.1</string>
 				<!-- CA92.1: covers the `?? .standard` fallback in PlanLiveActivityAttributes. -->

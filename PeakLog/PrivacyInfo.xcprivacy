@@ -15,7 +15,7 @@
 			<array>
 				<!-- CA92.1: UserDefaults.standard, read/write limited to this app (ThemeManager). -->
 				<string>CA92.1</string>
-				<!-- 1C8F.1: UserDefaults(suiteName: "group.com.max.PeakLog"), shared with the
+				<!-- 1C8F.1: UserDefaults(suiteName: "group.com.max.PeakForm"), shared with the
 				     Live Activity extension in the same App Group (PeakLogShared). -->
 				<string>1C8F.1</string>
 			</array>

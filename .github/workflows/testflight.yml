@@ -1,17 +1,17 @@
 name: TestFlight
 
-# Manual-only for now. Once a dispatch run has proven the pipeline end to end,
-# uncomment the tag trigger below to get "push a tag -> build lands on the phone".
 on:
+  # Tag a release and the build lands on TestFlight unattended.
+  push:
+    tags:
+      - "v*"
+  # Manual runs stay available for re-uploading a build number or testing a branch.
   workflow_dispatch:
     inputs:
       build_number:
         description: "Build number override (default: the workflow run number)"
         required: false
         type: string
-  # push:
-  #   tags:
-  #     - "v*"
 
 # Never let two uploads race: App Store Connect rejects duplicate build numbers,
 # and a cancelled upload can leave a half-processed build behind.
@@ -20,9 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Empty = use the runner's default Xcode (a 26.x on macos-26).
-  # Set to e.g. "26.4.1" to pin a specific version for reproducible releases.
-  XCODE_VERSION: ""
+  # Pinned rather than following the runner default, so a release build does not
+  # change toolchain underneath us when GitHub rolls the image default forward.
+  # macos-26 currently ships 26.0.1 / 26.1.1 / 26.2 / 26.3 / 26.4.1 / 26.5 / 26.6
+  # with 26.5 as the default. Bump deliberately, not by drift.
+  XCODE_VERSION: "26.6"
 
 jobs:
   deploy:
@@ -40,7 +42,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$XCODE_VERSION" ]; then
-            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+            XCODE_APP="/Applications/Xcode_${XCODE_VERSION}.app"
+            # Runner images drop old Xcodes over time. Say what is actually
+            # there rather than failing on an opaque xcode-select error.
+            if [ ! -d "$XCODE_APP" ]; then
+              echo "Xcode $XCODE_VERSION is not on this runner. Installed:" >&2
+              ls -d /Applications/Xcode*.app >&2
+              exit 1
+            fi
+            sudo xcode-select -s "$XCODE_APP"
           fi
           xcodebuild -version
 
@@ -96,10 +106,49 @@ jobs:
           echo "$ASC_API_KEY_P8_BASE64" | base64 --decode \
             > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8"
 
-      - name: Archive
+      # Manual signing: the profiles are supplied, not fetched. Nothing in the
+      # build talks to the provisioning API.
+      - name: Install provisioning profiles
         env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          PROFILE_APP_BASE64: ${{ secrets.PROFILE_APP_BASE64 }}
+          PROFILE_EXTENSION_BASE64: ${{ secrets.PROFILE_EXTENSION_BASE64 }}
+        run: |
+          set -euo pipefail
+          # Xcode 16+ reads the UserData path; older tooling reads the legacy
+          # one. Install into both rather than depending on which wins.
+          LEGACY="$HOME/Library/MobileDevice/Provisioning Profiles"
+          MODERN="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          TMP="$RUNNER_TEMP/profiles"
+          mkdir -p "$LEGACY" "$MODERN" "$TMP"
+
+          echo "$PROFILE_APP_BASE64" | base64 --decode > "$TMP/app.mobileprovision"
+          echo "$PROFILE_EXTENSION_BASE64" | base64 --decode > "$TMP/ext.mobileprovision"
+
+          for p in "$TMP"/*.mobileprovision; do
+            PLIST="$(security cms -D -i "$p")"
+            UUID="$(echo "$PLIST" | plutil -extract UUID raw -)"
+            NAME="$(echo "$PLIST" | plutil -extract Name raw -)"
+            cp "$p" "$LEGACY/$UUID.mobileprovision"
+            cp "$p" "$MODERN/$UUID.mobileprovision"
+            # The name must match PROVISIONING_PROFILE_SPECIFIER exactly, and
+            # the profile must carry the App Group. A profile minted before the
+            # capability was enabled lacks the entitlement; archive would catch
+            # it, but four minutes later and behind a wall of signing errors.
+            # Failing here names the offending profile and the fix directly.
+            printf "installed %-32s uuid=%s\n" "'$NAME'" "$UUID"
+            if echo "$PLIST" | grep -q "group.com.max.PeakForm"; then
+              echo "    app group: present"
+            else
+              echo "    app group: MISSING in '$NAME'" >&2
+              echo "    enable App Groups on this profile's App ID, then regenerate it" >&2
+              exit 1
+            fi
+          done
+          rm -rf "$TMP"
+
+      # No -allowProvisioningUpdates and no API key: signing settings live in
+      # the Release configs and the profiles are already on disk.
+      - name: Archive
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -108,26 +157,15 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/PeakLog.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_API_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID" \
             CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build_number }}
 
       - name: Export .ipa
-        env:
-          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
         run: |
           set -euo pipefail
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/PeakLog.xcarchive" \
             -exportOptionsPlist ExportOptions.plist \
-            -exportPath "$RUNNER_TEMP/export" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_API_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_API_ISSUER_ID"
+            -exportPath "$RUNNER_TEMP/export"
           ls -lh "$RUNNER_TEMP/export"
 
       - name: Upload to TestFlight
