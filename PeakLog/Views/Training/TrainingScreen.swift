@@ -94,14 +94,29 @@ struct TrainingScreen: View {
         TodayPlanHeader(title: dateTitle, subtitle: headerSubtitle)
     }
 
+    /// 分支判断在 `TrainingHeaderSubtitle.resolve` 里（纯函数、有单测覆盖），
+    /// 这里只负责把选中的分支翻译成本地化文案。
     private var headerSubtitle: String? {
-        switch tense {
-        case .today:
-            return todaySubtitle
-        case .past:
-            return historyViewModel.completedMuscleGroups.isEmpty ? nil : muscleFocusLine
-        case .futureInPlanWeek, .futureBeyondPlan:
+        let source = TrainingHeaderSubtitle.resolve(
+            tense: tense,
+            hasPlan: todayViewModel.todayPlan != nil,
+            isLoading: todayViewModel.isLoading,
+            hasRecord: todayViewModel.todayRecord != nil,
+            hasRunningRecords: !todayViewModel.runningRecords.isEmpty,
+            hasCompletedMuscles: !historyViewModel.completedMuscleGroups.isEmpty
+        )
+
+        switch source {
+        case .dateOnly:
             return nil
+        case .freeRecordDay:
+            return String(localized: "today.summary.free_record_day.subtitle")
+        case .runningOnly:
+            return runningOnlyLine
+        case .emptyDay:
+            return String(localized: "today.summary.empty.subtitle")
+        case .completedMuscles:
+            return muscleFocusLine
         }
     }
 
@@ -116,28 +131,15 @@ struct TrainingScreen: View {
         return LocalizedPlanText.formatted("history.header.muscles", locale: locale, names)
     }
 
-    /// 有计划（或仍在加载）时头部只留日期，计划标题与 focus 都不再上头部。
-    /// 只有没计划时才用副标题兜底说明当天状态：自由记录 → 仅跑步 → 空状态。
-    /// 这几种状态下内容区的摘要区不渲染（见 TodaySummarySection.hasScrollContent），
-    /// 这一行是当天唯一的说明文案，不能省。
-    private var todaySubtitle: String? {
-        guard todayViewModel.todayPlan == nil, !todayViewModel.isLoading else {
-            return nil
-        }
-        if todayViewModel.todayRecord != nil {
-            return String(localized: "today.summary.free_record_day.subtitle")
-        }
-        if !todayViewModel.runningRecords.isEmpty {
-            let totalDistance = todayViewModel.runningRecords.reduce(0.0) { $0 + ($1.distanceKm ?? 0) }
-            let totalDuration = todayViewModel.runningRecords.reduce(0) { $0 + $1.durationMinutes }
-            return LocalizedPlanText.todayRunningRecordsSummary(
-                distance: totalDistance.cleanDistance,
-                durationMinutes: totalDuration,
-                count: todayViewModel.runningRecords.count,
-                locale: locale
-            )
-        }
-        return String(localized: "today.summary.empty.subtitle")
+    private var runningOnlyLine: String {
+        let totalDistance = todayViewModel.runningRecords.reduce(0.0) { $0 + ($1.distanceKm ?? 0) }
+        let totalDuration = todayViewModel.runningRecords.reduce(0) { $0 + $1.durationMinutes }
+        return LocalizedPlanText.todayRunningRecordsSummary(
+            distance: totalDistance.cleanDistance,
+            durationMinutes: totalDuration,
+            count: todayViewModel.runningRecords.count,
+            locale: locale
+        )
     }
 
     // MARK: - Header Controls

@@ -60,4 +60,79 @@ final class TodayPlanHeaderTests: XCTestCase {
         XCTAssertTrue(en.contains("Jul 6"), "unexpected en eyebrow: \(en)")
         XCTAssertTrue(en.contains("Mon"), "unexpected en eyebrow: \(en)")
     }
+
+    // MARK: - TrainingHeaderSubtitle
+
+    /// 除 tense 外的参数默认都是「什么都没有」，每条用例只覆写自己关心的那个。
+    private func subtitle(
+        tense: DayTense,
+        hasPlan: Bool = false,
+        isLoading: Bool = false,
+        hasRecord: Bool = false,
+        hasRunningRecords: Bool = false,
+        hasCompletedMuscles: Bool = false
+    ) -> TrainingHeaderSubtitle {
+        TrainingHeaderSubtitle.resolve(
+            tense: tense,
+            hasPlan: hasPlan,
+            isLoading: isLoading,
+            hasRecord: hasRecord,
+            hasRunningRecords: hasRunningRecords,
+            hasCompletedMuscles: hasCompletedMuscles
+        )
+    }
+
+    func testTodayWithPlanShowsDateOnly() {
+        XCTAssertEqual(subtitle(tense: .today, hasPlan: true), .dateOnly)
+    }
+
+    /// 有计划就不出副标题，哪怕当天还有自由记录和跑步——细节都在内容区。
+    func testTodayPlanWinsOverRecordAndRunning() {
+        XCTAssertEqual(
+            subtitle(tense: .today, hasPlan: true, hasRecord: true, hasRunningRecords: true),
+            .dateOnly
+        )
+    }
+
+    /// 加载中不要先闪一行兜底文案，等计划落地再决定。
+    func testTodayWhileLoadingShowsDateOnly() {
+        XCTAssertEqual(subtitle(tense: .today, isLoading: true), .dateOnly)
+    }
+
+    func testTodayWithoutPlanButWithRecordIsFreeRecordDay() {
+        XCTAssertEqual(subtitle(tense: .today, hasRecord: true), .freeRecordDay)
+    }
+
+    func testTodayWithOnlyRunningRecordsIsRunningOnly() {
+        XCTAssertEqual(subtitle(tense: .today, hasRunningRecords: true), .runningOnly)
+    }
+
+    /// 自由记录优先于仅跑步：两者都在时算记录日。
+    func testTodayRecordTakesPrecedenceOverRunning() {
+        XCTAssertEqual(
+            subtitle(tense: .today, hasRecord: true, hasRunningRecords: true),
+            .freeRecordDay
+        )
+    }
+
+    /// 空状态下内容区不渲染任何东西，这条兜底文案是当天唯一的引导，不能退化成 dateOnly。
+    func testTodayWithNothingIsEmptyDay() {
+        XCTAssertEqual(subtitle(tense: .today), .emptyDay)
+    }
+
+    func testPastWithCompletedMusclesShowsMuscles() {
+        XCTAssertEqual(subtitle(tense: .past, hasCompletedMuscles: true), .completedMuscles)
+    }
+
+    func testPastWithoutCompletedMusclesShowsDateOnly() {
+        XCTAssertEqual(subtitle(tense: .past), .dateOnly)
+    }
+
+    /// 未来日的计划细节由内容区承载，头部一律只留日期。
+    func testFutureAlwaysShowsDateOnly() {
+        for tense in [DayTense.futureInPlanWeek, .futureBeyondPlan] {
+            XCTAssertEqual(subtitle(tense: tense, hasPlan: true), .dateOnly, "unexpected for \(tense)")
+            XCTAssertEqual(subtitle(tense: tense), .dateOnly, "unexpected for \(tense)")
+        }
+    }
 }
