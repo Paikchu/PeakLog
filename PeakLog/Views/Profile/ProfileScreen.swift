@@ -108,34 +108,39 @@ struct ProfileScreen: View {
                     .padding(.bottom, 6)
                     .textCase(.uppercase)
 
+                Divider()
+                    .background(Color.appSeparator)
+
                 ForEach(Array(prs.enumerated()), id: \.element.id) { index, pr in
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(pr.displayName)
-                                .appFont(size: 15, weight: .semibold)
+                                .appFont(size: 16, weight: .semibold)
                                 .foregroundColor(.textPrimary)
                             Text(pr.achievedAt, style: .date)
-                                .appFont(size: 12)
+                                .appFont(size: 13)
                                 .foregroundColor(.textMuted)
                         }
 
                         Spacer()
 
                         Text("\(formatPRWeight(pr.maxWeight)) \(pr.weightUnit.display)")
-                            .appFont(size: 14, weight: .bold)
+                            .appFont(size: 16, weight: .bold, design: .rounded)
                             .foregroundColor(Color.accentValue)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
                     .padding(.vertical, 12)
 
                     if index < prs.count - 1 {
                         Divider()
                             .background(Color.appSeparator)
-                            .padding(.horizontal, 16)
                     }
                 }
+
+                Divider()
+                    .background(Color.appSeparator)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
         }
     }
 
@@ -147,12 +152,12 @@ struct ProfileScreen: View {
 
     // MARK: - Avatar
     private var avatarSection: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             if viewModel.isLoading {
                 // Keep the loading avatar visible against both page themes.
                 Circle()
                     .fill(Color.appSeparator)
-                    .frame(width: 52, height: 52)
+                    .frame(width: 56, height: 56)
                     .overlay(ProgressView())
             } else {
                 AsyncImage(url: viewModel.profile?.avatarURL) { phase in
@@ -162,73 +167,51 @@ struct ProfileScreen: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     default:
-                        Image(systemName: "person.circle.fill")
-                            .appFont(size: 40)
-                            .foregroundColor(.textMuted)
+                        Circle()
+                            .fill(Color.appSurface)
+                            .overlay {
+                                Image(systemName: "person.fill")
+                                    .appFont(size: 22, weight: .semibold)
+                                    .foregroundColor(.textSecondary)
+                            }
                     }
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 56, height: 56)
                 .clipShape(Circle())
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.profile?.displayName ?? String(localized: "common.placeholder"))
-                    .appFont(size: 17, weight: .bold)
+                    .appFont(size: 20, weight: .semibold, relativeTo: .title3)
                     .foregroundColor(.textPrimary)
 
                 Text(viewModel.profile?.membershipLevel.localizedDisplayName ?? "")
-                    .appFont(size: 13)
+                    .appFont(size: 14, relativeTo: .subheadline)
                     .foregroundColor(.textMuted)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
     }
 
     private var goalSection: some View {
-        SettingsSection(title: "goal_spec.section.goal") {
-            PreferenceNavRow(
-                icon: "target",
-                title: "profile.goal_spec.entry",
-                detail: viewModel.goalSpec?.objective.displayLabel
-            ) {
-                showingGoalSpecEditor = true
-            }
+        ProfileGoalButton {
+            showingGoalSpecEditor = true
         }
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Stats
     private var statsSection: some View {
-        HStack(spacing: 8) {
-            StatCardView(
-                icon: "trophy.fill",
-                iconColor: .accentPrimary,
-                value: "\(viewModel.profile?.stats.workoutsCount ?? 0)",
-                label: "profile.stats.workouts"
-            )
-            StatCardView(
-                icon: "flame.fill",
-                iconColor: .orange,
-                value: "\(viewModel.profile?.stats.streakDays ?? 0)d",
-                label: "profile.stats.streak"
-            )
-            StatCardView(
-                icon: "chart.line.uptrend.xyaxis",
-                iconColor: .green,
-                value: viewModel.volumeDisplay,
-                label: "profile.stats.volume"
-            )
-            StatCardView(
-                icon: "star.fill",
-                iconColor: Color.accentValue,
-                value: "\(viewModel.profile?.stats.prCount ?? 0)",
-                label: "profile.stats.prs"
-            )
-        }
+        ProfilePerformanceDashboard(
+            volume: viewModel.volumeDisplay,
+            workouts: "\(viewModel.profile?.stats.workoutsCount ?? 0)",
+            streak: "\(viewModel.profile?.stats.streakDays ?? 0)d",
+            personalRecords: "\(viewModel.profile?.stats.prCount ?? 0)"
+        )
         .padding(.horizontal, 16)
     }
 
@@ -390,6 +373,38 @@ struct ProfileScreen: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 80)
+    }
+}
+
+private struct ProfileGoalButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "target")
+                    .appFont(size: 18, weight: .semibold)
+                    .foregroundColor(.accentPrimary)
+                    .frame(width: 40, height: 40)
+                    .background(Color.accentPrimary.opacity(0.12))
+                    .cornerRadius(AppRadius.md)
+
+                Text("profile.goal_spec.entry")
+                    .appFont(size: 17, weight: .semibold)
+                    .foregroundColor(.textPrimary)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .appFont(size: 13, weight: .semibold)
+                    .foregroundColor(.textDarkMuted)
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color.appSurface)
+        .cornerRadius(AppRadius.xl)
     }
 }
 

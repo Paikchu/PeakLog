@@ -39,6 +39,11 @@ let goal = section(
     from: "private var goalSection",
     to: "// MARK: - Stats"
 )
+let statsSection = section(
+    in: profile,
+    from: "private var statsSection",
+    to: "// MARK: - Preferences"
+)
 let preferenceList = section(
     in: profile,
     from: "private var preferencesSection",
@@ -51,8 +56,14 @@ let support = section(
 )
 
 precondition(
-    header.contains(".padding(.top, 16)") && avatar.contains(".padding(.top, 8)"),
-    "The page title must gain 16pt of top space without enlarging the profile information gap"
+    header.contains(".padding(.top, 16)")
+        && avatar.contains(".padding(.horizontal, 20)")
+        && avatar.contains(".frame(width: 56, height: 56)")
+        && avatar.contains(".appFont(size: 20, weight: .semibold, relativeTo: .title3)")
+        && avatar.contains(".appFont(size: 14, relativeTo: .subheadline)")
+        && avatar.contains(".padding(.top, 16)")
+        && avatar.contains(".padding(.bottom, 8)"),
+    "The profile identity must use the coordinated A2 type scale, avatar size, and insets"
 )
 precondition(
     !avatar.contains(".background(Color.appSurface)")
@@ -61,14 +72,20 @@ precondition(
     "Non-interactive profile information must not use a card or bordered-avatar affordance"
 )
 precondition(
-    !stats.contains(".background(Color.appSurface)")
-        && !stats.contains(".cornerRadius(AppRadius.xl)")
+    stats.contains("struct ProfilePerformanceDashboard")
+        && stats.contains("ProfileMetricRow")
+        && stats.contains("Divider()")
+        && stats.contains(".background(Color.appSurface)")
+        && stats.contains(".cornerRadius(AppRadius.xl)")
         && !stats.contains(".strokeBorder")
         && !stats.contains(".shadow("),
-    "Non-interactive statistics must not use an outer card affordance"
+    "Statistics must use one borderless A2 split dashboard"
 )
 precondition(
-    !stats.contains("Button(") && !stats.contains(".onTapGesture"),
+    !stats.contains("Button(")
+        && !stats.contains(".onTapGesture")
+        && statsSection.contains("ProfilePerformanceDashboard(")
+        && !statsSection.contains("StatCardView("),
     "Statistics must remain non-interactive"
 )
 precondition(
@@ -83,7 +100,8 @@ precondition(
 precondition(
     preferences.contains("Button(action: action)")
         && preferences.contains("Image(systemName: \"chevron.right\")")
-        && goal.contains("PreferenceNavRow(")
+        && goal.contains("ProfileGoalButton")
+        && !goal.contains("SettingsSection(")
         && preferenceList.contains("PreferenceNavRow(")
         && preferenceList.contains("PreferenceToggleRow(")
         && support.contains("PreferenceNavRow("),
