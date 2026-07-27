@@ -9,10 +9,14 @@
 - `PeakLog/Views/Profile/StatCardView.swift`
   - 将旧统计卡组件替换为 A2 左右分栏仪表盘。
   - 左侧展示总训练量，右侧展示三行紧凑指标，不提供点击行为。
+- `PeakLog/Support/ProfileVolumeDisplayParts.swift`
+  - 将训练量显示安全拆分为数值与单位，覆盖 kg、t、lbs、k lbs 和占位符。
 - `PeakLog/Views/Profile/PreferenceRowView.swift`
   - 为个人资料页提供 A2 的 17pt/15pt 行字号、20pt 图标与无边框 18pt 分组样式，同时保留其他页面默认值。
 - `tests/profile_static_affordance_test.swift`
   - 锁定 A2 分栏结构、静态元素和真实入口的视觉语义边界。
+- `tests/profile_volume_display_parts_test.swift`
+  - 运行时验证训练量数值与单位拆分。
 
 ## 实施顺序
 

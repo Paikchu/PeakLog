@@ -13,6 +13,7 @@
 ## 验证
 
 - `swift tests/profile_static_affordance_test.swift`：通过。
+- `swiftc -parse-as-library PeakLog/Support/ProfileVolumeDisplayParts.swift tests/profile_volume_display_parts_test.swift -o /tmp/profile_volume_display_parts_test && /tmp/profile_volume_display_parts_test`：通过。
 - `swift tests/home_dock_navigation_test.swift`：通过。
 - `git diff --check`：通过。
 - iPhone 17 Pro Max、iOS 26.5 Simulator Debug 构建、安装和启动：通过，无编译错误。

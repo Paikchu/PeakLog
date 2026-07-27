@@ -12,12 +12,8 @@ struct ProfilePerformanceDashboard: View {
     let streak: String
     let personalRecords: String
 
-    private var volumeParts: (value: String, unit: String) {
-        for unit in ["k lbs", "lbs", "kg", "t"] where volume.hasSuffix(unit) {
-            let value = volume.dropLast(unit.count).trimmingCharacters(in: .whitespaces)
-            return (String(value), unit)
-        }
-        return (volume, "")
+    private var volumeParts: ProfileVolumeDisplayParts {
+        ProfileVolumeDisplayParts(volume)
     }
 
     var body: some View {

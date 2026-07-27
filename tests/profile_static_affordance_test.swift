@@ -18,6 +18,7 @@ func section(in source: String, from start: String, to end: String) -> Substring
 
 let profile = try source("PeakLog/Views/Profile/ProfileScreen.swift")
 let stats = try source("PeakLog/Views/Profile/StatCardView.swift")
+let volumeParts = try source("PeakLog/Support/ProfileVolumeDisplayParts.swift")
 let preferences = try source("PeakLog/Views/Profile/PreferenceRowView.swift")
 let avatar = section(
     in: profile,
@@ -81,6 +82,8 @@ precondition(
 )
 precondition(
     stats.contains("struct ProfilePerformanceDashboard")
+        && stats.contains("ProfileVolumeDisplayParts(volume)")
+        && volumeParts.contains("struct ProfileVolumeDisplayParts")
         && stats.contains("static let horizontalPadding: CGFloat = 20")
         && stats.contains("static let sectionSpacing: CGFloat = 32")
         && stats.contains("static let cardRadius: CGFloat = 18")
