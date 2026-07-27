@@ -5,7 +5,6 @@ struct ProfileScreen: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
     @Environment(\.openURL) private var openURL
-    @Environment(\.colorScheme) private var colorScheme
     @State private var showingWeightUnitPicker = false
     @State private var showingAppearancePicker = false
     @State private var showingGoalSpecEditor = false
@@ -36,7 +35,7 @@ struct ProfileScreen: View {
                     emptyState
                         .padding(.bottom, 40)
                 } else {
-                    VStack(spacing: 24) {
+                    VStack(spacing: ProfileLayout.sectionSpacing) {
                         avatarSection
                         goalSection
                         statsSection
@@ -101,52 +100,70 @@ struct ProfileScreen: View {
     private var prSection: some View {
         let prs = viewModel.sortedExercisePRs
         if !prs.isEmpty {
-            SettingsSection(title: "PRs") {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("PRs")
+                    .appFont(size: 11, weight: .semibold)
+                    .foregroundColor(.textMuted)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 8)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+
+                Divider()
+                    .background(Color.appSeparator)
+
                 ForEach(Array(prs.enumerated()), id: \.element.id) { index, pr in
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(pr.displayName)
-                                .appFont(size: 15, weight: .semibold)
+                                .appFont(size: 16, weight: .semibold)
                                 .foregroundColor(.textPrimary)
                             Text(pr.achievedAt, style: .date)
-                                .appFont(size: 12)
+                                .appFont(size: 13)
                                 .foregroundColor(.textMuted)
                         }
 
                         Spacer()
 
                         Text("\(formatPRWeight(pr.maxWeight)) \(pr.weightUnit.display)")
-                            .appFont(size: 14, weight: .bold)
+                            .appFont(size: 16, weight: .bold, design: .rounded)
                             .foregroundColor(Color.accentValue)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 4)
                     .padding(.vertical, 12)
 
                     if index < prs.count - 1 {
                         Divider()
                             .background(Color.appSeparator)
-                            .padding(.horizontal, 16)
                     }
                 }
+
+                Divider()
+                    .background(Color.appSeparator)
             }
+            .padding(.horizontal, ProfileLayout.horizontalPadding)
         }
     }
 
     // MARK: - Header
     private var header: some View {
-        RootPageHeader(title: String(localized: "profile.title"))
+        Text("profile.title")
+            .appFont(size: 32, weight: .bold, relativeTo: .largeTitle)
+            .foregroundColor(.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, ProfileLayout.horizontalPadding)
+            .padding(.top, 48)
+            .padding(.bottom, 24)
     }
 
     // MARK: - Avatar
     private var avatarSection: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             if viewModel.isLoading {
-                // Skeleton fill must contrast with the enclosing appSurface
-                // card in BOTH themes: appSurface would vanish into the card,
-                // and appBackground is darker than the card in dark mode.
+                // Keep the loading avatar visible against both page themes.
                 Circle()
                     .fill(Color.appSeparator)
-                    .frame(width: 52, height: 52)
+                    .frame(width: 56, height: 56)
                     .overlay(ProgressView())
             } else {
                 AsyncImage(url: viewModel.profile?.avatarURL) { phase in
@@ -156,108 +173,81 @@ struct ProfileScreen: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     default:
-                        Image(systemName: "person.circle.fill")
-                            .appFont(size: 40)
-                            .foregroundColor(.textMuted)
+                        Circle()
+                            .fill(Color.appSurface)
+                            .overlay {
+                                Image(systemName: "person.fill")
+                                    .appFont(size: 22, weight: .semibold)
+                                    .foregroundColor(.textSecondary)
+                            }
                     }
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 56, height: 56)
                 .clipShape(Circle())
-                .overlay(Circle().strokeBorder(Color.accentBorder.opacity(0.5), lineWidth: 2))
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.profile?.displayName ?? String(localized: "common.placeholder"))
-                    .appFont(size: 17, weight: .bold)
+                    .appFont(size: 20, weight: .semibold, relativeTo: .title3)
                     .foregroundColor(.textPrimary)
 
                 Text(viewModel.profile?.membershipLevel.localizedDisplayName ?? "")
-                    .appFont(size: 13)
+                    .appFont(size: 14, relativeTo: .subheadline)
                     .foregroundColor(.textMuted)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Color.appSurface)
-        .cornerRadius(AppRadius.xl)
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.xl)
-                .strokeBorder(Color.appSeparator, lineWidth: 0.5)
-        )
-        .shadow(
-            color: colorScheme == .light ? Color.black.opacity(0.06) : .clear,
-            radius: 3, x: 0, y: 1
-        )
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, ProfileLayout.horizontalPadding)
     }
 
     private var goalSection: some View {
-        SettingsSection(title: "goal_spec.section.goal") {
-            PreferenceNavRow(
-                icon: "target",
-                title: "profile.goal_spec.entry",
-                detail: viewModel.goalSpec?.objective.displayLabel
-            ) {
-                showingGoalSpecEditor = true
-            }
+        ProfileGoalButton {
+            showingGoalSpecEditor = true
         }
+        .padding(.horizontal, ProfileLayout.horizontalPadding)
     }
 
     // MARK: - Stats
     private var statsSection: some View {
-        HStack(spacing: 8) {
-            StatCardView(
-                icon: "trophy.fill",
-                iconColor: .accentPrimary,
-                value: "\(viewModel.profile?.stats.workoutsCount ?? 0)",
-                label: "profile.stats.workouts"
-            )
-            StatCardView(
-                icon: "flame.fill",
-                iconColor: .orange,
-                value: "\(viewModel.profile?.stats.streakDays ?? 0)d",
-                label: "profile.stats.streak"
-            )
-            StatCardView(
-                icon: "chart.line.uptrend.xyaxis",
-                iconColor: .green,
-                value: viewModel.volumeDisplay,
-                label: "profile.stats.volume"
-            )
-            StatCardView(
-                icon: "star.fill",
-                iconColor: Color.accentValue,
-                value: "\(viewModel.profile?.stats.prCount ?? 0)",
-                label: "profile.stats.prs"
-            )
-        }
-        .padding(.horizontal, 16)
+        ProfilePerformanceDashboard(
+            volume: viewModel.volumeDisplay,
+            workouts: "\(viewModel.profile?.stats.workoutsCount ?? 0)",
+            streak: "\(viewModel.profile?.stats.streakDays ?? 0)d",
+            personalRecords: "\(viewModel.profile?.stats.prCount ?? 0)"
+        )
+        .padding(.horizontal, ProfileLayout.horizontalPadding)
     }
 
     // MARK: - Preferences
     @ViewBuilder
     private var preferencesSection: some View {
         if let prefs = viewModel.profile?.preferences {
-            SettingsSection(title: "profile.section.preferences") {
+            SettingsSection(
+                title: "profile.section.preferences",
+                horizontalPadding: ProfileLayout.horizontalPadding,
+                titleHorizontalPadding: 0,
+                cornerRadius: ProfileLayout.cardRadius,
+                showsBorder: false
+            ) {
                 PreferenceNavRow(
-                    icon: "globe",
+                    icon: "character",
                     title: "profile.preferences.language",
-                    detail: localizationManager.appLanguage.nativeDisplayName
+                    detail: localizationManager.appLanguage.nativeDisplayName,
+                    style: .profile
                 ) {
                     openAppSettings()
                 }
 
                 Divider()
                     .background(Color.appSeparator)
-                    .padding(.horizontal, 16)
+                    .padding(.leading, 48)
 
                 PreferenceNavRow(
-                    icon: "scalemass",
+                    icon: "ruler",
                     title: "profile.preferences.weight_unit",
-                    detail: prefs.weightUnit.display
+                    detail: prefs.weightUnit.display,
+                    style: .profile
                 ) {
                     showingWeightUnitPicker = true
                 }
@@ -275,7 +265,7 @@ struct ProfileScreen: View {
 
                 Divider()
                     .background(Color.appSeparator)
-                    .padding(.horizontal, 16)
+                    .padding(.leading, 48)
 
                 PreferenceToggleRow(
                     icon: "bell",
@@ -296,20 +286,22 @@ struct ProfileScreen: View {
                             }
                         }
                     ),
-                    isLoading: viewModel.isSaving
+                    isLoading: viewModel.isSaving,
+                    style: .profile
                 )
 
                 Divider()
                     .background(Color.appSeparator)
-                    .padding(.horizontal, 16)
+                    .padding(.leading, 48)
 
                 // Appearance is device-local and owned by ThemeManager
                 // (UserDefaults): it applies synchronously, so there is no
                 // async save to mirror optimistically or roll back.
                 PreferenceNavRow(
-                    icon: "circle.lefthalf.filled",
+                    icon: "moon",
                     title: "profile.preferences.appearance",
-                    detail: themeManager.mode.localizedDisplayName
+                    detail: themeManager.mode.localizedDisplayName,
+                    style: .profile
                 ) {
                     showingAppearancePicker = true
                 }
@@ -330,16 +322,30 @@ struct ProfileScreen: View {
 
     // MARK: - Support
     private var supportSection: some View {
-        SettingsSection(title: "profile.section.support") {
-            PreferenceNavRow(icon: "questionmark.circle", title: "profile.support.help") {
+        SettingsSection(
+            title: "profile.section.support",
+            horizontalPadding: ProfileLayout.horizontalPadding,
+            titleHorizontalPadding: 0,
+            cornerRadius: ProfileLayout.cardRadius,
+            showsBorder: false
+        ) {
+            PreferenceNavRow(
+                icon: "questionmark.circle",
+                title: "profile.support.help",
+                style: .profile
+            ) {
                 showingHelp = true
             }
 
             Divider()
                 .background(Color.appSeparator)
-                .padding(.horizontal, 16)
+                .padding(.leading, 48)
 
-            PreferenceNavRow(icon: "doc.text", title: "profile.support.privacy") {
+            PreferenceNavRow(
+                icon: "shield",
+                title: "profile.support.privacy",
+                style: .profile
+            ) {
                 showingPrivacy = true
             }
         }
@@ -348,11 +354,20 @@ struct ProfileScreen: View {
     /// The bundled exercise demonstrations are licensed media, not ours; the
     /// rights holder requires the credit to travel with them.
     private var mediaCredit: some View {
-        Text("settings.media_credit")
+        let urlString = "https://gymvisual.com/"
+        let credit = String(localized: "settings.media_credit")
+        let prefix = credit.replacingOccurrences(of: urlString, with: "")
+
+        return HStack(spacing: 0) {
+            Text(prefix)
+                .foregroundColor(.textDarkMuted)
+
+            Link(urlString, destination: URL(string: urlString)!)
+                .foregroundColor(.blue)
+        }
             .appFont(size: 11)
-            .foregroundColor(.textDarkMuted)
             .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+            .padding(.top, -16)
     }
 
     private func openAppSettings() {
@@ -395,6 +410,38 @@ struct ProfileScreen: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 80)
+    }
+}
+
+private struct ProfileGoalButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "target")
+                    .appFont(size: 18, weight: .semibold)
+                    .foregroundColor(.accentPrimary)
+                    .frame(width: 40, height: 40)
+                    .background(Color.accentPrimary.opacity(0.12))
+                    .cornerRadius(AppRadius.md)
+
+                Text("profile.goal_spec.entry")
+                    .appFont(size: 17, weight: .semibold)
+                    .foregroundColor(.textPrimary)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .appFont(size: 13, weight: .semibold)
+                    .foregroundColor(.textDarkMuted)
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color.appSurface)
+        .cornerRadius(ProfileLayout.cardRadius)
     }
 }
 

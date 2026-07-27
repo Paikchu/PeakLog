@@ -1,0 +1,25 @@
+# 个人资料 A2 紧凑分栏交付记录
+
+## 变更
+
+- “个人资料”采用 32pt 标题、48pt 顶部留白和 24pt 标题后间距；资料信息使用 56pt 无描边头像、20pt 用户名、14pt 会员信息和 20pt 水平边距。
+- 训练目标改为独立入口，移除多余分组标题并保留明确右箭头。
+- 四列统计替换为 144pt 高的 A2 分栏仪表盘：总训练量在左，训练次数、连续天数和 PR 在右。
+- 统计仪表盘使用无描边、无阴影、无点击行为的静态面板。
+- PR 使用上下分隔线与扁平记录行；偏好设置和支持入口保留交互语义。
+- 所有区块统一为 32pt 间距、20pt 页面边距和 18pt 卡片圆角；设置行使用 17pt 标题与 15pt 详情。
+- Gym visual 署名中的蓝色 URL 改为真实可点击链接。
+
+## 验证
+
+- `swift tests/profile_static_affordance_test.swift`：通过。
+- `swiftc -parse-as-library PeakLog/Support/ProfileVolumeDisplayParts.swift tests/profile_volume_display_parts_test.swift -o /tmp/profile_volume_display_parts_test && /tmp/profile_volume_display_parts_test`：通过。
+- `swift tests/home_dock_navigation_test.swift`：通过。
+- `git diff --check`：通过。
+- iPhone 17 Pro Max、iOS 26.5 Simulator Debug 构建、安装和启动：通过，无编译错误。
+- 浅色与深色个人资料页：资料、统计和 PR 静态元素均无外层边框；真实入口视觉与行为保持。
+
+## 已知状态
+
+- 全量 XCTest 在测试宿主启动阶段超过 5 分钟工具上限；本次未修改业务逻辑，使用源代码契约测试和模拟器构建覆盖改动边界。
+- 构建保留 `origin/main` 既有的 Swift 6 并发警告，本次未新增。
