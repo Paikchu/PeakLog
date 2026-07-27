@@ -1,17 +1,17 @@
 name: TestFlight
 
-# Manual-only for now. Once a dispatch run has proven the pipeline end to end,
-# uncomment the tag trigger below to get "push a tag -> build lands on the phone".
 on:
+  # Tag a release and the build lands on TestFlight unattended.
+  push:
+    tags:
+      - "v*"
+  # Manual runs stay available for re-uploading a build number or testing a branch.
   workflow_dispatch:
     inputs:
       build_number:
         description: "Build number override (default: the workflow run number)"
         required: false
         type: string
-  # push:
-  #   tags:
-  #     - "v*"
 
 # Never let two uploads race: App Store Connect rejects duplicate build numbers,
 # and a cancelled upload can leave a half-processed build behind.
@@ -20,9 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Empty = use the runner's default Xcode (a 26.x on macos-26).
-  # Set to e.g. "26.4.1" to pin a specific version for reproducible releases.
-  XCODE_VERSION: ""
+  # Pinned rather than following the runner default, so a release build does not
+  # change toolchain underneath us when GitHub rolls the image default forward.
+  # macos-26 currently ships 26.0.1 / 26.1.1 / 26.2 / 26.3 / 26.4.1 / 26.5 / 26.6
+  # with 26.5 as the default. Bump deliberately, not by drift.
+  XCODE_VERSION: "26.6"
 
 jobs:
   deploy:
@@ -40,7 +42,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$XCODE_VERSION" ]; then
-            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+            XCODE_APP="/Applications/Xcode_${XCODE_VERSION}.app"
+            # Runner images drop old Xcodes over time. Say what is actually
+            # there rather than failing on an opaque xcode-select error.
+            if [ ! -d "$XCODE_APP" ]; then
+              echo "Xcode $XCODE_VERSION is not on this runner. Installed:" >&2
+              ls -d /Applications/Xcode*.app >&2
+              exit 1
+            fi
+            sudo xcode-select -s "$XCODE_APP"
           fi
           xcodebuild -version
 
