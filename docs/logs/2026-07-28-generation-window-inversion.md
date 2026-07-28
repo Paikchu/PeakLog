@@ -118,6 +118,12 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
 
    线上现状：两个 profile 均为合法的 `Asia/Shanghai`，该 guard 当前是 no-op，**无紧急性**。
 
+   **第三轮（Review 再次指出，属实）**：JS 侧堵完之后，`install_generated_plan` / `replan_plan_days` 两个 RPC 仍**自行重读** `profiles.timezone`，且只 `coalesce(NULL, 'UTC')`、不处理非法值，`now() AT TIME ZONE v_user_timezone` 会抛 `22023`。已在线上验证：`select now() at time zone 'Asia/Shanghi'` → `ERROR 22023: time zone "Asia/Shanghi" not recognized`。
+   后果比修复前更隐蔽：扫描不再中断，该用户的周生成会**跑完整条 LLM 链路**，最后才被 RPC 拒绝；因为计划始终不存在，之后每个周日整点都会重复一次注定失败且计费的生成，该用户永远拿不到计划。
+   修法**不是加第四道 guard**，而是让列本身可信：新增 `20260728140000_normalize_profile_timezone.sql`——`resolve_timezone()`（STABLE，用固定时间戳探针，接受与 RPC 完全相同的取值集合，含 `PST8PDT` 这类缩写）+ `profiles` 上的 `BEFORE INSERT OR UPDATE OF timezone` 触发器 + 一次性修复存量行。JS 侧 guard 保留作纵深防御。
+   为何不用 CHECK 约束：Postgres 禁止 CHECK 中使用子查询，而合法性只能查 `pg_timezone_names` / `AT TIME ZONE` 机制，二者都非 IMMUTABLE。
+   **该迁移尚未应用，等待授权。** 线上 0 行非法时区，当前为潜在缺陷而非现网故障。
+
 ## 待办
 
 - 2026-08-02（周日）20:00 上海时间：确认两个账号各自生成 2026-08-03 的新计划，且 `plan_generations.context_snapshot` 含 7/27–8/2 的实际训练数据。
