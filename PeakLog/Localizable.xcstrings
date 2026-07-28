@@ -355,40 +355,6 @@
         }
       }
     },
-    "auth.account_created": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account created. If email confirmation is enabled, check your inbox to finish signing in."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "账号已创建。如果启用了邮箱验证，请先检查收件箱并完成验证后再登录。"
-          }
-        }
-      }
-    },
-    "auth.create_account": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Create Account"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "创建账号"
-          }
-        }
-      }
-    },
     "auth.dev.skip": {
       "extractionState": "manual",
       "localizations": {
@@ -406,70 +372,36 @@
         }
       }
     },
-    "auth.email": {
+    "auth.error.apple_authorization_failed": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Email"
+            "value": "Apple authorization failed. Please try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "邮箱"
+            "value": "Apple 授权失败，请重试。"
           }
         }
       }
     },
-    "auth.email.placeholder": {
+    "auth.error.sign_in_failed": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Email"
+            "value": "Unable to sign in. Please try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "邮箱"
-          }
-        }
-      }
-    },
-    "auth.error.invalid_credentials": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Incorrect email or password."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "邮箱或密码不正确。"
-          }
-        }
-      }
-    },
-    "auth.error.missing_fields": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter your email and password."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请输入邮箱和密码。"
+            "value": "登录失败，请重试。"
           }
         }
       }
@@ -508,74 +440,6 @@
         }
       }
     },
-    "auth.password": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Password"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "密码"
-          }
-        }
-      }
-    },
-    "auth.password.placeholder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Password"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "密码"
-          }
-        }
-      }
-    },
-    "auth.sign_in": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign In"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录"
-          }
-        }
-      }
-    },
-    "auth.signing_in": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Signing in…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在登录…"
-          }
-        }
-      }
-    },
     "auth.subtitle": {
       "extractionState": "manual",
       "localizations": {
@@ -589,40 +453,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "登录以同步你的训练数据"
-          }
-        }
-      }
-    },
-    "auth.switch_to_create_account": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New here? Create Account"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "第一次使用？创建账号"
-          }
-        }
-      }
-    },
-    "auth.switch_to_sign_in": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Already have an account? Sign In"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已有账号？去登录"
           }
         }
       }

@@ -1,16 +1,12 @@
+import AuthenticationServices
 import SwiftUI
 
-/// Development-era sign-in: email + password against Supabase Auth. No sign-up
-/// flow — accounts are provisioned in the Supabase dashboard (Phase 0 §3).
-/// A Sign in with Apple button lands here later without touching the gate.
 struct AuthView: View {
     @ObservedObject var auth: AuthStateManager
 
-    @State private var email: String = ""
-    @State private var password: String = ""
-    @FocusState private var focusedField: Field?
-
-    private enum Field { case email, password }
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var currentNonce: AppleSignInNonce?
+    @State private var isAuthorizingApple = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -25,25 +21,6 @@ struct AuthView: View {
                     .foregroundStyle(Color.textSecondary)
             }
 
-            VStack(spacing: 12) {
-                TextField("auth.email.placeholder", text: $email)
-                    .textContentType(.emailAddress)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.next)
-                    .focused($focusedField, equals: .email)
-                    .onSubmit { focusedField = .password }
-                    .fieldStyle()
-
-                SecureField("auth.password.placeholder", text: $password)
-                    .textContentType(.password)
-                    .submitLabel(.go)
-                    .focused($focusedField, equals: .password)
-                    .onSubmit { Task { await submit() } }
-                    .fieldStyle()
-            }
-
             if let message = auth.errorMessage {
                 Text(message)
                     .font(.footnote)
@@ -52,23 +29,18 @@ struct AuthView: View {
                     .transition(.opacity)
             }
 
-            Button {
-                Task { await submit() }
-            } label: {
-                Group {
-                    if auth.isBusy {
-                        Text("auth.signing_in")
-                    } else {
-                        Text("auth.sign_in")
-                    }
-                }
-                .font(.headline)
-                .foregroundStyle(Color.appBackground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.accentPrimary, in: RoundedRectangle(cornerRadius: 14))
+            SignInWithAppleButton(.signIn) { request in
+                prepare(request)
+            } onCompletion: { result in
+                complete(result)
             }
-            .disabled(auth.isBusy)
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .id(colorScheme)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .disabled(auth.isBusy || isAuthorizingApple)
+            .accessibilityIdentifier("apple-sign-in-button")
 
             #if DEBUG
             Button {
@@ -90,22 +62,68 @@ struct AuthView: View {
         .animation(.easeInOut(duration: 0.2), value: auth.errorMessage)
     }
 
-    private func submit() async {
-        focusedField = nil
-        await auth.signIn(email: email, password: password)
-    }
-}
+    private func prepare(_ request: ASAuthorizationAppleIDRequest) {
+        guard !isAuthorizingApple, !auth.isBusy else { return }
 
-private extension View {
-    func fieldStyle() -> some View {
-        font(.body)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(Color.appCard, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.appSeparator, lineWidth: 1)
+        do {
+            let nonce = try AppleSignInNonce.random()
+            currentNonce = nonce
+            isAuthorizingApple = true
+            auth.clearSignInError()
+            request.requestedScopes = [.fullName, .email]
+            request.nonce = nonce.hashedValue
+        } catch {
+            auth.reportAppleAuthorizationFailure()
+        }
+    }
+
+    private func complete(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            let appleCredential = authorization.credential as? ASAuthorizationAppleIDCredential
+            handle(
+                AppleAuthorizationResolver.resolve(
+                    identityToken: appleCredential?.identityToken,
+                    nonce: currentNonce,
+                    fullName: formattedName(appleCredential?.fullName),
+                    givenName: nonEmpty(appleCredential?.fullName?.givenName),
+                    familyName: nonEmpty(appleCredential?.fullName?.familyName)
+                )
             )
+
+        case .failure(let error):
+            handle(
+                AppleAuthorizationResolver.resolve(
+                    errorCode: (error as? ASAuthorizationError)?.code
+                )
+            )
+        }
+    }
+
+    private func handle(_ resolution: AppleAuthorizationResolution) {
+        currentNonce = nil
+        switch resolution {
+        case .credential(let credential):
+            Task {
+                await auth.signInWithApple(credential)
+                isAuthorizingApple = false
+            }
+        case .cancelled:
+            isAuthorizingApple = false
+        case .failed:
+            isAuthorizingApple = false
+            auth.reportAppleAuthorizationFailure()
+        }
+    }
+
+    private func formattedName(_ components: PersonNameComponents?) -> String? {
+        guard let components else { return nil }
+        return nonEmpty(PersonNameComponentsFormatter().string(from: components))
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        let value = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
     }
 }
 

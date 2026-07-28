@@ -1,9 +1,39 @@
 import Foundation
 import Supabase
 
+private actor AuthOperationGate {
+    private var isLocked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func withLock<Value: Sendable>(
+        _ operation: @Sendable () async throws -> Value
+    ) async rethrows -> Value {
+        await lock()
+        defer { unlock() }
+        return try await operation()
+    }
+
+    private func lock() async {
+        guard isLocked else {
+            isLocked = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func unlock() {
+        guard !waiters.isEmpty else {
+            isLocked = false
+            return
+        }
+        waiters.removeFirst().resume()
+    }
+}
+
 nonisolated struct SupabaseAuthProvider: AuthProviding {
     private let client: SupabaseClient
     private let clearPersistedSession: @Sendable () throws -> Void
+    private let operationGate: AuthOperationGate
 
     init() {
         self = SupabaseClientFactory().makeAuthProvider()
@@ -15,6 +45,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
     ) {
         self.client = client
         self.clearPersistedSession = clearPersistedSession
+        self.operationGate = AuthOperationGate()
     }
 
     func restoreUser() async -> AuthedUser? {
@@ -47,17 +78,45 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
         }
     }
 
-    func signIn(email: String, password: String) async throws -> AuthedUser {
+    func signInWithApple(_ credential: AppleSignInCredential) async throws -> AuthedUser {
         do {
-            return Self.user(from: try await client.auth.signIn(email: email, password: password))
+            return try await operationGate.withLock {
+                let session = try await client.auth.signInWithIdToken(
+                    credentials: OpenIDConnectCredentials(
+                        provider: .apple,
+                        idToken: credential.idToken,
+                        nonce: credential.nonce
+                    )
+                )
+                let user = Self.user(from: session)
+                let metadata = Self.appleMetadata(from: credential)
+                if !metadata.isEmpty {
+                    _ = try? await client.auth.update(user: UserAttributes(data: metadata))
+                }
+                return user
+            }
         } catch {
             throw Self.map(error)
         }
     }
 
+    #if DEBUG
+    func signIn(email: String, password: String) async throws -> AuthedUser {
+        do {
+            return try await operationGate.withLock {
+                Self.user(from: try await client.auth.signIn(email: email, password: password))
+            }
+        } catch {
+            throw Self.map(error)
+        }
+    }
+    #endif
+
     func signOut() async {
-        defer { try? clearPersistedSession() }
-        try? await client.auth.signOut(scope: .local)
+        await operationGate.withLock {
+            defer { try? clearPersistedSession() }
+            try? await client.auth.signOut(scope: .local)
+        }
     }
 
     func validToken() async throws -> String {
@@ -81,6 +140,18 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
             id: session.user.id.uuidString.lowercased(),
             email: session.user.email
         )
+    }
+
+    private static func appleMetadata(
+        from credential: AppleSignInCredential
+    ) -> [String: AnyJSON] {
+        [
+            "full_name": credential.fullName,
+            "given_name": credential.givenName,
+            "family_name": credential.familyName
+        ].compactMapValues { value in
+            value.flatMap { $0.isEmpty ? nil : .string($0) }
+        }
     }
 
     private static func event(

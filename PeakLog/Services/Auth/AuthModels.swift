@@ -7,6 +7,28 @@ nonisolated struct AuthedUser: Equatable, Sendable, Codable {
     let email: String?
 }
 
+nonisolated struct AppleSignInCredential: Equatable, Sendable {
+    let idToken: String
+    let nonce: String
+    let fullName: String?
+    let givenName: String?
+    let familyName: String?
+
+    init(
+        idToken: String,
+        nonce: String,
+        fullName: String? = nil,
+        givenName: String? = nil,
+        familyName: String? = nil
+    ) {
+        self.idToken = idToken
+        self.nonce = nonce
+        self.fullName = fullName
+        self.givenName = givenName
+        self.familyName = familyName
+    }
+}
+
 nonisolated enum AppAuthError: Error, Equatable, Sendable {
     case invalidCredentials
     case network

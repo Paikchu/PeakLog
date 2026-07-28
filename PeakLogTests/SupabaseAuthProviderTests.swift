@@ -18,6 +18,120 @@ final class SupabaseAuthProviderTests: XCTestCase {
         XCTAssertEqual(user.email, "user@example.com")
     }
 
+    func testAppleSignInSendsIDTokenAndRawNonce() async throws {
+        RecordingURLProtocol.enqueue(status: 200, body: authResponse())
+        let provider = makeProvider()
+
+        let user = try await provider.signInWithApple(
+            AppleSignInCredential(
+                idToken: "apple-id-token",
+                nonce: "raw-nonce"
+            )
+        )
+
+        XCTAssertEqual(user.id, Self.userID.uuidString.lowercased())
+        XCTAssertEqual(user.email, "user@example.com")
+        let request = try XCTUnwrap(RecordingURLProtocol.requests.first)
+        XCTAssertEqual(request.url?.path, "/auth/v1/token")
+        XCTAssertEqual(
+            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "grant_type" })?.value,
+            "id_token"
+        )
+        let body = try requestBody(request)
+        XCTAssertEqual(body["provider"] as? String, "apple")
+        XCTAssertEqual(body["id_token"] as? String, "apple-id-token")
+        XCTAssertEqual(body["nonce"] as? String, "raw-nonce")
+        XCTAssertEqual(RecordingURLProtocol.requests.count, 1)
+    }
+
+    func testAppleSignInStoresFirstAuthorizationNameInMetadata() async throws {
+        RecordingURLProtocol.enqueue(status: 200, body: authResponse())
+        RecordingURLProtocol.enqueue(status: 200, body: userResponse())
+        let provider = makeProvider()
+
+        _ = try await provider.signInWithApple(
+            AppleSignInCredential(
+                idToken: "apple-id-token",
+                nonce: "raw-nonce",
+                fullName: "Max Peak",
+                givenName: "Max",
+                familyName: "Peak"
+            )
+        )
+
+        XCTAssertEqual(RecordingURLProtocol.requests.count, 2)
+        let request = RecordingURLProtocol.requests[1]
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(request.url?.path, "/auth/v1/user")
+        let body = try requestBody(request)
+        let metadata = try XCTUnwrap(body["data"] as? [String: String])
+        XCTAssertEqual(metadata["full_name"], "Max Peak")
+        XCTAssertEqual(metadata["given_name"], "Max")
+        XCTAssertEqual(metadata["family_name"], "Peak")
+    }
+
+    func testAppleMetadataFailureDoesNotUndoSuccessfulSignIn() async throws {
+        RecordingURLProtocol.enqueue(status: 200, body: authResponse())
+        RecordingURLProtocol.enqueue(
+            status: 500,
+            body: #"{"message":"metadata unavailable"}"#.data(using: .utf8)!
+        )
+        let provider = makeProvider()
+
+        let user = try await provider.signInWithApple(
+            AppleSignInCredential(
+                idToken: "apple-id-token",
+                nonce: "raw-nonce",
+                fullName: "Max Peak"
+            )
+        )
+
+        XCTAssertEqual(user.id, Self.userID.uuidString.lowercased())
+        XCTAssertGreaterThanOrEqual(RecordingURLProtocol.requests.count, 2)
+    }
+
+    func testSignOutWaitsForPendingAppleMetadataBeforeClearingSession() async throws {
+        RecordingURLProtocol.enqueue(status: 200, body: authResponse())
+        RecordingURLProtocol.enqueue(status: 200, body: userResponse(), delay: 0.1)
+        RecordingURLProtocol.enqueue(status: 204, body: Data())
+        let storage = TestAuthStorage()
+        let provider = makeProvider(storage: storage)
+
+        async let signIn = provider.signInWithApple(
+            AppleSignInCredential(
+                idToken: "apple-id-token",
+                nonce: "raw-nonce",
+                fullName: "Max Peak"
+            )
+        )
+        await waitForRequestCount(2)
+        await provider.signOut()
+        _ = try await signIn
+
+        let restoredUser = await provider.restoreUser()
+        XCTAssertNil(restoredUser)
+        XCTAssertNil(try storage.retrieve(key: SupabaseClientFactory.authStorageKey))
+    }
+
+    func testRejectedAppleTokenMapsToInvalidCredentials() async {
+        RecordingURLProtocol.enqueue(
+            status: 401,
+            body: #"{"message":"invalid Apple token"}"#.data(using: .utf8)!
+        )
+        let provider = makeProvider()
+
+        do {
+            _ = try await provider.signInWithApple(
+                AppleSignInCredential(idToken: "invalid", nonce: "raw-nonce")
+            )
+            XCTFail("Expected invalid credentials")
+        } catch AppAuthError.invalidCredentials {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testAuthAndAPISessionTimeoutsAreExplicit() {
         let auth = SupabaseClientFactory.sessionConfiguration(timeout: 30)
         let api = SupabaseClientFactory.sessionConfiguration(timeout: 60)
@@ -204,11 +318,45 @@ final class SupabaseAuthProviderTests: XCTestCase {
         """.data(using: .utf8)!
     }
 
+    private func userResponse() -> Data {
+        """
+        {
+          "id": "\(Self.userID.uuidString.lowercased())",
+          "aud": "authenticated",
+          "email": "user@example.com",
+          "created_at": "2023-11-14T22:13:20Z",
+          "updated_at": "2023-11-14T22:13:20Z",
+          "app_metadata": {},
+          "user_metadata": {
+            "full_name": "Max Peak"
+          }
+        }
+        """.data(using: .utf8)!
+    }
+
+    private func requestBody(_ request: URLRequest) throws -> [String: Any] {
+        let data = try XCTUnwrap(request.httpBody)
+        return try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+    }
+
     private func isRefreshRequest(_ request: URLRequest) -> Bool {
         URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
             .queryItems?.contains(where: {
                 $0.name == "grant_type" && $0.value == "refresh_token"
             }) == true
+    }
+
+    private func waitForRequestCount(
+        _ count: Int,
+        timeout: TimeInterval = 1
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if RecordingURLProtocol.requests.count >= count { return }
+            await Task.yield()
+        }
     }
 
     private static let userID = UUID(uuidString: "859F402D-B3DE-4105-A1B9-932836D9193B")!
@@ -282,8 +430,9 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        let recordedRequest = Self.materializedRequest(request)
         let stub: Stub = Self.lock.withLock {
-            Self.recordedRequests.append(request)
+            Self.recordedRequests.append(recordedRequest)
             return Self.stubs.isEmpty
                 ? Stub(status: 500, body: Data(), error: nil, delay: 0)
                 : Self.stubs.removeFirst()
@@ -314,4 +463,23 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+
+    private static func materializedRequest(_ request: URLRequest) -> URLRequest {
+        guard request.httpBody == nil, let stream = request.httpBodyStream else {
+            return request
+        }
+
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1_024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        var materialized = request
+        materialized.httpBody = data
+        return materialized
+    }
 }
