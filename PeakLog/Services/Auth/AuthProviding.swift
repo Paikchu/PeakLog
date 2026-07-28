@@ -16,6 +16,9 @@ nonisolated enum AuthProviderEvent: Sendable, Equatable {
 protocol AuthProviding: TokenProviding {
     func restoreUser() async -> AuthedUser?
     func stateChanges() -> AsyncStream<AuthProviderEvent>
+    func signInWithApple(_ credential: AppleSignInCredential) async throws -> AuthedUser
+    #if DEBUG
     func signIn(email: String, password: String) async throws -> AuthedUser
+    #endif
     func signOut() async
 }

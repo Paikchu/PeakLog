@@ -58,6 +58,7 @@
 | Token 刷新网络失败保留登录态，refresh 被拒绝时登出 | `PeakLogTests/AuthStateManagerTests.swift`、`PeakLogTests/SupabaseAuthProviderTests.swift` | 网络失败、权限拒绝 |
 | Supabase 配置加载与校验 | `tests/supabase_config_test.swift` | 主路径 |
 | SDK session 校验、local scope 退出、双击登录与并发刷新 single-flight | `PeakLogTests/SupabaseAuthProviderTests.swift`、`PeakLogTests/AuthStateManagerTests.swift` | 主路径、重复提交、迁移后兼容性 |
+| Apple nonce、ID Token 交换、首次姓名 metadata、取消静默、重复提交和 Release 无邮箱入口 | `PeakLogTests/AppleSignInNonceTests.swift`、`PeakLogTests/SupabaseAuthProviderTests.swift`、`PeakLogTests/AuthStateManagerTests.swift`、`tests/apple_login_ui_contract_test.swift` | 主路径、网络失败、权限拒绝、重复提交 |
 | SDK select/filter/order/limit、13 表写入、bulk-null、ignore-duplicates、scoped prune、503/520 retry 与错误映射 | `PeakLogTests/SupabaseDataClientTests.swift` | 主路径、网络失败、权限拒绝 |
 | replan typed Functions 调用及全部 Outcome/HTTP/解码失败 | `PeakLogTests/PlanReplanServiceTests.swift` | 主路径、网络失败、权限拒绝 |
 | 欠推送冷启动保持本地编辑、合并跨端记录；网络失败不 prune | `PeakLogTests/CloudPushFirstGuardTests.swift` | 主路径、网络失败、迁移后兼容性 |

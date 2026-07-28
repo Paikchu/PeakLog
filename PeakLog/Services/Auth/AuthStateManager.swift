@@ -24,6 +24,8 @@ final class AuthStateManager: ObservableObject {
 
     private let provider: AuthProviding
     private var eventTask: Task<Void, Never>?
+    private var authenticationGeneration: UInt = 0
+    private var acceptsProviderSignedInEvents = true
 
     init(provider: AuthProviding = SupabaseAuthProvider()) {
         self.provider = provider
@@ -39,6 +41,7 @@ final class AuthStateManager: ObservableObject {
     }
 
     func restore() async {
+        acceptsProviderSignedInEvents = true
         observeProvider()
         if let user = await provider.restoreUser() {
             state = .signedIn(user)
@@ -51,6 +54,7 @@ final class AuthStateManager: ObservableObject {
         do {
             return try await provider.validToken()
         } catch AppAuthError.invalidCredentials {
+            invalidateAuthenticationOperations()
             state = .signedOut
             throw AppAuthError.invalidCredentials
         } catch {
@@ -58,31 +62,76 @@ final class AuthStateManager: ObservableObject {
         }
     }
 
+    func signInWithApple(_ credential: AppleSignInCredential) async {
+        guard !isBusy else { return }
+
+        let generation = beginAuthenticationOperation()
+        isBusy = true
+        errorMessage = nil
+        defer {
+            if generation == authenticationGeneration {
+                isBusy = false
+            }
+        }
+
+        do {
+            let user = try await provider.signInWithApple(credential)
+            guard generation == authenticationGeneration else { return }
+            acceptsProviderSignedInEvents = true
+            state = .signedIn(user)
+        } catch let error as AppAuthError {
+            guard generation == authenticationGeneration else { return }
+            errorMessage = message(for: error)
+        } catch {
+            guard generation == authenticationGeneration else { return }
+            errorMessage = message(for: .network)
+        }
+    }
+
+    #if DEBUG
     func signIn(email: String, password: String) async {
         guard !isBusy else { return }
 
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEmail.isEmpty, !password.isEmpty else {
-            errorMessage = String(localized: "auth.error.missing_fields")
+            errorMessage = String(localized: "auth.error.sign_in_failed")
             return
         }
 
+        let generation = beginAuthenticationOperation()
         isBusy = true
         errorMessage = nil
-        defer { isBusy = false }
+        defer {
+            if generation == authenticationGeneration {
+                isBusy = false
+            }
+        }
 
         do {
-            state = .signedIn(
-                try await provider.signIn(email: trimmedEmail, password: password)
-            )
+            let user = try await provider.signIn(email: trimmedEmail, password: password)
+            guard generation == authenticationGeneration else { return }
+            acceptsProviderSignedInEvents = true
+            state = .signedIn(user)
         } catch let error as AppAuthError {
+            guard generation == authenticationGeneration else { return }
             errorMessage = message(for: error)
         } catch {
+            guard generation == authenticationGeneration else { return }
             errorMessage = message(for: .network)
         }
     }
+    #endif
+
+    func clearSignInError() {
+        errorMessage = nil
+    }
+
+    func reportAppleAuthorizationFailure() {
+        errorMessage = String(localized: "auth.error.apple_authorization_failed")
+    }
 
     func signOut() async {
+        invalidateAuthenticationOperations()
         await provider.signOut()
         errorMessage = nil
         state = .signedOut
@@ -90,6 +139,7 @@ final class AuthStateManager: ObservableObject {
 
     #if DEBUG
     func enterLocalMode() {
+        invalidateAuthenticationOperations()
         errorMessage = nil
         state = .localOnly
     }
@@ -113,26 +163,46 @@ final class AuthStateManager: ObservableObject {
     private func apply(_ event: AuthProviderEvent) {
         switch event {
         case .initialSession(let user):
-            state = user.map(AuthGateState.signedIn) ?? .signedOut
+            guard let user else {
+                invalidateAuthenticationOperations()
+                state = .signedOut
+                return
+            }
+            guard acceptsProviderSignedInEvents else { return }
+            state = .signedIn(user)
         case .signedIn(let user), .tokenRefreshed(let user):
+            guard acceptsProviderSignedInEvents else { return }
             state = .signedIn(user)
         case .signedOut:
+            invalidateAuthenticationOperations()
             state = .signedOut
         }
     }
 
-    private func message(for error: AppAuthError) -> String {
+    private func beginAuthenticationOperation() -> UInt {
+        authenticationGeneration &+= 1
+        acceptsProviderSignedInEvents = false
+        return authenticationGeneration
+    }
+
+    private func invalidateAuthenticationOperations() {
+        authenticationGeneration &+= 1
+        acceptsProviderSignedInEvents = false
+        isBusy = false
+    }
+
+    private func message(for error: AppAuthError) -> String? {
         switch error {
         case .invalidCredentials:
-            return String(localized: "auth.error.invalid_credentials")
+            return String(localized: "auth.error.sign_in_failed")
         case .network:
             return String(localized: "auth.error.network")
         case .notConfigured:
             return String(localized: "auth.error.not_configured")
-        case .server(let message):
-            return message
+        case .server:
+            return String(localized: "auth.error.sign_in_failed")
         case .cancelled:
-            return String(localized: "auth.error.network")
+            return nil
         }
     }
 }

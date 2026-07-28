@@ -92,6 +92,151 @@ final class AuthStateManagerTests: XCTestCase {
         XCTAssertEqual(state, .signedIn(.fixture))
     }
 
+    func testAppleSignInGuardsAgainstDoubleSubmission() async {
+        let gate = SignInGate()
+        let credential = AppleSignInCredential(idToken: "token", nonce: "nonce")
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in try await gate.signIn() }
+        )
+        let manager = await AuthStateManager(provider: provider)
+
+        async let first: Void = manager.signInWithApple(credential)
+        await gate.waitForSignIn()
+        async let second: Void = manager.signInWithApple(credential)
+        await Task.yield()
+
+        let callsBeforeCompletion = await gate.callCount()
+        XCTAssertEqual(callsBeforeCompletion, 1)
+        await gate.complete(with: .fixture)
+        _ = await (first, second)
+
+        let callsAfterCompletion = await gate.callCount()
+        let state = await manager.state
+        XCTAssertEqual(callsAfterCompletion, 1)
+        XCTAssertEqual(state, .signedIn(.fixture))
+    }
+
+    func testAppleSignInWaitsForMetadataBeforeOpeningAuthGate() async {
+        let gate = SignInGate()
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in try await gate.signIn() }
+        )
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        async let signIn: Void = manager.signInWithApple(
+            AppleSignInCredential(idToken: "token", nonce: "nonce")
+        )
+        await gate.waitForSignIn()
+        provider.emit(.signedIn(.fixture))
+        await Task.yield()
+
+        let stateWhileMetadataIsPending = await manager.state
+        XCTAssertEqual(stateWhileMetadataIsPending, .signedOut)
+
+        await gate.complete(with: .fixture)
+        await signIn
+
+        let finalState = await manager.state
+        XCTAssertEqual(finalState, .signedIn(.fixture))
+    }
+
+    func testSignOutInvalidatesAppleSignInStillFinishingMetadataWork() async {
+        let gate = SignInGate()
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in try await gate.signIn() }
+        )
+        let manager = await AuthStateManager(provider: provider)
+
+        async let signIn: Void = manager.signInWithApple(
+            AppleSignInCredential(idToken: "token", nonce: "nonce")
+        )
+        await gate.waitForSignIn()
+        await manager.signOut()
+        await gate.complete(with: .fixture)
+        await signIn
+
+        let state = await manager.state
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    func testSignOutIgnoresLateSignedInEventFromAppleMetadataUpdate() async {
+        let gate = SignInGate()
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in try await gate.signIn() }
+        )
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        async let signIn: Void = manager.signInWithApple(
+            AppleSignInCredential(idToken: "token", nonce: "nonce")
+        )
+        await gate.waitForSignIn()
+        await manager.signOut()
+        provider.emit(.signedIn(.fixture))
+        await Task.yield()
+        await gate.complete(with: .fixture)
+        await signIn
+
+        let state = await manager.state
+        XCTAssertEqual(state, .signedOut)
+    }
+
+    func testCancelledAppleSignInShowsNoError() async {
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in throw AppAuthError.cancelled }
+        )
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        await manager.signInWithApple(
+            AppleSignInCredential(idToken: "token", nonce: "nonce")
+        )
+
+        let state = await manager.state
+        let errorMessage = await manager.errorMessage
+        XCTAssertEqual(state, .signedOut)
+        XCTAssertNil(errorMessage)
+    }
+
+    func testRejectedAppleSignInShowsGenericSignInError() async {
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in throw AppAuthError.invalidCredentials }
+        )
+        let manager = await AuthStateManager(provider: provider)
+        await manager.restore()
+
+        await manager.signInWithApple(
+            AppleSignInCredential(idToken: "token", nonce: "nonce")
+        )
+
+        let state = await manager.state
+        let errorMessage = await manager.errorMessage
+        XCTAssertEqual(state, .signedOut)
+        XCTAssertEqual(errorMessage, String(localized: "auth.error.sign_in_failed"))
+    }
+
+    func testAppleServerFailureDoesNotExposeProviderMessage() async {
+        let provider = TestAuthProvider(
+            restoredUser: nil,
+            appleSignIn: { _ in throw AppAuthError.server(message: "provider_disabled") }
+        )
+        let manager = await AuthStateManager(provider: provider)
+
+        await manager.signInWithApple(
+            AppleSignInCredential(idToken: "token", nonce: "nonce")
+        )
+
+        let errorMessage = await manager.errorMessage
+        XCTAssertEqual(errorMessage, String(localized: "auth.error.sign_in_failed"))
+    }
+
     func testSignOutAlwaysClosesTheLocalGate() async {
         let provider = TestAuthProvider(restoredUser: .fixture)
         let manager = await AuthStateManager(provider: provider)
@@ -123,6 +268,7 @@ private extension AuthedUser {
 private final class TestAuthProvider: AuthProviding, @unchecked Sendable {
     private let restoredUser: AuthedUser?
     private let tokenError: AppAuthError?
+    private let appleSignInHandler: @Sendable (AppleSignInCredential) async throws -> AuthedUser
     private let signInHandler: @Sendable (String, String) async throws -> AuthedUser
     private let stream: AsyncStream<AuthProviderEvent>
     private let continuation: AsyncStream<AuthProviderEvent>.Continuation
@@ -132,10 +278,12 @@ private final class TestAuthProvider: AuthProviding, @unchecked Sendable {
     init(
         restoredUser: AuthedUser?,
         tokenError: AppAuthError? = nil,
+        appleSignIn: @escaping @Sendable (AppleSignInCredential) async throws -> AuthedUser = { _ in .fixture },
         signIn: @escaping @Sendable (String, String) async throws -> AuthedUser = { _, _ in .fixture }
     ) {
         self.restoredUser = restoredUser
         self.tokenError = tokenError
+        self.appleSignInHandler = appleSignIn
         self.signInHandler = signIn
         (stream, continuation) = AsyncStream.makeStream()
     }
@@ -154,6 +302,10 @@ private final class TestAuthProvider: AuthProviding, @unchecked Sendable {
 
     func signIn(email: String, password: String) async throws -> AuthedUser {
         try await signInHandler(email, password)
+    }
+
+    func signInWithApple(_ credential: AppleSignInCredential) async throws -> AuthedUser {
+        try await appleSignInHandler(credential)
     }
 
     func signOut() async {

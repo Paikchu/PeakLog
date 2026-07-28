@@ -29,7 +29,7 @@ PeakLog 是一个**本地优先（local-first）的 iOS 健身助手**，采用 
 | 状态管理 | `ObservableObject`（ViewModel）+ `@StateObject` 环境对象 |
 | 本地存储 | 单一 JSON 文件（`Application Support/PeakLog/peaklog-local-state.json`），由 `actor LocalAppDatabase` 独占访问 |
 | 云端存储 | Supabase Postgres + Supabase Swift SDK（PostgREST），RLS |
-| 认证 | Supabase Auth 邮箱密码登录；Apple Provider 已配置，客户端尚未接入 |
+| 认证 | AuthenticationServices + Supabase Swift SDK 原生 Apple 登录；DEBUG 保留程序化邮箱检查 |
 | 跨进程共享 | App Group `group.com.max.PeakForm`（UserDefaults）+ App Intents |
 | 实时能力 | Live Activity / Dynamic Island（Widget Extension） |
 | 测试 | `PeakLogTests`（XCTest）+ `tests/`（纯逻辑回归脚本）+ `backend/tests/` |
@@ -68,7 +68,7 @@ flowchart TB
 
   subgraph BE["Supabase 后端"]
     PG[("Postgres + RLS<br/>workout_sessions · training_plans · running_workouts …")]
-    AUTH["Supabase Auth（邮箱密码）"]
+    AUTH["Supabase Auth（Apple ID Token）"]
     AGENT["generate-weekly-plan Edge Function<br/>ContextBuilder → LLM → Validator"]
     PG <--> AGENT
   end
@@ -98,7 +98,7 @@ flowchart TB
 | Today（今日计划） | `Views/Today/TodayWorkoutScreen.swift` 及 `DailyRecordSheet` / `WorkoutRecordCard` / `ExerciseCardView` / `TrainingFocusComponents` | 展示当天计划、手动记录、Live Activity 训练专注模式、动作编辑 |
 | History（历史回顾） | `Views/History/HistoryScreen.swift`、`CalendarGridView` | 月历 + 每日已完成训练卡片 |
 | Profile（个人） | `Views/Profile/ProfileScreen.swift`、`StatCardView` | 资料、统计、偏好 |
-| Auth | `Views/Auth/AuthView.swift` | 登录；DEBUG 本地模式入口 |
+| Auth | `Views/Auth/AuthView.swift` | Release 原生 Apple 登录；DEBUG 本地模式入口 |
 
 根导航使用原生 `TabView(selection:)` + `HomeTab` 枚举，日历、计划、设置由系统 Tab Bar 承载；页面内流程仍主要使用 sheet（`DailyRecordSheet`、`AddPlanExerciseSheet`、`ExercisePickerScreen`、`WheelValueEditSheet`），不依赖 `NavigationStack`。
 
@@ -121,7 +121,7 @@ flowchart TB
 | `ProfileServiceProtocol` | `LocalProfileService` | 资料 / 偏好 / 目标 |
 | `ExerciseLibraryServiceProtocol` | `LocalExerciseLibraryService` | 动作库（含自定义动作） |
 | `SetDefaultsProviding` | `RuleBasedSetDefaultsProvider` | 默认重量/次数建议 |
-| `AuthProviding`/`TokenProviding` | `SupabaseAuthProvider` | 认证（不硬编码 Supabase 概念于上层） |
+| `AuthProviding`/`TokenProviding` | `SupabaseAuthProvider` | Apple ID Token 登录、会话恢复与 token 刷新；DEBUG 邮箱检查 |
 | `PlanLiveActivityManaging` | `LiveActivityManager` | Live Activity 生命周期 |
 
 **智能化引擎（现状）**：`ExerciseRecommendationEngine` 是唯一的确定性“行为”引擎 —— 一个纯函数 `recommend(_:)`，基于肌群恢复窗口（`bigGroupRecoveryDays = 2`、`smallGroupRecoveryDays = 1`）、共现与热度给动作选择器打分。其头部注释明确：**可被模型实现替换而不影响调用方**。这是当前最接近“Agent”的组件，且是规则驱动而非 LLM。
