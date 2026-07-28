@@ -40,6 +40,31 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
 - `deno check generate-weekly-plan/index.ts`：51 个类型错误，与 `main` 逐条一致（全部来自 supabase-js 未生成类型的 `never` 泛型，属既有问题），本次改动未新增任何一条。
 - **未执行**：迁移 SQL 未实跑。本机 Docker daemon 未运行，无法 `supabase db reset` 或起本地 Postgres；SQL 仅经人工走查，CTE 内 `DELETE ... RETURNING` 采用 `WITH deleted AS (...) SELECT * FROM deleted` 这种语法上无歧义的写法。应用前需要一次真实执行验证。
 
+## 线上验收（Edge Function，已授权部署）
+
+项目 `fqyurmsuvtdafbnynurg`。部署前先比对了线上 v9 的 9 个文件，与 `main` 逐字节一致，无本地未同步的热修可能被覆盖。
+
+- `supabase functions deploy generate-weekly-plan --project-ref fqyurmsuvtdafbnynurg`：v9 → v10，10 个文件（新增 `_shared/generationWindow.mjs`）。
+- `verify_jwt` 保持 `true` 不变（线上原值；cron 以 `apikey` 头调用，实证可用）。未借修 bug 之机改动鉴权姿态。
+- 回读线上 v10 全部 10 个文件，与本分支逐字节一致；线上判断确认为 `return weekday === 0 && hour >= 20;`。
+- 冒烟：用 `net.http_post` 按 cron 完全相同的方式（Vault 取 secret，密钥不出库）调 `{"dry_run": true}` → HTTP 200 `{"results":[]}`。这证明**新增共享模块在运行时解析正常**（#70 那类 module-not-found 未复现）、鉴权链路通、函数无崩溃。
+- 副作用核查：`plan_generations` 与 `training_plans` 在该次调用后 15 分钟内均新增 0 行；两条未来计划原样保留。调用时上海时间 Tue 21:08 正处于行为推断窗口内，但 `dry_run` 会跳过 `runInferenceSweep`，故未触发任何重排。
+
+**这次冒烟不能证明窗口修好了**——今天是周二且两个账号都已持有 2026-08-03 的计划，返回空是「窗口关闭」和「幂等命中」共同决定的，二者无法区分。这正是本文档要更正的那条失效注释犯的错，不再重复。窗口的证据来自单测（含变异验证）与线上字节比对；真正的线上判别证据要等：**2026-08-03 周一 00:00（上海）不应再出现新计划**。
+
+## 线上现状（只读盘点确认）
+
+线上有 2 个真实账号（均 `Asia/Shanghai`），实测数据与推演完全吻合：
+
+| 账号 | 目标周 | 创建时刻（本地） | 判定 |
+| --- | --- | --- | --- |
+| f98c4070… | 2026-07-20 | Mon 00:00 | 提前一周 |
+| f98c4070… | 2026-07-27 | Mon 00:00 | 提前一周 |
+| f98c4070… | 2026-08-03 | Mon 00:01 | 提前一周（未来周） |
+| d2146396… | 2026-08-03 | Mon 23:00 | 提前一周（未来周） |
+
+连续三周都精确落在本地周一 00:00/00:01（cron 为 `'0 * * * *'`），周日 20:00 从未产出过任何计划。
+
 ## 遗留数据评估
 
 已被提前生成的 `training_plans` 行**必须删除才能重新生成**，标记状态没有用：`selectDueUsers` / `generateForUser` 按 `(user_id, week_start_date)` 查询且不带 status 过滤，`install_generated_plan` 会直接 `RAISE 'a plan for week % already exists'`，`idx_training_plans_active_week` 也是不分 status 的唯一索引。
@@ -54,7 +79,9 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
 
 迁移的三重保守条件见文件头注释：仅未来周（对齐 C21）、仅「早于目标周本地周日 00:00 创建」（合法生成落在周日 20:00–23:59，差 20 小时以上；提前生成差约 7 天）、且无任何完成/关联/用户编辑痕迹（客户端 `week_start_date <= today` 过滤决定未来计划对用户不可见，此条实际恒真，属兜底）。因此该迁移在任意时刻应用都安全，重跑幂等。
 
+盘点已确认待清理的正好是 2 行，都是 2026-08-03 那一周。不清理则两个账号在 8/3 那周仍执行 7/27 00:01 生成的计划（只反映到 7/26 为止的数据），8/9 那周起自动恢复正常。
+
 ## 待办
 
-- 应用前先跑只读盘点（见 PR 描述），确认线上实际有几行、`created_at` 是否符合「提前一周」的特征。
-- 迁移与 Edge Function 的线上应用需要用户授权（AGENTS.md §5）。部署顺序：先部署 Edge Function（关窗），再应用清理迁移——顺序反了会让刚清掉的行在下一个整点被重新提前生成。
+- **清理迁移 `20260728120000` 尚未应用，等待授权。** Edge Function 已先行部署（窗口已关闭），顺序正确：现在应用迁移，被删掉的行不会再在下一个整点被重新提前生成。
+- 若决定应用，最好在 2026-08-02（周日）20:00 上海时间之前完成，让当晚的正常生成补上这两份计划。
