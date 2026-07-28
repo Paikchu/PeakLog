@@ -19,6 +19,12 @@
 - `ai-plan-generation.md`  
   AI 计划生成子系统的架构与设计（ADR-001 的实现细节配套），从三个视角展开并配 Mermaid 图：**AI 决策如何做出**（三层分工、weekly 时序、replan 决策边界）、**记忆系统如何构成**（意图/情节/行为/语义/程序性/溯源六类记忆与学习闭环）、**如何保证生成动作的可靠性**（Validator 校验与钳制、repair loop 与 fallback、并发乐观锁、时区正确性、dry_run 迭代）。
 
+- `supabase-migration-ledger-repair.md`  
+  Migration ledger 对账与 repair 执行手册（Issue #131）：为什么本地与远端的 migration 版本号会分叉、
+  如何用只读方式取证判定「这份 SQL 到底跑没跑过」、如何用官方 `supabase migration repair` 流程对齐历史、
+  干净环境 replay 如何验证闭环，以及前滚/回滚方案与防复发的 CI 门禁。
+  某一时点的实测数据不写在这里，见 `../logs/2026-07-29-migration-ledger-audit.md`。
+
 ## 阅读建议
 
 1. 新成员入项：先读 `system-architecture.md`
