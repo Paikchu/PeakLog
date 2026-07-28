@@ -67,6 +67,7 @@
 | 本地状态在 Schema 迁移后仍可解码 | `tests/local_state_decode_compat_test.swift` | 迁移后兼容性 |
 | 旧有氧 RPE 与记录/计划中的未知活动类型可兼容解码，新记录的 RPE 为 nil | `tests/cardio_model_test.swift`、`tests/cloud_mapper_roundtrip_test.swift`、`tests/local_state_decode_compat_test.swift` | 主路径、迁移后兼容性 |
 | Service 层 mock 边界不泄漏到生产路径 | `tests/service_layer_mock_boundary_test.swift` | 主路径 |
+| 同步保持静默（Issue #102 产品决策：任何同步状态不得进入 UI）：`Services/Cloud/` 之外不引用 `CloudSyncStatus` / `syncStatus`，View/ViewModel 不引用 `profile.sync.idle` / `.syncing` / `.pending_retry`，且这三个 key 保留在 `Localizable.xcstrings` 中不被删除 | `tests/silent_sync_contract_test.swift`（`swiftc tests/silent_sync_contract_test.swift -o /tmp/silent_sync_contract_test && /tmp/silent_sync_contract_test`） | 主路径、网络失败 |
 
 ## Profile
 
