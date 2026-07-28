@@ -6,7 +6,7 @@
 - `SupabaseConfig` 统一为 `publishableKey`；Auth/API client 分别使用 30/60 秒 session。
 - Auth 改为 SDK session、状态事件、自动刷新和 local sign-out；旧 session 格式升级时清除。
 - Database 改为 SDK select/filter/order/limit、upsert/update/delete/notIn；Functions 改为 typed invoke。
-- Database/Functions 请求保留 `validToken()` fail-closed 门；已验证 token 通过 relay 提供给 SDK，SDK 发送阶段不再二次调用可能失败的 token provider，也不会退化为匿名请求。
+- Database/Functions 请求保留 `validToken()` fail-closed 门；已验证 token 绑定到单次请求的 TaskLocal 上下文，SDK 发送阶段不再二次调用 token provider，也不会在跨账号并发时串用身份或退化为匿名请求。
 - SDK 后台 auto-refresh 不暴露失败事件；受保护请求或 foreground sync 首次确认 refresh 400/401/403 时 local sign-out，网络失败保留 session。
 - 保留 local-first、push-first、revision guard、append-only events 与 active-plan scoped prune。
 
@@ -22,7 +22,7 @@
 - SDK 依赖解析：2.53.0。
 - Auth targeted XCTest：新增存储边界后 9 passed；Auth/AuthStateManager 合计 16 passed。
 - Database/Functions/push-first targeted XCTest：19 passed。
-- 完整 XCTest：113 passed，0 failed，0 skipped。
+- 完整 XCTest：114 passed，0 failed，0 skipped。
 - 独立 Swift 回归：Supabase 配置、前台 Auth gate、pull merge、push-first 持久化、append-only edit event、profile defaults 全部通过。
 - backend Node：100 passed。
 - 无签名 Release archive：`ARCHIVE SUCCEEDED`。

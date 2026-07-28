@@ -17,24 +17,20 @@ nonisolated struct PlanReplanService: Sendable {
     }
 
     func requestReplan(userId: String, signal: ReplanSignal) async throws -> Outcome {
-        do {
-            try await apiClient.authorize(using: tokenProvider)
-        } catch {
-            throw CloudError.unauthorized
-        }
-
         let decoded: ResponseEnvelope
         do {
-            decoded = try await apiClient.client.functions.invoke(
-                "generate-weekly-plan",
-                options: FunctionInvokeOptions(
-                    body: RequestBody(
-                        mode: "replan",
-                        user_id: userId,
-                        signal: signal.rawValue
+            decoded = try await apiClient.withAuthorization(using: tokenProvider) { client in
+                try await client.functions.invoke(
+                    "generate-weekly-plan",
+                    options: FunctionInvokeOptions(
+                        body: RequestBody(
+                            mode: "replan",
+                            user_id: userId,
+                            signal: signal.rawValue
+                        )
                     )
                 )
-            )
+            }
         } catch {
             throw CloudErrorMapper.function(error)
         }

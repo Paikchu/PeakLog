@@ -3,9 +3,18 @@ import Supabase
 
 nonisolated struct SupabaseAuthProvider: AuthProviding {
     private let client: SupabaseClient
+    private let clearPersistedSession: @Sendable () throws -> Void
 
-    init(client: SupabaseClient = SupabaseClientFactory().makeAuthClient()) {
+    init() {
+        self = SupabaseClientFactory().makeAuthProvider()
+    }
+
+    init(
+        client: SupabaseClient,
+        clearPersistedSession: @escaping @Sendable () throws -> Void
+    ) {
         self.client = client
+        self.clearPersistedSession = clearPersistedSession
     }
 
     func restoreUser() async -> AuthedUser? {
@@ -17,7 +26,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
         } catch {
             let mapped = Self.map(error)
             if mapped == .invalidCredentials {
-                try? await client.auth.signOut(scope: .local)
+                await signOut()
                 return nil
             }
             return Self.user(from: stored)
@@ -47,6 +56,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
     }
 
     func signOut() async {
+        defer { try? clearPersistedSession() }
         try? await client.auth.signOut(scope: .local)
     }
 
@@ -60,7 +70,7 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
         } catch {
             let mapped = Self.map(error)
             if mapped == .invalidCredentials {
-                try? await client.auth.signOut(scope: .local)
+                await signOut()
             }
             throw mapped
         }

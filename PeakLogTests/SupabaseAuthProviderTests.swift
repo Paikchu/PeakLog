@@ -70,6 +70,19 @@ final class SupabaseAuthProviderTests: XCTestCase {
         XCTAssertNil(try storage.retrieve(key: SupabaseClientFactory.authStorageKey))
     }
 
+    func testSignOutClearsStorageWhenLogoutRequestFails() async throws {
+        RecordingURLProtocol.enqueue(error: URLError(.notConnectedToInternet))
+        let storage = TestAuthStorage()
+        try seed(validSession(), into: storage)
+        let provider = makeProvider(storage: storage)
+        storage.resetRemoveCallCount()
+
+        await provider.signOut()
+
+        XCTAssertNil(try storage.retrieve(key: SupabaseClientFactory.authStorageKey))
+        XCTAssertGreaterThanOrEqual(storage.removeCallCount, 2)
+    }
+
     func testConcurrentValidTokenCallsShareOneSDKRefresh() async throws {
         RecordingURLProtocol.enqueue(status: 200, body: authResponse(), delay: 0.1)
         let storage = TestAuthStorage()
@@ -127,7 +140,12 @@ final class SupabaseAuthProviderTests: XCTestCase {
             authSession: session,
             apiSession: session
         )
-        return SupabaseAuthProvider(client: factory.makeAuthClient())
+        return SupabaseAuthProvider(
+            client: factory.makeAuthClient(),
+            clearPersistedSession: {
+                try storage.remove(key: SupabaseClientFactory.authStorageKey)
+            }
+        )
     }
 
     private func seed(_ session: Session, into storage: TestAuthStorage) throws {
@@ -199,6 +217,15 @@ final class SupabaseAuthProviderTests: XCTestCase {
 private final class TestAuthStorage: AuthLocalStorage, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: Data] = [:]
+    private var _removeCallCount = 0
+
+    var removeCallCount: Int {
+        lock.withLock { _removeCallCount }
+    }
+
+    func resetRemoveCallCount() {
+        lock.withLock { _removeCallCount = 0 }
+    }
 
     func store(key: String, value: Data) throws {
         lock.withLock { values[key] = value }
@@ -209,7 +236,10 @@ private final class TestAuthStorage: AuthLocalStorage, @unchecked Sendable {
     }
 
     func remove(key: String) throws {
-        lock.withLock { values[key] = nil }
+        lock.withLock {
+            _removeCallCount += 1
+            values[key] = nil
+        }
     }
 }
 

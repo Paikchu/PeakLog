@@ -169,21 +169,47 @@ final class SupabaseDataClientTests: XCTestCase {
         )
     }
 
-    func testSDKFallbackAuthorizationIsNeverAnonymous() async throws {
+    func testConcurrentAuthorizedOperationsKeepTheirValidatedTokens() async throws {
+        SDKRecordingURLProtocol.enqueueJSON("[]")
         SDKRecordingURLProtocol.enqueueJSON("[]")
         let apiClient = SupabaseSDKTestClient.make()
+        let latch = AuthorizedOperationLatch()
 
-        let response: PostgrestResponse<[TestReadRow]> = try await apiClient.client
-            .from("profiles")
-            .select()
-            .execute()
+        let accountA = Task {
+            try await apiClient.withAuthorization(
+                using: StubTokenProvider(.token("account-a-token"))
+            ) { client in
+                await latch.holdFirstOperation()
+                let response: PostgrestResponse<[TestReadRow]> = try await client
+                    .from("account_a_rows")
+                    .select()
+                    .execute()
+                return response.value
+            }
+        }
 
-        XCTAssertTrue(response.value.isEmpty)
-        XCTAssertEqual(
-            SDKRecordingURLProtocol.requests.last?
-                .value(forHTTPHeaderField: "Authorization"),
-            "Bearer peaklog-missing-valid-token"
+        await latch.waitUntilFirstOperationIsHeld()
+        let accountB: [TestReadRow] = try await apiClient.withAuthorization(
+            using: StubTokenProvider(.token("account-b-token"))
+        ) { client in
+            let response: PostgrestResponse<[TestReadRow]> = try await client
+                .from("account_b_rows")
+                .select()
+                .execute()
+            return response.value
+        }
+        await latch.releaseFirstOperation()
+        let accountARows = try await accountA.value
+
+        XCTAssertTrue(accountARows.isEmpty)
+        XCTAssertTrue(accountB.isEmpty)
+        let requestsByTable = Dictionary(
+            uniqueKeysWithValues: SDKRecordingURLProtocol.requests.map {
+                ($0.url!.lastPathComponent, $0.value(forHTTPHeaderField: "Authorization"))
+            }
         )
+        XCTAssertEqual(requestsByTable["account_a_rows"], "Bearer account-a-token")
+        XCTAssertEqual(requestsByTable["account_b_rows"], "Bearer account-b-token")
     }
 
     func testGETRetries503And520WhenEnabled() async throws {
@@ -282,4 +308,31 @@ private struct EventWriteRow: Encodable {
     let id: String
     let exerciseName: String?
     let payload: [String: Int]
+}
+
+private actor AuthorizedOperationLatch {
+    private var isHeld = false
+    private var readyContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func holdFirstOperation() async {
+        isHeld = true
+        readyContinuation?.resume()
+        readyContinuation = nil
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func waitUntilFirstOperationIsHeld() async {
+        guard !isHeld else { return }
+        await withCheckedContinuation { continuation in
+            readyContinuation = continuation
+        }
+    }
+
+    func releaseFirstOperation() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
 }

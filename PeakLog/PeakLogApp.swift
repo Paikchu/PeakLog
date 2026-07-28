@@ -11,7 +11,7 @@ struct PeakLogApp: App {
 
     init() {
         let factory = SupabaseClientFactory()
-        let provider = SupabaseAuthProvider(client: factory.makeAuthClient())
+        let provider = factory.makeAuthProvider()
         let apiClient = factory.makeAPIClient()
         _authManager = StateObject(wrappedValue: AuthStateManager(provider: provider))
         _syncController = StateObject(

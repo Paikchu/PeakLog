@@ -28,15 +28,15 @@ nonisolated struct SupabaseDataClient: Sendable {
         table: String,
         query: [URLQueryItem]
     ) async throws -> [Row] {
-        try await authorize()
-        let columns = query.first(where: { $0.name == "select" })?.value ?? "*"
-        let builder = apiClient.client.from(table).select(columns)
-        Self.apply(query, to: builder)
-        builder.retry(enabled: retryEnabled)
-
         do {
-            let response: PostgrestResponse<[Row]> = try await builder.execute()
-            return response.value
+            return try await apiClient.withAuthorization(using: tokenProvider) { client in
+                let columns = query.first(where: { $0.name == "select" })?.value ?? "*"
+                let builder = client.from(table).select(columns)
+                Self.apply(query, to: builder)
+                builder.retry(enabled: retryEnabled)
+                let response: PostgrestResponse<[Row]> = try await builder.execute()
+                return response.value
+            }
         } catch {
             throw CloudErrorMapper.database(error)
         }
@@ -44,13 +44,14 @@ nonisolated struct SupabaseDataClient: Sendable {
 
     func upsert<Row: Encodable>(table: String, rows: [Row]) async throws {
         guard !rows.isEmpty else { return }
-        try await authorize()
         do {
-            let builder = try apiClient.client
-                .from(table)
-                .upsert(try Self.normalizedBulkRows(rows), returning: .minimal)
-            builder.retry(enabled: retryEnabled)
-            try await builder.execute()
+            try await apiClient.withAuthorization(using: tokenProvider) { client in
+                let builder = try client
+                    .from(table)
+                    .upsert(try Self.normalizedBulkRows(rows), returning: .minimal)
+                builder.retry(enabled: retryEnabled)
+                try await builder.execute()
+            }
         } catch {
             throw CloudErrorMapper.database(error)
         }
@@ -61,12 +62,13 @@ nonisolated struct SupabaseDataClient: Sendable {
         match: [URLQueryItem],
         row: Row
     ) async throws {
-        try await authorize()
         do {
-            let builder = try apiClient.client.from(table).update(row, returning: .minimal)
-            Self.apply(match, to: builder)
-            builder.retry(enabled: retryEnabled)
-            try await builder.execute()
+            try await apiClient.withAuthorization(using: tokenProvider) { client in
+                let builder = try client.from(table).update(row, returning: .minimal)
+                Self.apply(match, to: builder)
+                builder.retry(enabled: retryEnabled)
+                try await builder.execute()
+            }
         } catch {
             throw CloudErrorMapper.database(error)
         }
@@ -77,18 +79,18 @@ nonisolated struct SupabaseDataClient: Sendable {
         keepIds: [String],
         extraFilters: [URLQueryItem] = []
     ) async throws {
-        try await authorize()
-        let builder = apiClient.client.from(table).delete(returning: .minimal)
-        Self.apply(extraFilters, to: builder)
-        if keepIds.isEmpty {
-            _ = builder.filter("id", operator: "not.is", value: "null")
-        } else {
-            _ = builder.notIn("id", values: keepIds)
-        }
-        builder.retry(enabled: retryEnabled)
-
         do {
-            try await builder.execute()
+            try await apiClient.withAuthorization(using: tokenProvider) { client in
+                let builder = client.from(table).delete(returning: .minimal)
+                Self.apply(extraFilters, to: builder)
+                if keepIds.isEmpty {
+                    _ = builder.filter("id", operator: "not.is", value: "null")
+                } else {
+                    _ = builder.notIn("id", values: keepIds)
+                }
+                builder.retry(enabled: retryEnabled)
+                try await builder.execute()
+            }
         } catch {
             throw CloudErrorMapper.database(error)
         }
@@ -99,15 +101,16 @@ nonisolated struct SupabaseDataClient: Sendable {
         rows: [Row]
     ) async throws {
         guard !rows.isEmpty else { return }
-        try await authorize()
         do {
-            let builder = try apiClient.client.from(table).upsert(
-                try Self.normalizedBulkRows(rows),
-                returning: .minimal,
-                ignoreDuplicates: true
-            )
-            builder.retry(enabled: retryEnabled)
-            try await builder.execute()
+            try await apiClient.withAuthorization(using: tokenProvider) { client in
+                let builder = try client.from(table).upsert(
+                    try Self.normalizedBulkRows(rows),
+                    returning: .minimal,
+                    ignoreDuplicates: true
+                )
+                builder.retry(enabled: retryEnabled)
+                try await builder.execute()
+            }
         } catch {
             throw CloudErrorMapper.database(error)
         }
@@ -125,14 +128,6 @@ nonisolated struct SupabaseDataClient: Sendable {
             }
         }
         return objects
-    }
-
-    private func authorize() async throws {
-        do {
-            try await apiClient.authorize(using: tokenProvider)
-        } catch {
-            throw CloudError.unauthorized
-        }
     }
 
     private static func apply(
@@ -178,6 +173,9 @@ nonisolated enum CloudErrorMapper {
         if let cloud = error as? CloudError {
             return cloud
         }
+        if error is SupabaseAPIAuthorizationError {
+            return .unauthorized
+        }
         if error is CancellationError {
             return .network
         }
@@ -207,6 +205,9 @@ nonisolated enum CloudErrorMapper {
     }
 
     static func function(_ error: Error) -> CloudError {
+        if error is SupabaseAPIAuthorizationError {
+            return .unauthorized
+        }
         if error is CancellationError || error is URLError {
             return .network
         }
