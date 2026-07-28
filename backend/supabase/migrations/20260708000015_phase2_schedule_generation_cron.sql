@@ -7,11 +7,22 @@
 --
 -- Fires every hour. The function itself decides per-user whether their
 -- local Sunday 20:00 window is currently open (selectDueUsers /
--- isGenerationWindowOpen in index.ts), so an hourly cadence is sufficient
--- to catch every user's local Sunday evening across all timezones without
--- needing a per-timezone schedule. Off-window invocations are cheap no-ops
--- (verified live: a call during a Wednesday returned zero results with no
--- LLM calls or writes).
+-- isGenerationWindowOpen in _shared/generationWindow.mjs), so an hourly
+-- cadence is sufficient to catch every user's local Sunday evening across
+-- all timezones without needing a per-timezone schedule. Off-window
+-- invocations are cheap no-ops.
+--
+-- NOTE (2026-07-28): the original comment here cited a live Wednesday call
+-- returning zero results as proof that off-window ticks are no-ops. That
+-- observation was real but proved nothing: isGenerationWindowOpen was
+-- inverted at the time (`weekday !== 0 || hour >= 20`), so the window was
+-- actually OPEN that Wednesday. The zero result came from the "next week's
+-- plan already exists" idempotency check -- the plan had been generated at
+-- Monday 00:00 -- not from the time window. The predicate is fixed and now
+-- covered by backend/tests/generationWindow.test.mjs; the off-window no-op
+-- claim above rests on those tests, not on that invalidated live check.
+-- See 20260728120000_cleanup_prematurely_generated_plans.sql for the
+-- data left behind by the inverted window.
 --
 -- The apikey below is the project's publishable key (safe to embed --
 -- it's the public client key, not a secret). Actual authorization is the
