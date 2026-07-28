@@ -90,7 +90,17 @@ require(
 
 // MARK: - No sync state outside the sync layer
 
-let syncStateSymbols = ["CloudSyncStatus", "syncStatus"]
+// Matched as written, not as bare words. `CloudSyncStatus` is unambiguous — it
+// is this project's type name and nothing else spells it. `syncStatus` on its
+// own is NOT: it is a generic identifier another feature could legitimately
+// declare (a HealthKit import status, say), and it also appears in prose
+// comments. Matching it bare would fail this test on code that never touches
+// cloud sync, which is how a guard earns a reputation for crying wolf and gets
+// deleted. So `syncStatus` is only matched as a *member access* — `.syncStatus`
+// (reading the controller's property) and `$syncStatus` (binding its
+// publisher). Those two spellings are what "the UI reached for sync state"
+// actually looks like; an unrelated local named `syncStatus` is not.
+let syncStateSymbols = ["CloudSyncStatus", ".syncStatus", "$syncStatus"]
 
 for path in appSwiftFiles where !path.hasPrefix(syncStateHome) {
     let text = source(path)
@@ -138,13 +148,33 @@ for path in appSwiftFiles where !path.hasPrefix(syncStateHome) {
     }
 }
 
-// MARK: - The retired strings stay in the catalog
+// MARK: - The retired strings stay in the catalog, translations and all
 
-let catalog = source("PeakLog/Localizable.xcstrings")
+// Parsed as JSON rather than substring-matched, because what Issue #102 asks to
+// preserve is the *translated copy*, not the key. A cleanup pass that empties
+// `value` or flips `state` to "new" while leaving the key in place would satisfy
+// a `contains("\"profile.sync.idle\"")` check and still throw away exactly the
+// work the decision says to keep — the en / zh-Hans strings someone already
+// wrote and reviewed, so that reversing the decision later is a UI change and
+// not a translation round.
+let catalogURL = root.appendingPathComponent("PeakLog/Localizable.xcstrings")
+guard
+    let catalogData = try? Data(contentsOf: catalogURL),
+    let catalogJSON = try? JSONSerialization.jsonObject(with: catalogData) as? [String: Any],
+    let catalogStrings = catalogJSON["strings"] as? [String: Any]
+else {
+    fputs("FAIL: cannot parse PeakLog/Localizable.xcstrings as a string catalog\n", stderr)
+    exit(1)
+}
+
+// Both shipping languages. Hardcoded rather than derived from the catalog: if a
+// language were dropped wholesale, deriving would silently shrink the assertion
+// to whatever survived.
+let requiredLocalizations = ["en", "zh-Hans"]
 
 for key in retiredSyncKeys {
     require(
-        catalog.contains("\"\(key)\""),
+        catalogStrings[key] != nil,
         """
         The localization key "\(key)" is missing from PeakLog/Localizable.xcstrings.
 
@@ -154,6 +184,25 @@ for key in retiredSyncKeys {
         the copy work.
         """
     )
+
+    let localizations = (catalogStrings[key] as? [String: Any])?["localizations"] as? [String: Any]
+    for language in requiredLocalizations {
+        let unit = (localizations?[language] as? [String: Any])?["stringUnit"] as? [String: Any]
+        let value = unit?["value"] as? String
+        let state = unit?["state"] as? String
+        require(
+            !(value ?? "").isEmpty && state == "translated",
+            """
+            The "\(language)" translation of "\(key)" is missing, empty, or no longer \
+            marked "translated" (value: \(value.map { "\"\($0)\"" } ?? "none"), \
+            state: \(state ?? "none")).
+
+            Issue #102 retains these strings precisely so the copy survives the decision. \
+            Emptying or un-translating them is the same loss as deleting the key — it just \
+            leaves a hollow entry behind to disguise it.
+            """
+        )
+    }
 }
 
 // MARK: - The rationale stays discoverable at the definition
