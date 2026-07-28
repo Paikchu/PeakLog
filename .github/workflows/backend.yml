@@ -1,0 +1,210 @@
+name: Backend
+
+# Issue #133: the weekly-generation window was hot-fixed straight onto the
+# deployed Edge Function while `main` still carried the inverted predicate.
+# Production was right, the repo was wrong, and nothing in the pipeline could
+# tell — so the next routine deploy from `main` would have silently restored
+# the bug. This workflow closes both halves of that gap: the repo is proven
+# buildable and correct from a CLEAN checkout (jobs `tests` + `bundle`), and
+# the deployment is proven to be the bytes of a specific commit (job
+# `verify-deployment`).
+#
+# Scope note: this file is intentionally separate from testflight.yml. That one
+# releases the iOS app on tags; this one gates backend changes on every PR.
+# Sharing a file would couple two release cadences that have nothing to do with
+# each other.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # The release runbook triggers post-deploy verification from here.
+  workflow_dispatch:
+    inputs:
+      verify_commit:
+        description: "Commit the deployment must match (default: this ref's HEAD)"
+        required: false
+        type: string
+      verify_function:
+        description: "Edge Function to verify"
+        required: false
+        default: generate-weekly-plan
+        type: string
+
+# Deliberately NOT path-filtered. The jobs take seconds, and a `paths:` list is
+# one more hand-maintained mapping that stops firing the moment a shared module
+# moves — the exact failure mode this workflow exists to catch.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Node tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Clean checkout, no cache, no restored state: whatever passes here
+      # passed against the committed tree and nothing else.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned to an LTS major rather than following the runner default, so
+          # a green build does not change runtime underneath us when GitHub
+          # rolls the image forward. Bump deliberately, not by drift.
+          node-version: "22"
+
+      - name: node --test backend/tests
+        # The repo has no package.json by design — these are plain node:test
+        # files with zero dependencies, run exactly the way docs/plans/ has
+        # always documented them.
+        run: node --test backend/tests/*.test.mjs
+
+  bundle:
+    name: Bundle Edge Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          # Pinned exactly: `deno bundle` still prints an "experimental and
+          # subject to changes" warning, so a floating version could change
+          # this gate's behavior without a commit. Bump deliberately.
+          deno-version: "2.9.4"
+
+      # Why `deno bundle` and not something else:
+      #
+      #   * It walks the SAME module graph the Supabase edge runtime resolves
+      #     (Deno, `--platform deno`), including the `../_shared/*.mjs`
+      #     relative imports. A renamed, moved or deleted shared module — the
+      #     literal drift class of Issue #133 — fails here in seconds instead
+      #     of at 20:00 on a Sunday in production.
+      #   * NOT `supabase functions deploy`: there is no offline/dry-run mode,
+      #     and deploying needs project credentials, which a PR (especially
+      #     from a fork) must never be able to reach.
+      #   * NOT full `deno check`: generate-weekly-plan/index.ts currently
+      #     yields 51 pre-existing type errors, all downstream of
+      #     `createClient()` being constructed without generated `Database`
+      #     types, so every table and RPC infers `never`. Gating on that today
+      #     means either a permanently red pipeline or blanket ignores that
+      #     hide real errors; the fix is to generate and wire up DB types,
+      #     which is its own change. Bundling still catches every unresolvable
+      #     import and parse error, which is what this issue is about.
+      - name: Bundle every function from the clean checkout
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for entry in backend/supabase/functions/*/index.ts; do
+            fn="$(basename "$(dirname "$entry")")"
+            echo "::group::deno bundle ${fn}"
+            deno bundle --allow-import --platform deno --output "${RUNNER_TEMP}/${fn}.bundle.js" "${entry}"
+            echo "::endgroup::"
+            found=$((found + 1))
+          done
+          # A loop that matched nothing would report success while gating
+          # nothing at all — the same "green but not actually checking"
+          # failure this workflow exists to prevent.
+          if [ "${found}" -eq 0 ]; then
+            echo "::error::no Edge Function entrypoints under backend/supabase/functions/*/index.ts — the layout changed and this gate stopped gating"
+            exit 1
+          fi
+          echo "bundled ${found} function(s)"
+
+  verify-deployment:
+    name: Deployed function matches commit
+    needs: [tests, bundle]
+    # Not on pull_request: production is deployed from `main`, a PR merge
+    # commit is never deployed, and `pull_request` from a fork cannot read
+    # secrets anyway — the job could only ever skip and would read as noise.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a workflow_dispatch run may name an older commit
+          # (e.g. verifying that a rollback landed on the previously-good one).
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: supabase/setup-cli@v1
+        with:
+          # `functions download --use-api` unbundles server-side, so no Docker
+          # is needed on the runner. Pinned for the same reason as Deno above.
+          version: "2.75.0"
+
+      - name: Are the read-only deployment credentials configured?
+        id: creds
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          # GitHub does not allow the `secrets` context in a job- or step-level
+          # `if:`, so branching on "is it configured" has to happen inside a
+          # step. Only the ANSWER is exported, never the value.
+          if [ -n "${SUPABASE_ACCESS_TOKEN}" ] && [ -n "${SUPABASE_PROJECT_REF}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare deployed bytes against the commit
+        if: steps.creds.outputs.configured == 'true'
+        env:
+          # The project ref is a repository VARIABLE, not a secret: it is
+          # already public in every function URL, and `vars` (unlike `secrets`)
+          # can be read without laundering it through an output. The access
+          # token is the only real credential, and it only ever needs read
+          # scope — this script never writes to the project.
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          TARGET_COMMIT: ${{ inputs.verify_commit || github.sha }}
+          TARGET_FUNCTION: ${{ inputs.verify_function || 'generate-weekly-plan' }}
+        run: |
+          set -uo pipefail
+          status=0
+          node backend/scripts/verify-deployed-function.mjs \
+            --function "${TARGET_FUNCTION}" \
+            --commit "${TARGET_COMMIT}" > "${RUNNER_TEMP}/verify.log" 2>&1 || status=$?
+          cat "${RUNNER_TEMP}/verify.log"
+          {
+            echo "### Deployment integrity — ${TARGET_FUNCTION}"
+            echo
+            echo '```'
+            cat "${RUNNER_TEMP}/verify.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Exit code 2 means "could not check" (no CLI, network, bad commit);
+          # 1 means "checked, and it drifted". Both fail the job — a check that
+          # could not run must not be reported as a passing check.
+          exit "${status}"
+
+      - name: No credentials — the deployment was NOT verified
+        if: steps.creds.outputs.configured != 'true'
+        run: |
+          set -euo pipefail
+          # A skipped check is still a green job, so say plainly that nothing
+          # was verified: both as a run annotation and in the summary, so it
+          # is visible without expanding the log.
+          echo "::warning title=Deployment NOT verified::SUPABASE_ACCESS_TOKEN (secret) and/or SUPABASE_PROJECT_REF (variable) are not configured, so the deployed Edge Function was not compared against this commit. Configure them per docs/architecture/edge-function-release-runbook.md."
+          {
+            echo "### Deployment integrity — SKIPPED"
+            echo
+            echo "The deployed Edge Function was **not** compared against this commit:"
+            echo "\`SUPABASE_ACCESS_TOKEN\` (secret) and/or \`SUPABASE_PROJECT_REF\` (variable) are unset."
+            echo
+            echo "This job passing therefore says nothing about production. See"
+            echo "\`docs/architecture/edge-function-release-runbook.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
