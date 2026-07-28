@@ -176,7 +176,7 @@ sequenceDiagram
 
 **几个决策要点：**
 
-- **谁该生成**（[`selectDueUsers`](../../backend/supabase/functions/generate-weekly-plan/index.ts)）：扫所有 profile，按**各自时区**判断是否进入生成窗口（本地周日 20:00 之后到本周结束），且下周计划尚不存在。窗口故意开得宽——漏掉一个小时的 tick，后面几个小时还能补上，而不用等一整周。
+- **谁该生成**（[`selectDueUsers`](../../backend/supabase/functions/generate-weekly-plan/index.ts) + [`isGenerationWindowOpen`](../../backend/supabase/functions/_shared/generationWindow.mjs)）：扫所有 profile，按**各自时区**判断是否进入生成窗口（**本地周日 20:00–23:59，仅此**），且下周计划尚不存在。窗口只能补当晚剩下的整点（20/21/22/23 四次）：目标周由 `now` 推导（`nextMondayString`），一旦本地跨到周一，"下周一"就再跳七天，因此周一到周六的 tick 只会把**下下周**提前生成出来；而 `install_generated_plan` 的 C21 又禁止回写当前周，所以宽窗口在结构上不可能起到"补生成漏掉那一周"的作用。窗口边界由 [`generationWindow.test.mjs`](../../backend/tests/generationWindow.test.mjs) 覆盖。
 - **喂给 LLM 什么**：`buildUserMessage` 把 facts JSON 直接拼进 user message；训练学规则在 `SYSTEM_PROMPT` 里（渐进超负荷、肌群频率、deload/return week、休息日不可省、冷启动宁低勿高、把编辑事件当信号读……）。
 - **LLM 调用参数**（[`llm.mjs`](../../backend/supabase/functions/_shared/llm.mjs)）：模型 `deepseek-chat`，**强制 `response_format: json_object`**，`temperature: 0.3`（低温度换稳定），60s 超时，网络/5xx 错误自动重试一次。
 - **输出契约**：严格的 JSON——7 天、`dayIndex` 0–6、连续日期、非空训练日数必须等于 `goalSpec.daysPerWeek`、`exerciseId` 必须来自给定动作库、力量/有氧字段互斥、`coachSummary` 用用户语言写给用户看。

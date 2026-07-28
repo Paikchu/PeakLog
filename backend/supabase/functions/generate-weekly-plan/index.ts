@@ -34,6 +34,14 @@ import { SYSTEM_PROMPT, PROMPT_VERSION, buildUserMessage, REPLAN_SYSTEM_PROMPT, 
 import { EXERCISE_LIBRARY, EXERCISE_LIBRARY_VERSION } from "../_shared/exerciseLibrary.mjs";
 import { fetchOwnedActualSets } from "../_shared/ownershipQueries.mjs";
 import { localDayUtcRange } from "../_shared/timezone.mjs";
+import {
+  isGenerationWindowOpen,
+  isInferenceWindowOpen,
+  nextMondayString,
+  thisMondayString,
+  localDateString,
+  resolveTimezone,
+} from "../_shared/generationWindow.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -180,7 +188,7 @@ async function selectDueUsers(admin: ReturnType<typeof createClient>): Promise<s
   const now = new Date();
   const due: string[] = [];
   for (const profile of profiles ?? []) {
-    const timezone = profile.timezone || "UTC";
+    const timezone = resolveTimezone(profile.timezone);
     if (!isGenerationWindowOpen(timezone, now)) continue;
 
     const weekStartDate = nextMondayString(timezone, now);
@@ -199,26 +207,6 @@ async function selectDueUsers(admin: ReturnType<typeof createClient>): Promise<s
   return due;
 }
 
-/** True from Sunday 20:00 local time through the rest of the week. The
- * "next week's plan already exists" check is what prevents re-generating
- * every hour once it's run once — this window is deliberately wide so a
- * missed hourly tick (deploy hiccup, transient failure) still catches up
- * later in the week instead of waiting a full 7 days. */
-function isGenerationWindowOpen(timezone: string, now: Date): boolean {
-  const { weekday, hour } = localWeekdayAndHour(timezone, now);
-  return weekday !== 0 || hour >= 20; // 0 = Sunday
-}
-
-/** Behavioral-inference window: local 21:00–22:59. Late enough that a genuine
- * training day would normally be logged by now, early enough to still leave the
- * user their evening. Deliberately narrow so the hourly cron fires inference at
- * most ~2 times per user per day; the per-day "already replanned" gate collapses
- * that to at most one actual run. */
-function isInferenceWindowOpen(timezone: string, now: Date): boolean {
-  const { hour } = localWeekdayAndHour(timezone, now);
-  return hour >= 21 && hour < 23;
-}
-
 /** For every user in their local inference window with a fully-missed training
  * day today, fire one inference replan. The "missed training day + not already
  * replanned today" gate lives here (not in replanForUser) so the one-tap path
@@ -229,7 +217,7 @@ async function runInferenceSweep(admin: ReturnType<typeof createClient>, now: Da
 
   const results: Array<Record<string, unknown>> = [];
   for (const profile of profiles ?? []) {
-    const timezone = profile.timezone || "UTC";
+    const timezone = resolveTimezone(profile.timezone);
     if (!isInferenceWindowOpen(timezone, now)) continue;
 
     // deno-lint-ignore no-await-in-loop -- sequential on purpose (see weekly loop).
@@ -302,55 +290,6 @@ async function inferenceGateOpen(
   return true;
 }
 
-function localWeekdayAndHour(timezone: string, now: Date): { weekday: number; hour: number } {
-  const weekdayShort = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" }).format(now);
-  const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hourCycle: "h23" }).format(now);
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return { weekday: map[weekdayShort] ?? 0, hour: parseInt(hourStr, 10) };
-}
-
-/** The calendar date (yyyy-MM-dd) of the Monday starting the ISO week
- * immediately after `now`'s local week, in `timezone`. Purely calendar-date
- * arithmetic — the RPC independently recomputes this server-side (C21) so
- * any drift here is a missed generation, never an unsafe write. */
-function nextMondayString(timezone: string, now: Date): string {
-  const { weekday } = localWeekdayAndHour(timezone, now);
-  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(now).split("-").map(Number);
-
-  const localMidnightUTC = new Date(Date.UTC(year, month - 1, day));
-  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
-  const thisMonday = new Date(localMidnightUTC);
-  thisMonday.setUTCDate(localMidnightUTC.getUTCDate() - daysSinceMonday);
-  const nextMonday = new Date(thisMonday);
-  nextMonday.setUTCDate(thisMonday.getUTCDate() + 7);
-  return nextMonday.toISOString().slice(0, 10);
-}
-
-/** The calendar date (yyyy-MM-dd) of the Monday starting `now`'s OWN local
- * week (unlike nextMondayString, no +7 shift) — the current week's plan is
- * keyed by this date. Mirrors the RPC's own `date_trunc('week', ...)`
- * computation (C21/C31's "current week" independently re-derived). */
-function thisMondayString(timezone: string, now: Date): string {
-  const { weekday } = localWeekdayAndHour(timezone, now);
-  const [year, month, day] = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(now).split("-").map(Number);
-
-  const localMidnightUTC = new Date(Date.UTC(year, month - 1, day));
-  const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
-  const thisMonday = new Date(localMidnightUTC);
-  thisMonday.setUTCDate(localMidnightUTC.getUTCDate() - daysSinceMonday);
-  return thisMonday.toISOString().slice(0, 10);
-}
-
-/** `now`'s own calendar date (yyyy-MM-dd) in `timezone` — used to decide
- * which of the current week's days are still eligible for replan. */
-function localDateString(timezone: string, now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-}
-
 function weekDatesFor(weekStartDate: string): string[] {
   const start = new Date(`${weekStartDate}T00:00:00Z`);
   return Array.from({ length: 7 }, (_, i) => {
@@ -372,7 +311,7 @@ async function generateForUser(
       .from("profiles").select("timezone").eq("id", userId).single();
     if (profileError) throw profileError;
 
-    const weekStartDate = nextMondayString(profile?.timezone || "UTC", new Date());
+    const weekStartDate = nextMondayString(resolveTimezone(profile?.timezone), new Date());
 
     if (!opts.force) {
       const { data: existing } = await admin
@@ -778,7 +717,7 @@ async function replanForUser(
     const { data: profile, error: profileError } = await admin
       .from("profiles").select("timezone").eq("id", userId).single();
     if (profileError) throw profileError;
-    const timezone = profile?.timezone || "UTC";
+    const timezone = resolveTimezone(profile?.timezone);
     const now = new Date();
     const today = localDateString(timezone, now);
     const weekMonday = thisMondayString(timezone, now);
