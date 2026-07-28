@@ -33,6 +33,14 @@ nonisolated enum CloudDate {
     }
 }
 
+// MARK: - shared projections
+
+/// `select=id` projection used by the prune path to read a table's current id
+/// set without pulling whole rows over the wire.
+nonisolated struct CloudIdRow: Decodable, Sendable {
+    let id: String
+}
+
 // MARK: - profiles / preferences
 
 nonisolated struct ProfileRow: Codable, Sendable {

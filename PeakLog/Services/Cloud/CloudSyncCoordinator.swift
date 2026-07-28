@@ -25,8 +25,20 @@ actor CloudSyncCoordinator {
     /// True once cloud state has been merged into the cache during this
     /// coordinator's life. Until then a full-state push must not prune: the
     /// local snapshot may not know about rows another device added while this
-    /// device was away, and `deleteNotIn` would delete them.
+    /// device was away, and the prune would delete them.
     private var hasMergedCloudState = false
+    /// True only while the most recent cloud read reached EOF on every table.
+    ///
+    /// Separate from `hasMergedCloudState` because the two answer different
+    /// questions: that one is "have we looked at the cloud at all?", this one
+    /// is "was what we saw the *whole* table?". A truncated read (Issue #30)
+    /// still merges fine — merging only adds rows — but the resulting local
+    /// state is missing every row past the cutoff, so using it as the
+    /// authority for an absence-based prune would delete exactly those rows.
+    /// Assigned, not OR-ed: a later truncated read invalidates an earlier
+    /// complete one, because the cache can no longer be shown to cover the
+    /// cloud.
+    private var hasCompleteCloudView = false
     private(set) var hasUnpushedChanges = false
     private(set) var lastErrorDescription: String?
     private let onStatusChange: (@Sendable (CloudSyncStatus) -> Void)?
@@ -132,15 +144,21 @@ actor CloudSyncCoordinator {
             // Merge (not replace) so offline user records survive the login
             // pull while seed rows are still dropped. See Issue #1 /
             // `LocalAppDatabase.mergeFromCloud`.
+            //
+            // A truncated read is still merged: showing the user the first N
+            // thousand rows beats showing nothing, and merging cannot lose
+            // data. What it must not do is unlock the destructive half of the
+            // next push — hence the separate completeness flag below.
             await database.mergeFromCloud(
-                profile: snapshot.profile,
-                activePlan: snapshot.activePlan,
-                strengthSessions: snapshot.strengthSessions,
-                runningRecords: snapshot.runningRecords,
-                customExercises: snapshot.customExercises,
-                goalSpec: snapshot.goalSpec
+                profile: snapshot.data.profile,
+                activePlan: snapshot.data.activePlan,
+                strengthSessions: snapshot.data.strengthSessions,
+                runningRecords: snapshot.data.runningRecords,
+                customExercises: snapshot.data.customExercises,
+                goalSpec: snapshot.data.goalSpec
             )
             hasMergedCloudState = true
+            noteCloudViewCompleteness(snapshot)
             lastErrorDescription = nil
             return true
         } catch {
@@ -168,11 +186,24 @@ actor CloudSyncCoordinator {
     private func mergeCloudRecordsPreservingLocalEdits() async throws {
         let snapshot = try await loader.load(userId: userId)
         await database.mergeCloudRecordsPreservingLocalState(
-            strengthSessions: snapshot.strengthSessions,
-            runningRecords: snapshot.runningRecords,
-            customExercises: snapshot.customExercises
+            strengthSessions: snapshot.data.strengthSessions,
+            runningRecords: snapshot.data.runningRecords,
+            customExercises: snapshot.data.customExercises
         )
         hasMergedCloudState = true
+        noteCloudViewCompleteness(snapshot)
+    }
+
+    /// Records whether the cache may now be used as the authority for
+    /// deleting, and says so in the log when it may not — a silently skipped
+    /// prune is otherwise indistinguishable from a healthy no-op push.
+    private func noteCloudViewCompleteness(_ snapshot: CloudSnapshot) {
+        hasCompleteCloudView = snapshot.isComplete
+        guard !snapshot.isComplete else { return }
+        let tables = snapshot.incompleteTables.joined(separator: ", ")
+        Self.logger.error(
+            "cloud read truncated for \(tables, privacy: .public); prune disabled until a complete read lands"
+        )
     }
 
     // MARK: - Push
@@ -299,6 +330,16 @@ actor CloudSyncCoordinator {
         // Prune rows the cloud has but the local cache no longer does. Children
         // first so a parent delete never strands a child mid-request.
         //
+        // Gated on a *complete* cloud read (Issue #30): a prune derives the
+        // doomed set from "present in the cloud, absent locally", which only
+        // means "the user deleted it" if the cache has actually seen the whole
+        // cloud. After a truncated read every row past the cutoff looks
+        // deleted, so we skip the destructive half entirely and let the upsert
+        // half stand. Skipping is the safe direction — the cloud keeps rows it
+        // should have dropped, and the next push after a complete read drops
+        // them — whereas throwing would only strand the push while the
+        // truncation persists.
+        //
         // training_plans is intentionally NEVER pruned (SY1): the local cache
         // only ever holds the current week, so pruning by "not present
         // locally" would delete every past week's plan on the push right
@@ -306,20 +347,46 @@ actor CloudSyncCoordinator {
         // loop depends on. The three child tables ARE pruned, but scoped to
         // the *active* plan only, so an archived week's rows are left alone
         // (SY2) — see also the matching scoped fetch in `CloudSnapshotLoader`.
+        if !hasCompleteCloudView {
+            Self.logger.error("push skipped prune: no complete cloud read yet")
+        }
         let activePlanScope = [URLQueryItem(name: "plan_id", value: "eq.\(snapshot.activePlan.id)")]
-        try await client.deleteNotIn(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id), extraFilters: activePlanScope)
-        try await client.deleteNotIn(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id), extraFilters: activePlanScope)
-        try await client.deleteNotIn(table: "training_plan_days", keepIds: bundle.planDays.map(\.id), extraFilters: activePlanScope)
-        try await client.deleteNotIn(table: "exercise_sets", keepIds: bundle.exerciseSets.map(\.id))
-        try await client.deleteNotIn(table: "exercises", keepIds: bundle.exercises.map(\.id))
-        try await client.deleteNotIn(table: "workout_sessions", keepIds: bundle.sessions.map(\.id))
-        try await client.deleteNotIn(table: "running_workouts", keepIds: bundle.running.map(\.id))
-        try await client.deleteNotIn(table: "custom_exercises", keepIds: bundle.customExercises.map(\.id))
+        let outcomes = try await client.prune(
+            targets: [
+                CloudPruneTarget(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id), filters: activePlanScope),
+                CloudPruneTarget(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id), filters: activePlanScope),
+                CloudPruneTarget(table: "training_plan_days", keepIds: bundle.planDays.map(\.id), filters: activePlanScope),
+                CloudPruneTarget(table: "exercise_sets", keepIds: bundle.exerciseSets.map(\.id)),
+                CloudPruneTarget(table: "exercises", keepIds: bundle.exercises.map(\.id)),
+                CloudPruneTarget(table: "workout_sessions", keepIds: bundle.sessions.map(\.id)),
+                CloudPruneTarget(table: "running_workouts", keepIds: bundle.running.map(\.id)),
+                CloudPruneTarget(table: "custom_exercises", keepIds: bundle.customExercises.map(\.id))
+            ],
+            keepIdsAreComplete: hasCompleteCloudView
+        )
+        logPruneOutcomes(outcomes)
 
         // The cloud now holds everything up to the snapshot we sent; clear
         // the persisted "owes a push" flag (no-op if a mutation landed
         // mid-push — the coalescing loop re-pushes and re-acknowledges).
         await database.acknowledgePushedState(mutationSeq: snapshot.mutationSeq)
+    }
+
+    /// Deleting is the only irreversible thing sync does and the only thing a
+    /// user can never recover from, so every deleted id goes to the log. Ids
+    /// are `.public` because they are client-generated UUIDs carrying no user
+    /// content, and without them a report of "my workouts vanished" is
+    /// unanswerable after the fact.
+    private func logPruneOutcomes(_ outcomes: [CloudPruneOutcome]) {
+        for outcome in outcomes {
+            Self.logger.notice(
+                """
+                cloud prune deleted \(outcome.deletedIds.count, privacy: .public) row(s) \
+                from \(outcome.table, privacy: .public): \
+                \(outcome.deletedIds.joined(separator: ","), privacy: .public)
+                """
+            )
+        }
     }
 
     /// Lightweight check: has the server's active-plan `revision` moved past the
