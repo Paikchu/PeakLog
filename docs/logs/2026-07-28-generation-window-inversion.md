@@ -123,6 +123,8 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
    修法**不是加第四道 guard**，而是让列本身可信：新增 `20260728140000_normalize_profile_timezone.sql`——`resolve_timezone()`（STABLE，用固定时间戳探针，接受与 RPC 完全相同的取值集合，含 `PST8PDT` 这类缩写）+ `profiles` 上的 `BEFORE INSERT OR UPDATE OF timezone` 触发器 + 一次性修复存量行。JS 侧 guard 保留作纵深防御。
    为何不用 CHECK 约束：Postgres 禁止 CHECK 中使用子查询，而合法性只能查 `pg_timezone_names` / `AT TIME ZONE` 机制，二者都非 IMMUTABLE。
    **该迁移尚未应用，等待授权。** 线上 0 行非法时区，当前为潜在缺陷而非现网故障。
+   Review 又在该迁移上指出两点，已修：(a) 漏了本仓库的函数权限锁定约定（`REVOKE ... FROM PUBLIC/authenticated/anon` + `GRANT ... TO service_role`）——该约定源自 Phase 2 的真实事故，public schema 新建函数默认带 `anon` EXECUTE，缺了会让 `resolve_timezone` 变成 PostgREST 上的 `/rpc/resolve_timezone`；已核实线上其余 RPC 的 `anon_can_execute` 均为 false，本函数会是唯一例外。(b) `EXCEPTION WHEN OTHERS` 过宽，已收窄为 `invalid_parameter_value OR invalid_datetime_format` 静默回落，其余错误类先 `RAISE WARNING` 再回落（不因意外错误类阻断用户的 profile 写入，但不让它无声消失）。
+   应用时的**必做冒烟**：确认 authenticated 客户端仍能更新自己的 `profiles.timezone`（触发器函数的 EXECUTE 权限 Postgres 只在 CREATE TRIGGER 时检查，但本迁移尚未在任何环境执行过）。
 
 ## 待办
 

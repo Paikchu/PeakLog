@@ -58,8 +58,22 @@ BEGIN
   BEGIN
     v_probe := TIMESTAMP '2000-01-01 00:00:00' AT TIME ZONE p_timezone;
     RETURN p_timezone;
-  EXCEPTION WHEN OTHERS THEN
-    RETURN 'UTC';
+  EXCEPTION
+    -- The expected failure for an unrecognized zone name, verified live:
+    -- `now() at time zone 'Asia/Shanghi'` -> 22023 invalid_parameter_value.
+    -- 22007 covers malformed input reaching the cast.
+    WHEN invalid_parameter_value OR invalid_datetime_format THEN
+      RETURN 'UTC';
+    -- Anything else is not what this guard was written for. Still fall back
+    -- rather than fail the profile write -- blocking a user's profile update
+    -- over an unexpected error class is worse than running them on UTC -- but
+    -- never let it disappear without a trace: once the trigger normalizes on
+    -- write this function is the only line of defense, so a silently
+    -- miscategorized error would propagate everywhere.
+    WHEN OTHERS THEN
+      RAISE WARNING 'resolve_timezone: unexpected % (%) probing timezone %, falling back to UTC',
+        SQLSTATE, SQLERRM, p_timezone;
+      RETURN 'UTC';
   END;
 END $$;
 
@@ -75,6 +89,32 @@ BEGIN
   NEW.timezone := public.resolve_timezone(NEW.timezone);
   RETURN NEW;
 END $$;
+
+-- Permission lockdown, per the SECURITY NOTE in
+-- 20260708000013_phase2_generation_rpc_and_scheduling_extensions.sql:28-39
+-- (found live during Phase 2): functions created in this project's public
+-- schema pick up an EXECUTE grant for `anon` by default, and `REVOKE ALL ...
+-- FROM PUBLIC` alone does NOT remove it. Without this block
+-- resolve_timezone(text) would be reachable as PostgREST /rpc/resolve_timezone
+-- by any anon/authenticated client. It is a pure, side-effect-free string
+-- check so the impact would be low, but it is an internal invariant helper,
+-- not a public probe, and the convention exists precisely so this class of
+-- oversight cannot recur.
+REVOKE ALL ON FUNCTION public.resolve_timezone(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.resolve_timezone(text) FROM authenticated;
+REVOKE ALL ON FUNCTION public.resolve_timezone(text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.resolve_timezone(text) TO service_role;
+
+-- The trigger function returns `trigger`, so PostgREST cannot expose it via
+-- /rpc at all; revoked anyway for consistency. Safe for ordinary client
+-- profile writes: PostgreSQL checks EXECUTE on a trigger function at CREATE
+-- TRIGGER time, not on each fire, and this one is SECURITY DEFINER. That
+-- said, this migration has not been executed anywhere yet (no local Postgres
+-- available), so "an authenticated client can still update its own
+-- profiles.timezone" is a required smoke test when it is applied.
+REVOKE ALL ON FUNCTION public.normalize_profile_timezone() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.normalize_profile_timezone() FROM authenticated;
+REVOKE ALL ON FUNCTION public.normalize_profile_timezone() FROM anon;
 
 -- BEFORE INSERT fires unconditionally; BEFORE UPDATE only when the column is
 -- actually written, so ordinary profile updates pay nothing.
