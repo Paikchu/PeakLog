@@ -110,8 +110,5 @@ private extension View {
 }
 
 #Preview {
-    AuthView(auth: AuthStateManager(
-        provider: SupabaseAuthProvider(),
-        store: InMemoryAuthSessionStore()
-    ))
+    AuthView(auth: AuthStateManager(provider: SupabaseAuthProvider()))
 }

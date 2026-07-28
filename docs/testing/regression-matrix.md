@@ -55,8 +55,12 @@
 | 场景 | 验证方式 | 固定验收维度 |
 |---|---|---|
 | App 回到前台时认证网关的竞态处理 | `tests/foreground_auth_gate_race_test.swift` | 主路径、网络失败 |
-| Token 有效但网络请求失败时的错误处理 | `tests/valid_token_network_error_test.swift` | 网络失败、权限拒绝 |
+| Token 刷新网络失败保留登录态，refresh 被拒绝时登出 | `PeakLogTests/AuthStateManagerTests.swift`、`PeakLogTests/SupabaseAuthProviderTests.swift` | 网络失败、权限拒绝 |
 | Supabase 配置加载与校验 | `tests/supabase_config_test.swift` | 主路径 |
+| SDK session 校验、local scope 退出、双击登录与并发刷新 single-flight | `PeakLogTests/SupabaseAuthProviderTests.swift`、`PeakLogTests/AuthStateManagerTests.swift` | 主路径、重复提交、迁移后兼容性 |
+| SDK select/filter/order/limit、13 表写入、bulk-null、ignore-duplicates、scoped prune、503/520 retry 与错误映射 | `PeakLogTests/SupabaseDataClientTests.swift` | 主路径、网络失败、权限拒绝 |
+| replan typed Functions 调用及全部 Outcome/HTTP/解码失败 | `PeakLogTests/PlanReplanServiceTests.swift` | 主路径、网络失败、权限拒绝 |
+| 欠推送冷启动保持本地编辑、合并跨端记录；网络失败不 prune | `PeakLogTests/CloudPushFirstGuardTests.swift` | 主路径、网络失败、迁移后兼容性 |
 | 云端数据模型与本地模型的双向映射（roundtrip） | `tests/cloud_mapper_roundtrip_test.swift` | 主路径、迁移后兼容性 |
 | 云端拉取数据与本地状态的合并策略 | `tests/cloud_pull_merge_test.swift` | 主路径、网络失败 |
 | 本地状态在 Schema 迁移后仍可解码 | `tests/local_state_decode_compat_test.swift` | 迁移后兼容性 |

@@ -11,16 +11,16 @@ struct SupabaseConfigTestRunner {
     private static func prefersDebugOverridesWhenPresent() {
         let environment = [
             "PEAKLOG_DEBUG_SUPABASE_URL": "http://127.0.0.1:54321",
-            "PEAKLOG_DEBUG_SUPABASE_ANON_KEY": "local-anon-key"
+            "PEAKLOG_DEBUG_SUPABASE_PUBLISHABLE_KEY": "local-publishable-key"
         ]
 
         let resolvedURL = SupabaseConfig.resolveURL(
             environment: environment,
             fallback: URL(string: "https://example.supabase.co")!
         )
-        let resolvedKey = SupabaseConfig.resolveAnonKey(
+        let resolvedKey = SupabaseConfig.resolvePublishableKey(
             environment: environment,
-            fallback: "prod-anon-key"
+            fallback: "prod-publishable-key"
         )
 
         precondition(
@@ -28,8 +28,8 @@ struct SupabaseConfigTestRunner {
             "Expected debug URL override to take precedence"
         )
         precondition(
-            resolvedKey == "local-anon-key",
-            "Expected debug anon key override to take precedence"
+            resolvedKey == "local-publishable-key",
+            "Expected debug publishable key override to take precedence"
         )
     }
 
@@ -40,9 +40,9 @@ struct SupabaseConfigTestRunner {
             environment: environment,
             fallback: URL(string: "https://example.supabase.co")!
         )
-        let resolvedKey = SupabaseConfig.resolveAnonKey(
+        let resolvedKey = SupabaseConfig.resolvePublishableKey(
             environment: environment,
-            fallback: "prod-anon-key"
+            fallback: "prod-publishable-key"
         )
 
         precondition(
@@ -50,8 +50,8 @@ struct SupabaseConfigTestRunner {
             "Expected fallback URL when no debug override is present"
         )
         precondition(
-            resolvedKey == "prod-anon-key",
-            "Expected fallback anon key when no debug override is present"
+            resolvedKey == "prod-publishable-key",
+            "Expected fallback publishable key when no debug override is present"
         )
     }
 }

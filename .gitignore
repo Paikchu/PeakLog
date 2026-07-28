@@ -2,6 +2,7 @@ build/
 .DS_Store
 **/.DS_Store
 *.xcuserstate
+**/xcuserdata/
 
 # Python
 __pycache__/

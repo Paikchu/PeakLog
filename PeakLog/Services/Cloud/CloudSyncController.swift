@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Supabase
 
 /// Bridges the `@MainActor` app/auth world to the background `CloudSyncCoordinator`.
 /// Starts a coordinator when a user signs in, tears it down on sign-out or
@@ -17,6 +18,7 @@ final class CloudSyncController: ObservableObject {
     @Published private(set) var syncStatus: CloudSyncStatus = .idle
 
     private let database: LocalAppDatabase
+    private let apiClient: SupabaseAPIClient?
     private var coordinator: CloudSyncCoordinator?
     private var activeUserId: String?
     private var activeTokenProvider: TokenProviding?
@@ -26,8 +28,12 @@ final class CloudSyncController: ObservableObject {
     /// the adjust menu so a double-tap can't fire two requests.
     @Published private(set) var isRequestingReplan = false
 
-    init(database: LocalAppDatabase = .shared) {
+    init(
+        database: LocalAppDatabase = .shared,
+        apiClient: SupabaseAPIClient? = nil
+    ) {
         self.database = database
+        self.apiClient = apiClient
     }
 
     /// Subscribe to auth-state changes. Combine delivers synchronously with the
@@ -90,10 +96,16 @@ final class CloudSyncController: ObservableObject {
     func diagnostics() async -> (error: String?, pending: Bool)? {
         await coordinator?.diagnostics()
     }
+
+    func makeE2EDataClient(tokenProvider: TokenProviding) -> SupabaseDataClient? {
+        guard let apiClient else { return nil }
+        return SupabaseDataClient(client: apiClient, tokenProvider: tokenProvider)
+    }
     #endif
 
     private func start(userId: String, tokenProvider: TokenProviding) {
-        let client = SupabaseDataClient(tokenProvider: tokenProvider)
+        guard let apiClient else { return }
+        let client = SupabaseDataClient(client: apiClient, tokenProvider: tokenProvider)
         let coordinator = CloudSyncCoordinator(
             client: client,
             database: database,
@@ -140,14 +152,18 @@ final class CloudSyncController: ObservableObject {
     /// and, on a real replan, pulls so the new plan lands in the local cache and
     /// the UI refreshes. Returns nil when there's no active cloud session.
     func requestReplan(signal: ReplanSignal) async -> PlanReplanService.Outcome? {
-        guard let coordinator, let userId = activeUserId, let tokenProvider = activeTokenProvider else {
+        guard let coordinator,
+              let userId = activeUserId,
+              let tokenProvider = activeTokenProvider,
+              let apiClient
+        else {
             return nil
         }
         guard !isRequestingReplan else { return nil }
         isRequestingReplan = true
         defer { isRequestingReplan = false }
 
-        let service = PlanReplanService(tokenProvider: tokenProvider)
+        let service = PlanReplanService(client: apiClient, tokenProvider: tokenProvider)
         do {
             let outcome = try await service.requestReplan(userId: userId, signal: signal)
             if case .replanned = outcome {

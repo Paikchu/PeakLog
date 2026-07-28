@@ -43,7 +43,10 @@ enum CloudSyncE2ECheck {
         log("created running record dur=\(marker)")
 
         // 4. Read back from the cloud with an independent client.
-        let client = SupabaseDataClient(tokenProvider: auth.makeTokenProvider())
+        guard let client = sync.makeE2EDataClient(tokenProvider: auth.makeTokenProvider()) else {
+            log("FAIL API client unavailable")
+            return
+        }
         var found = false
         for attempt in 1...30 {
             try? await Task.sleep(nanoseconds: 500_000_000)
