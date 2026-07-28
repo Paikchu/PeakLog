@@ -8,11 +8,43 @@
 // found inverted; see that file's history and
 // backend/tests/generationWindow.test.mjs for the regression this guards.
 
+// `profiles.timezone` is a free-form varchar(64) with no CHECK constraint
+// (20260318000001_schema.sql), so a buggy or older client can persist a value
+// Intl does not recognize ("Asia/Shanghi", "GMT+8", ...). Intl.DateTimeFormat
+// throws RangeError on those, and selectDueUsers / runInferenceSweep iterate
+// profiles without a per-profile try/catch — so a single corrupt row would
+// abort the entire hourly sweep with a 500 before most users were even
+// looked at. Falling back to UTC keeps one bad row from starving everyone
+// else, and mirrors both the caller's existing `profile.timezone || "UTC"`
+// default and the cleanup migration's COALESCE-to-UTC guard.
+const resolvedTimezones = new Map();
+
+function resolveTimezone(timezone) {
+  if (!timezone) return "UTC";
+  const cached = resolvedTimezones.get(timezone);
+  if (cached !== undefined) return cached;
+
+  let resolved;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    resolved = timezone;
+  } catch {
+    // Warn once per distinct bad value: silently treating a corrupt row as
+    // UTC would generate that user's plans against the wrong clock forever
+    // with nothing in the logs to explain it.
+    console.warn(`generationWindow: unrecognized timezone ${JSON.stringify(timezone)}, falling back to UTC`);
+    resolved = "UTC";
+  }
+  resolvedTimezones.set(timezone, resolved);
+  return resolved;
+}
+
 /** The user's local ISO weekday (0 = Sunday .. 6 = Saturday) and hour (0-23)
- * at UTC instant `now`. */
+ * at UTC instant `now`. Unrecognized timezones fall back to UTC. */
 export function localWeekdayAndHour(timezone, now) {
-  const weekdayShort = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" }).format(now);
-  const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hourCycle: "h23" }).format(now);
+  const tz = resolveTimezone(timezone);
+  const weekdayShort = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(now);
+  const hourStr = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(now);
   const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return { weekday: map[weekdayShort] ?? 0, hour: parseInt(hourStr, 10) };
 }
@@ -71,9 +103,11 @@ export function thisMondayString(timezone, now) {
 }
 
 /** `now`'s own calendar date (yyyy-MM-dd) in `timezone` — used to decide
- * which of the current week's days are still eligible for replan. */
+ * which of the current week's days are still eligible for replan.
+ * Unrecognized timezones fall back to UTC. */
 export function localDateString(timezone, now) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const tz = resolveTimezone(timezone);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 /** Calendar-label arithmetic on a yyyy-MM-dd string — no timezone involved. */

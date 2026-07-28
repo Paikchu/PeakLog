@@ -21,7 +21,7 @@
 -- Monday 00:00 -- not from the time window. The predicate is fixed and now
 -- covered by backend/tests/generationWindow.test.mjs; the off-window no-op
 -- claim above rests on those tests, not on that invalidated live check.
--- See 20260728120000_cleanup_prematurely_generated_plans.sql for the
+-- See 20260728131750_cleanup_prematurely_generated_plans.sql for the
 -- data left behind by the inverted window.
 --
 -- The apikey below is the project's publishable key (safe to embed --

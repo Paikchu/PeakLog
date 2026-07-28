@@ -165,6 +165,64 @@ test('week boundaries are read in the user local clock, not UTC', () => {
   assert.equal(nextMondayString(tz, sundayEvening), MONDAY);
 });
 
+// MARK: - Corrupt profiles.timezone must not starve the whole sweep
+//
+// profiles.timezone is a free-form varchar(64) with no CHECK constraint, and
+// Intl.DateTimeFormat throws RangeError on an unrecognized name. Since
+// selectDueUsers / runInferenceSweep iterate profiles without a per-profile
+// try/catch, an unguarded throw aborts the entire hourly sweep with a 500 --
+// one corrupt row would block weekly generation for every other user.
+
+const BAD_TIMEZONES = ['Asia/Shanghi', 'GMT+8', 'not a zone', '', null, undefined];
+
+test('precondition: these values really do make Intl throw', () => {
+  for (const tz of BAD_TIMEZONES) {
+    if (tz == null) continue; // null/undefined are caught by the falsy guard
+    assert.throws(() => new Intl.DateTimeFormat('en-US', { timeZone: tz }), RangeError, `expected ${JSON.stringify(tz)} to throw`);
+  }
+});
+
+test('every exported function tolerates an unrecognized timezone by falling back to UTC', () => {
+  const now = new Date('2026-07-12T21:30:00Z'); // Sunday 21:30 UTC
+  for (const tz of BAD_TIMEZONES) {
+    assert.doesNotThrow(() => localWeekdayAndHour(tz, now), `localWeekdayAndHour(${JSON.stringify(tz)})`);
+    assert.deepEqual(localWeekdayAndHour(tz, now), localWeekdayAndHour('UTC', now));
+    assert.equal(isGenerationWindowOpen(tz, now), isGenerationWindowOpen('UTC', now));
+    assert.equal(isInferenceWindowOpen(tz, now), isInferenceWindowOpen('UTC', now));
+    assert.equal(localDateString(tz, now), localDateString('UTC', now));
+    assert.equal(thisMondayString(tz, now), thisMondayString('UTC', now));
+    assert.equal(nextMondayString(tz, now), nextMondayString('UTC', now));
+  }
+  // And UTC's own answer at that instant is the real one, not a swallowed error.
+  assert.equal(isGenerationWindowOpen('Asia/Shanghi', now), true); // Sun 21:30 UTC
+  assert.equal(nextMondayString('Asia/Shanghi', now), MONDAY);
+});
+
+test('a corrupt profile does not abort the sweep over the remaining profiles', () => {
+  // Mirrors selectDueUsers' loop shape: a plain for-of with no try/catch.
+  const profiles = [
+    { id: 'a', timezone: 'Asia/Shanghai' },
+    { id: 'b', timezone: 'Asia/Shanghi' }, // typo -- the corrupt row
+    { id: 'c', timezone: 'UTC' },
+  ];
+  const now = instantAt('UTC', SUNDAY, 21);
+  const seen = [];
+  assert.doesNotThrow(() => {
+    for (const p of profiles) {
+      isGenerationWindowOpen(p.timezone || 'UTC', now);
+      seen.push(p.id);
+    }
+  });
+  assert.deepEqual(seen, ['a', 'b', 'c'], 'all three profiles must be evaluated');
+});
+
+test('a valid but non-IANA-looking alias is still honored, not silently coerced', () => {
+  // 'PST' is a legacy alias Intl accepts; the guard must not clobber anything
+  // Intl can actually resolve, or real users would get the wrong clock.
+  const now = new Date('2026-07-12T12:00:00Z');
+  assert.equal(localDateString('PST', now), localDateString('America/Los_Angeles', now));
+});
+
 test('isInferenceWindowOpen still spans local 21:00–22:59 only', () => {
   const tz = 'Asia/Shanghai';
   assert.equal(isInferenceWindowOpen(tz, instantAt(tz, WEDNESDAY, 20, 59)), false);

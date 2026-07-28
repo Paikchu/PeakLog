@@ -95,6 +95,17 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
 
 **应用顺序**：Edge Function（v10，窗口已关）先，迁移后。反过来的话，被删的行会在下一个整点被仍然开着的 Mon–Sat 窗口重新提前生成。
 
+## Review 反馈处理（PR #130）
+
+1. **失效文件名**：cron 迁移注释指向 `20260728120000_...`，但该文件后来被重命名为 `20260728131750_...`。已更正。
+2. **损坏时区会拖垮整个扫描**：`profiles.timezone` 是无 CHECK 约束的 `varchar(64)`，而 `Intl.DateTimeFormat` 对无法识别的名字抛 `RangeError`；`selectDueUsers` / `runInferenceSweep` 的 for 循环没有 per-profile try/catch，所以**一行损坏数据会让整个小时扫描 500 中断**，其他用户当次全部不生成。已本地复现确认（三个 profile、中间一个 `Asia/Shanghi` 拼错 → 只处理了 1 个用户就整体抛出）。
+
+   修法：在 `generationWindow.mjs` 加 `resolveTimezone()`，无法识别的值回落 UTC 并按值去重 `console.warn` 一次——与调用方既有的 `profile.timezone || "UTC"` 默认、以及清理迁移的 `COALESCE(..., 'UTC')` 保持一致。注意 `PST` 这类 Intl 能解析的旧别名不受影响（有测试锁定），否则真实用户会被换错时钟。
+
+   新增 4 例测试（含「这些值确实会让 Intl 抛」的前置断言、以及模拟 `selectDueUsers` 循环形状的用例）。变异验证：去掉 guard 后 33 例中 2 例失败。
+
+   线上现状：两个 profile 均为合法的 `Asia/Shanghai`，该 guard 当前是 no-op，**无紧急性**。
+
 ## 待办
 
 - 2026-08-02（周日）20:00 上海时间：确认两个账号各自生成 2026-08-03 的新计划，且 `plan_generations.context_snapshot` 含 7/27–8/2 的实际训练数据。
