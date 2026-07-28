@@ -33,11 +33,23 @@
 -- decided by consulting pg_timezone_names / the `AT TIME ZONE` machinery,
 -- neither of which is IMMUTABLE. A BEFORE trigger is the supported mechanism.
 --
--- The validity test deliberately uses `now() AT TIME ZONE tz` itself rather
--- than a pg_timezone_names lookup, so this accepts exactly what the RPCs
--- accept -- including abbreviations that are valid for AT TIME ZONE but absent
--- from pg_timezone_names. Anything else becomes 'UTC', matching the fallback
--- already used by the Edge Function (resolveTimezone) and by the RPCs for NULL.
+-- WHAT COUNTS AS VALID
+-- Three tests in order, all of which must pass (see the inline comment on the
+-- gate in resolve_timezone below for the measurements behind them):
+--   1. Area/Location shape, or plain 'UTC'/'GMT'
+--   2. present in pg_timezone_names
+--   3. the `AT TIME ZONE` probe itself succeeds
+-- Anything else becomes 'UTC', matching the fallback already used by the Edge
+-- Function (resolveTimezone) and by the RPCs for NULL.
+--
+-- An earlier draft of this file used the `AT TIME ZONE` probe ALONE, on the
+-- stated rationale that it should "accept exactly what the RPCs accept",
+-- explicitly including abbreviations absent from pg_timezone_names. That
+-- rationale was wrong and is retracted: this column is read by two runtimes,
+-- so the target is the INTERSECTION of what both accept, not parity with
+-- either one. The probe alone let `GMT+8` (Postgres-only, POSIX UTC-8) and
+-- `PST` (accepted by both but with different offsets) through, putting the
+-- Edge Function and the RPCs on different calendar weeks.
 
 -- STABLE, not IMMUTABLE: what counts as a usable zone comes from the server's
 -- tzdata, which can change across a Postgres upgrade. The probe is a fixed
