@@ -639,20 +639,38 @@ private struct TodayPlanExercisesSection: View {
                 )
                 .transition(.opacity)
             } else {
+                let exercises = state.plan.exercises.filter { !state.isFocusMode || $0.itemType == .strength }
                 VStack(alignment: .leading, spacing: state.isFocusMode ? 10 : 16) {
-                    ForEach(state.plan.exercises.filter { !state.isFocusMode || $0.itemType == .strength }) { exercise in
-                        exerciseCard(for: exercise)
-                            .id(exercise.id)
-                            .visualEffect { content, proxy in
-                                let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
-                                let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
-                                let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
-                                let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
-                                let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
-                                return content
-                                    .scaleEffect(scale)
-                                    .opacity(opacity)
+                    ForEach(exercises) { exercise in
+                        Group {
+                            if state.isFocusMode {
+                                exerciseCard(for: exercise)
+                            } else {
+                                HStack(alignment: .top, spacing: 12) {
+                                    PlanTimelineMarker(isHighlighted: exercise.id == firstPendingExerciseId)
+                                        .padding(.top, 18)
+
+                                    exerciseCard(for: exercise)
+                                        .frame(maxWidth: .infinity)
+                                }
                             }
+                        }
+                        .id(exercise.id)
+                        .visualEffect { content, proxy in
+                            let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
+                            let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
+                            let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
+                            let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
+                            let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
+                            return content
+                                .scaleEffect(scale)
+                                .opacity(opacity)
+                        }
+                    }
+                }
+                .background(alignment: .topLeading) {
+                    if !state.isFocusMode, exercises.count > 1 {
+                        timelineRail
                     }
                 }
                 .scrollTargetLayout()
@@ -660,6 +678,24 @@ private struct TodayPlanExercisesSection: View {
                 .animation(flowAnimation, value: state.plan.exercises.map(\.id))
             }
         }
+    }
+
+    private var firstPendingExerciseId: String? {
+        state.plan.exercises.first { exercise in
+            if exercise.itemType == .cardio {
+                return !exercise.isCardioCompleted
+            }
+            return !exercise.sets.isEmpty && exercise.sets.contains { !$0.isCompleted }
+        }?.id
+    }
+
+    private var timelineRail: some View {
+        Rectangle()
+            .fill(Color.appSeparator)
+            .frame(width: 2)
+            .padding(.vertical, 18)
+            .offset(x: 9)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -731,6 +767,24 @@ private struct TodayPlanExercisesSection: View {
                 )
             }
         )
+    }
+}
+
+private struct PlanTimelineMarker: View {
+    let isHighlighted: Bool
+
+    var body: some View {
+        Circle()
+            .fill(Color.appBackground)
+            .overlay {
+                Circle()
+                    .strokeBorder(
+                        isHighlighted ? Color.accentPrimary : Color.appSeparator,
+                        lineWidth: isHighlighted ? 2.5 : 2
+                    )
+            }
+            .frame(width: 20, height: 20)
+            .accessibilityHidden(true)
     }
 }
 
