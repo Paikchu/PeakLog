@@ -124,6 +124,17 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
    为何不用 CHECK 约束：Postgres 禁止 CHECK 中使用子查询，而合法性只能查 `pg_timezone_names` / `AT TIME ZONE` 机制，二者都非 IMMUTABLE。
    **该迁移尚未应用，等待授权。** 线上 0 行非法时区，当前为潜在缺陷而非现网故障。
    Review 又在该迁移上指出两点，已修：(a) 漏了本仓库的函数权限锁定约定（`REVOKE ... FROM PUBLIC/authenticated/anon` + `GRANT ... TO service_role`）——该约定源自 Phase 2 的真实事故，public schema 新建函数默认带 `anon` EXECUTE，缺了会让 `resolve_timezone` 变成 PostgREST 上的 `/rpc/resolve_timezone`；已核实线上其余 RPC 的 `anon_can_execute` 均为 false，本函数会是唯一例外。(b) `EXCEPTION WHEN OTHERS` 过宽，已收窄为 `invalid_parameter_value OR invalid_datetime_format` 静默回落，其余错误类先 `RAISE WARNING` 再回落（不因意外错误类阻断用户的 profile 写入，但不让它无声消失）。
+   **第四轮（Review 指出，属实，且比其举例更严重）**：我原本刻意让 SQL 用 `AT TIME ZONE` 而非查 `pg_timezone_names`，理由是「接受与 RPC 完全一致的取值集合」——这个理由是错的。`profiles.timezone` 被**两个运行时**读取，要保证的是二者的**交集**，不是与其中之一对齐。实测：
+
+   | 取值 | Intl | Postgres `AT TIME ZONE` |
+   | --- | --- | --- |
+   | `GMT+8` | 拒绝 | 接受，POSIX 语义 = UTC-8 |
+   | `PST` | 接受 → UTC-7（含 DST） | 接受 → UTC-8（固定） |
+
+   `GMT+8` 让两层差 8 小时；`PST` 更糟——**两边都接受且静默给出不同结果**，任何一侧都不报错。都足以让 Edge Function 与 RPC 落在不同日历周，表现为 C21 拒绝或计划生成到错误的周。两个问题值恰好都是 `pg_timezone_names` 里没有的。
+   修法是**两个运行时共用同一条规则**：Area/Location 形态（或纯 `UTC`/`GMT`）+ 各自运行时接受。`isCrossRuntimeSafe()` 与 `resolve_timezone()` 实现同一判据，二者按构造一致而非靠巧合。刻意比任一运行时都严格（连 `PST8PDT` 这种两边其实一致的旧式写法也拒绝），因为 iOS `TimeZone.current.identifier` 只会产出 Area/Location 标识符，不损失任何真实取值。已对 14 个候选值逐一比对 JS 与 SQL 结果，**全部一致**。
+   同时更正了我此前一条**错误的测试**：它断言 `PST` 应被原样保留，实际上那正是会让两个运行时分叉的取值。
+
    应用时的**必做冒烟**：确认 authenticated 客户端仍能更新自己的 `profiles.timezone`（触发器函数的 EXECUTE 权限 Postgres 只在 CREATE TRIGGER 时检查，但本迁移尚未在任何环境执行过）。
 
 ## 待办

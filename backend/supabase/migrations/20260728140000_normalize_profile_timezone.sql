@@ -55,6 +55,34 @@ BEGIN
   IF p_timezone IS NULL OR btrim(p_timezone) = '' THEN
     RETURN 'UTC';
   END IF;
+  -- Cross-runtime agreement gate, applied BEFORE the probe. `AT TIME ZONE`
+  -- alone is the wrong test: profiles.timezone is read by two runtimes, and
+  -- their accepted sets differ in both directions. Measured on this database
+  -- vs. Node's Intl:
+  --
+  --   value    Intl                      Postgres AT TIME ZONE
+  --   GMT+8    REJECT                    accepted, POSIX => UTC-8
+  --   PST      accepted => UTC-7 (DST)   accepted => UTC-8 (fixed)
+  --
+  -- GMT+8 puts the layers 8 hours apart; PST is worse -- both accept it and
+  -- silently disagree by an hour with no error anywhere. Either can land the
+  -- Edge Function and this RPC on different calendar weeks, surfacing as a C21
+  -- rejection or a plan built for the wrong week.
+  --
+  -- Both offenders are precisely the values missing from pg_timezone_names, so
+  -- require membership there AND an Area/Location shape (or plain UTC/GMT).
+  -- isCrossRuntimeSafe() in _shared/generationWindow.mjs applies the identical
+  -- rule, so the runtimes agree by construction, not by coincidence.
+  -- Deliberately stricter than either runtime alone (it also rejects agreeing
+  -- legacy forms such as PST8PDT): iOS's TimeZone.current.identifier only ever
+  -- produces Area/Location identifiers, so nothing real is lost.
+  IF NOT (p_timezone IN ('UTC', 'GMT') OR position('/' in p_timezone) > 0) THEN
+    RETURN 'UTC';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_timezone_names n WHERE n.name = p_timezone) THEN
+    RETURN 'UTC';
+  END IF;
+
   BEGIN
     v_probe := TIMESTAMP '2000-01-01 00:00:00' AT TIME ZONE p_timezone;
     RETURN p_timezone;

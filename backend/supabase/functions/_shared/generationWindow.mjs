@@ -24,6 +24,32 @@
 // boundary so every downstream timezone helper receives a resolved value.
 const resolvedTimezones = new Map();
 
+// "Intl accepts it" is NOT a sufficient test, because profiles.timezone is
+// read by TWO runtimes -- this one and Postgres, inside install_generated_plan
+// / replan_plan_days -- and their accepted sets differ in both directions.
+// Measured against this project's own database and Node:
+//
+//   value        Intl                     Postgres AT TIME ZONE
+//   GMT+8        REJECT                   accepted, POSIX => UTC-8
+//   PST          accepted => UTC-7 (DST)  accepted => UTC-8 (fixed)
+//
+// GMT+8 makes the two layers disagree by 8 hours; PST is worse -- both accept
+// it and silently disagree by one hour, with no error raised anywhere. Either
+// can land the Edge Function and the RPC on different calendar weeks, which
+// surfaces as a C21 rejection or a plan generated for the wrong week.
+//
+// Both offenders are exactly the values absent from pg_timezone_names, so the
+// shared rule is: an Area/Location IANA identifier (or plain UTC/GMT) that the
+// runtime also accepts. resolve_timezone() in
+// 20260728140000_normalize_profile_timezone.sql applies the identical rule, so
+// the two runtimes agree by construction rather than by coincidence. This is
+// deliberately stricter than either runtime alone -- it also rejects agreeing
+// legacy forms like PST8PDT -- because iOS's TimeZone.current.identifier only
+// ever produces Area/Location identifiers, so nothing real is lost.
+function isCrossRuntimeSafe(timezone) {
+  return timezone === "UTC" || timezone === "GMT" || timezone.includes("/");
+}
+
 export function resolveTimezone(timezone) {
   if (!timezone) return "UTC";
   const cached = resolvedTimezones.get(timezone);
@@ -31,6 +57,7 @@ export function resolveTimezone(timezone) {
 
   let resolved;
   try {
+    if (!isCrossRuntimeSafe(timezone)) throw new RangeError("not cross-runtime safe");
     new Intl.DateTimeFormat("en-US", { timeZone: timezone });
     resolved = timezone;
   } catch {

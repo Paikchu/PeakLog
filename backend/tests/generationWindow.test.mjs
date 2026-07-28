@@ -242,11 +242,27 @@ test('resolveTimezone output is safe to hand to every downstream timezone helper
   );
 });
 
-test('a valid but non-IANA-looking alias is still honored, not silently coerced', () => {
-  // 'PST' is a legacy alias Intl accepts; the guard must not clobber anything
-  // Intl can actually resolve, or real users would get the wrong clock.
-  const now = new Date('2026-07-12T12:00:00Z');
-  assert.equal(localDateString('PST', now), localDateString('America/Los_Angeles', now));
+// This replaces an earlier test that asserted 'PST' was "still honored".
+// That was wrong: profiles.timezone is read by Postgres too, and the two
+// runtimes disagree on 'PST' (Intl => UTC-7 with DST, Postgres => UTC-8
+// fixed) with no error raised on either side. Honoring it would have put the
+// Edge Function and install_generated_plan on different clocks.
+test('values the two runtimes disagree about are coerced to UTC, not honored', () => {
+  // Measured: Postgres accepts GMT+8 as POSIX UTC-8 while Intl rejects it;
+  // both accept PST but compute different offsets.
+  for (const tz of ['GMT+8', 'PST', 'PST8PDT', 'EST5EDT', 'Factory']) {
+    assert.equal(resolveTimezone(tz), 'UTC', `${tz} must not survive normalization`);
+  }
+});
+
+test('Area/Location identifiers and plain UTC/GMT survive untouched', () => {
+  for (const tz of ['Asia/Shanghai', 'America/Los_Angeles', 'Etc/GMT+8', 'Pacific/Kiritimati', 'UTC', 'GMT']) {
+    assert.equal(resolveTimezone(tz), tz, `${tz} must be preserved`);
+  }
+  // Preserved values must still behave: Etc/GMT+8 is the IANA spelling that
+  // both runtimes agree means UTC-8 (unlike the POSIX 'GMT+8' above).
+  const now = new Date('2026-07-15T00:00:00Z');
+  assert.equal(localWeekdayAndHour('Etc/GMT+8', now).hour, 16);
 });
 
 test('isInferenceWindowOpen still spans local 21:00–22:59 only', () => {
