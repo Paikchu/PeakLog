@@ -7,8 +7,9 @@ import {
   nextMondayString,
   thisMondayString,
   localDateString,
+  resolveTimezone,
 } from '../supabase/functions/_shared/generationWindow.mjs';
-import { localMidnightToUtc } from '../supabase/functions/_shared/timezone.mjs';
+import { localMidnightToUtc, localDayUtcRange } from '../supabase/functions/_shared/timezone.mjs';
 
 // 2026-07-12 is a Sunday; 07-13 Monday, 07-15 Wednesday, 07-18 Saturday.
 const SUNDAY = '2026-07-12';
@@ -214,6 +215,31 @@ test('a corrupt profile does not abort the sweep over the remaining profiles', (
     }
   });
   assert.deepEqual(seen, ['a', 'b', 'c'], 'all three profiles must be evaluated');
+});
+
+// Guarding generationWindow.mjs alone is not enough, and is actively worse on
+// its own: with the window predicates no longer throwing, a malformed profile
+// gets *past* the window check (on UTC's clock) and reaches
+// inferenceGateOpen's localDayUtcRange in timezone.mjs, which still throws --
+// same unhandled 500 for the whole sweep, just deeper in. So index.ts
+// normalizes at the profile boundary via resolveTimezone(); these two tests
+// pin both halves of that reasoning.
+test('timezone.mjs helpers still throw on a raw malformed value (why boundary normalization is required)', () => {
+  assert.throws(() => localDayUtcRange('2026-07-15', 'Asia/Shanghi'), RangeError);
+});
+
+test('resolveTimezone output is safe to hand to every downstream timezone helper', () => {
+  for (const tz of BAD_TIMEZONES) {
+    const resolved = resolveTimezone(tz);
+    assert.equal(resolved, 'UTC');
+    assert.doesNotThrow(() => localDayUtcRange('2026-07-15', resolved), `localDayUtcRange after resolving ${JSON.stringify(tz)}`);
+  }
+  // And a good value must survive normalization untouched.
+  assert.equal(resolveTimezone('Asia/Shanghai'), 'Asia/Shanghai');
+  assert.deepEqual(
+    localDayUtcRange('2026-07-15', resolveTimezone('Asia/Shanghai')),
+    localDayUtcRange('2026-07-15', 'Asia/Shanghai')
+  );
 });
 
 test('a valid but non-IANA-looking alias is still honored, not silently coerced', () => {

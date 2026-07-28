@@ -113,6 +113,9 @@ return weekday !== 0 || hour >= 20;   // 等价于 !(weekday === 0 && hour < 20)
 
    新增 4 例测试（含「这些值确实会让 Intl 抛」的前置断言、以及模拟 `selectDueUsers` 循环形状的用例）。变异验证：去掉 guard 后 33 例中 2 例失败。
 
+   **补充一轮（Review 再次指出，属实且更严重）**：只在 `generationWindow.mjs` 加 guard 不够，单独看甚至更糟——窗口判断不再抛之后，损坏 profile 会**更深地**走进扫描：`isInferenceWindowOpen` 按 UTC 返回 true → `inferenceGateOpen` 过完几道 DB 检查 → `localDayUtcRange`（`timezone.mjs`，未加 guard）才抛，仍是整个扫描 500，只是位置更靠后。已复现确认。
+   最终修法按 Review 建议**在 profile 边界归一化**：导出 `resolveTimezone()`，把 `index.ts` 四处读取 profile 时区的地方（`selectDueUsers` / `runInferenceSweep` / `generateForUser` / `replanForUser`）的 `profile.timezone || "UTC"` 全部换成 `resolveTimezone(profile.timezone)`，这样包括 `timezone.mjs` 在内的所有下游 helper 拿到的都是已校验值。补 2 例测试分别锁住「原始坏值确实仍会让 `localDayUtcRange` 抛」和「归一化后所有下游 helper 都安全」。
+
    线上现状：两个 profile 均为合法的 `Asia/Shanghai`，该 guard 当前是 no-op，**无紧急性**。
 
 ## 待办

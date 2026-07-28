@@ -40,6 +40,7 @@ import {
   nextMondayString,
   thisMondayString,
   localDateString,
+  resolveTimezone,
 } from "../_shared/generationWindow.mjs";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -187,7 +188,7 @@ async function selectDueUsers(admin: ReturnType<typeof createClient>): Promise<s
   const now = new Date();
   const due: string[] = [];
   for (const profile of profiles ?? []) {
-    const timezone = profile.timezone || "UTC";
+    const timezone = resolveTimezone(profile.timezone);
     if (!isGenerationWindowOpen(timezone, now)) continue;
 
     const weekStartDate = nextMondayString(timezone, now);
@@ -216,7 +217,7 @@ async function runInferenceSweep(admin: ReturnType<typeof createClient>, now: Da
 
   const results: Array<Record<string, unknown>> = [];
   for (const profile of profiles ?? []) {
-    const timezone = profile.timezone || "UTC";
+    const timezone = resolveTimezone(profile.timezone);
     if (!isInferenceWindowOpen(timezone, now)) continue;
 
     // deno-lint-ignore no-await-in-loop -- sequential on purpose (see weekly loop).
@@ -310,7 +311,7 @@ async function generateForUser(
       .from("profiles").select("timezone").eq("id", userId).single();
     if (profileError) throw profileError;
 
-    const weekStartDate = nextMondayString(profile?.timezone || "UTC", new Date());
+    const weekStartDate = nextMondayString(resolveTimezone(profile?.timezone), new Date());
 
     if (!opts.force) {
       const { data: existing } = await admin
@@ -716,7 +717,7 @@ async function replanForUser(
     const { data: profile, error: profileError } = await admin
       .from("profiles").select("timezone").eq("id", userId).single();
     if (profileError) throw profileError;
-    const timezone = profile?.timezone || "UTC";
+    const timezone = resolveTimezone(profile?.timezone);
     const now = new Date();
     const today = localDateString(timezone, now);
     const weekMonday = thisMondayString(timezone, now);

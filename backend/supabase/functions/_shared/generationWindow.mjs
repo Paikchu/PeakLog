@@ -17,9 +17,14 @@
 // looked at. Falling back to UTC keeps one bad row from starving everyone
 // else, and mirrors both the caller's existing `profile.timezone || "UTC"`
 // default and the cleanup migration's COALESCE-to-UTC guard.
+// Exported because guarding only this module is NOT enough: once the window
+// predicates stop throwing, a malformed profile flows *deeper* into the sweep
+// (inferenceGateOpen -> localDayUtcRange in timezone.mjs) and throws there
+// instead — same 500, just later. Callers must normalize at the profile
+// boundary so every downstream timezone helper receives a resolved value.
 const resolvedTimezones = new Map();
 
-function resolveTimezone(timezone) {
+export function resolveTimezone(timezone) {
   if (!timezone) return "UTC";
   const cached = resolvedTimezones.get(timezone);
   if (cached !== undefined) return cached;
