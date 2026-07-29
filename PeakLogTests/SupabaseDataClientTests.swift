@@ -132,6 +132,7 @@ final class SupabaseDataClientTests: XCTestCase {
             CloudPruneTarget(
                 table: "training_plan_days",
                 keepIds: ["day-1", "day-2"],
+                observedIds: ["day-1", "day-2", "day-3"],
                 filters: [URLQueryItem(name: "plan_id", value: "eq.plan-1")]
             )
         ])
@@ -161,7 +162,7 @@ final class SupabaseDataClientTests: XCTestCase {
         let client = makeClient()
 
         let outcomes = try await client.prune(targets: [
-            CloudPruneTarget(table: "running_workouts", keepIds: ["run-1"])
+            CloudPruneTarget(table: "running_workouts", keepIds: ["run-1"], observedIds: ["run-1"])
         ])
 
         XCTAssertTrue(outcomes.isEmpty)

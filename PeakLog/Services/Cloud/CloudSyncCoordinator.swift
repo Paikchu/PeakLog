@@ -23,11 +23,18 @@ actor CloudSyncCoordinator {
     /// `requestPush` so a mutation can never push seed/partial state.
     private var isArmed = false
     /// True once cloud state has been merged into the cache during this
-    /// coordinator's life. Until then a full-state push must not prune: the
-    /// local snapshot may not know about rows another device added while this
-    /// device was away, and the prune would delete them.
+    /// coordinator's life.
+    ///
+    /// This used to be a *safety* gate — a push from a cache that had never
+    /// seen the cloud would prune away every row another device had added.
+    /// Deleting no longer works that way (see `deleteTombstonedRecords`), so
+    /// what is left is convergence: pulling the other device's records in
+    /// before pushing keeps the two caches from drifting for a whole session,
+    /// and it is what puts plan child ids into `observedPrunableIds` so the
+    /// plan reconcile has something to work from.
     private var hasMergedCloudState = false
-    /// True only while the most recent cloud read reached EOF on every table.
+    /// True only while the most recent cloud read reached EOF on the tables a
+    /// push still prunes — the active plan's day/exercise/set rows.
     ///
     /// Separate from `hasMergedCloudState` because the two answer different
     /// questions: that one is "have we looked at the cloud at all?", this one
@@ -38,7 +45,23 @@ actor CloudSyncCoordinator {
     /// Assigned, not OR-ed: a later truncated read invalidates an earlier
     /// complete one, because the cache can no longer be shown to cover the
     /// cloud.
-    private var hasCompleteCloudView = false
+    ///
+    /// Scoped to the prunable tables rather than all of them because a global
+    /// flag made an unrelated table veto the plan prune: a user whose
+    /// `exercise_sets` read truncated would have their plan edits acknowledged
+    /// but never reconciled, and the next pull would quietly restore what they
+    /// deleted. Record deletions do not consult this at all any more — they
+    /// are durable tombstones, so an incomplete read delays them instead of
+    /// dropping them (Issue #132).
+    private var hasCompletePrunableView = false
+    /// Ids of prunable rows this device has provably held: what the last cloud
+    /// read returned, plus what our own successful pushes put there.
+    ///
+    /// A prune may only destroy ids in here. Reaching EOF proves we saw the
+    /// end of the table, not that we saw every row in it — a row another
+    /// device inserted below our cursor mid-scan is missing from the snapshot
+    /// for a reason that has nothing to do with the user having deleted it.
+    private var observedPrunableIds: [String: Set<String>] = [:]
     private(set) var hasUnpushedChanges = false
     private(set) var lastErrorDescription: String?
     private let onStatusChange: (@Sendable (CloudSyncStatus) -> Void)?
@@ -176,13 +199,13 @@ actor CloudSyncCoordinator {
     /// local edits, because record merging is last-write-wins on `updatedAt`
     /// and keeps local-only user rows.
     ///
-    /// Required before the first push of a coordinator's life: `performPush`
-    /// reconciles full state, so its `deleteNotIn` would delete any row
-    /// another device added while this device was away and which the local
-    /// snapshot therefore never saw. The plan child tables are covered
-    /// separately by the revision guard; these three (plus `exercises` /
-    /// `exercise_sets`, which are nested inside the sessions) are what the
-    /// guard does not cover.
+    /// Run before the first push of a coordinator's life. It used to be a
+    /// correctness requirement — the push reconciled full state, so its
+    /// `deleteNotIn` would delete any row another device had added while this
+    /// one was away. That is no longer how deleting works (Issue #132:
+    /// `deleteTombstonedRecords` names its rows), so this is now about
+    /// convergence and about giving the plan reconcile an observed id set to
+    /// work from, not about keeping the push from destroying data.
     private func mergeCloudRecordsPreservingLocalEdits() async throws {
         let snapshot = try await loader.load(userId: userId)
         await database.mergeCloudRecordsPreservingLocalState(
@@ -197,8 +220,13 @@ actor CloudSyncCoordinator {
     /// Records whether the cache may now be used as the authority for
     /// deleting, and says so in the log when it may not — a silently skipped
     /// prune is otherwise indistinguishable from a healthy no-op push.
+    ///
+    /// The observed set is *replaced*, not unioned: it describes what this
+    /// read saw, and a row that has since been deleted elsewhere must not stay
+    /// eligible forever on the strength of a read from an hour ago.
     private func noteCloudViewCompleteness(_ snapshot: CloudSnapshot) {
-        hasCompleteCloudView = snapshot.isComplete
+        hasCompletePrunableView = snapshot.isCompleteForPrunableTables
+        observedPrunableIds = snapshot.observedPruneIds
         guard !snapshot.isComplete else { return }
         let tables = snapshot.incompleteTables.joined(separator: ", ")
         Self.logger.error(
@@ -254,13 +282,15 @@ actor CloudSyncCoordinator {
     }
 
     private func performPush() async throws {
-        // Never prune against a snapshot that has never seen cloud state (the
-        // push-first cold start, or a foreground retry whose initial pull
-        // failed): fold in cloud-only records first, or the `deleteNotIn`
-        // calls below would delete another device's rows. Throwing on failure
-        // leaves the persisted dirty flag set, so the edits stay local and
-        // the next foreground retries — the same outcome a failed initial
-        // pull had before push-first existed.
+        // Fold in cloud-only records before pushing from a cache that has
+        // never seen cloud state (the push-first cold start, or a foreground
+        // retry whose initial pull failed). This is no longer load-bearing for
+        // the record tables — nothing below can delete a row it has not heard
+        // of — but it is what stops the two caches drifting for a session, and
+        // it is what fills `observedPrunableIds` for the plan reconcile.
+        // Throwing on failure leaves the persisted dirty flag set, so the
+        // edits stay local and the next foreground retries — the same outcome
+        // a failed initial pull had before push-first existed.
         if !hasMergedCloudState {
             try await mergeCloudRecordsPreservingLocalEdits()
         }
@@ -270,8 +300,8 @@ actor CloudSyncCoordinator {
         // Revision guard (Phase 3): if the server's copy of the active plan
         // advanced since our last pull — a server-side replan landed while we
         // were holding unpushed local changes — we MUST pull-merge before
-        // pushing. Otherwise the child-table `deleteNotIn` below would delete
-        // the freshly replanned rows and re-upsert our stale ones, silently
+        // pushing. Otherwise the child-table prune below would delete the
+        // freshly replanned rows and re-upsert our stale ones, silently
         // undoing the replan the user just saw. Pulling first folds the replan
         // into the local cache (offline completions preserved, per Issue #1),
         // and re-snapshotting picks it up so the push echoes it back intact.
@@ -327,52 +357,122 @@ actor CloudSyncCoordinator {
             await database.clearPushedEditEvents(ids: Set(bundle.editEvents.map(\.id)))
         }
 
-        // Prune rows the cloud has but the local cache no longer does. Children
-        // first so a parent delete never strands a child mid-request.
+        try await deleteTombstonedRecords(in: snapshot)
+
+        // Prune the *plan child* rows the cloud has but the local cache no
+        // longer does. Children first so a parent delete never strands a child
+        // mid-request.
         //
-        // Gated on a *complete* cloud read (Issue #30): a prune derives the
-        // doomed set from "present in the cloud, absent locally", which only
-        // means "the user deleted it" if the cache has actually seen the whole
-        // cloud. After a truncated read every row past the cutoff looks
-        // deleted, so we skip the destructive half entirely and let the upsert
-        // half stand. Skipping is the safe direction — the cloud keeps rows it
-        // should have dropped, and the next push after a complete read drops
-        // them — whereas throwing would only strand the push while the
-        // truncation persists.
+        // Only the plan child tables are reconciled this way. The five record
+        // tables used to be in this list too, and that was Issue #132: a prune
+        // derives the doomed set from "present in the cloud, absent locally",
+        // which describes a row this device deleted *and equally* a row
+        // another device added while this one was away. They now go through
+        // `deleteTombstonedRecords` above, which names the ids the user
+        // actually deleted and can therefore never touch a row it has not
+        // heard of.
+        //
+        // The plan keeps the absence protocol because absence really does
+        // describe it: the cache holds the *whole* active plan, never a slice
+        // of it, and the only writer that restructures a plan behind this
+        // device's back is the server-side replan — which bumps `revision`,
+        // which the guard above forces a pull-merge on before we get here. The
+        // scope filter keeps that reconcile inside the active plan (SY2), so
+        // an archived week's rows are untouched.
+        //
+        // Gated on a *complete* cloud read (Issue #30): after a truncated read
+        // every row past the cutoff looks deleted. Skipping is the safe
+        // direction — the cloud keeps rows it should have dropped, and the
+        // next push after a complete read drops them — whereas throwing would
+        // only strand the push while the truncation persists. Record
+        // *deletions* no longer depend on this gate at all: they are durable
+        // tombstones, so an incomplete read delays them instead of dropping
+        // them on the floor.
         //
         // training_plans is intentionally NEVER pruned (SY1): the local cache
         // only ever holds the current week, so pruning by "not present
         // locally" would delete every past week's plan on the push right
         // after each rotation — destroying the history Phase 2's learning
-        // loop depends on. The three child tables ARE pruned, but scoped to
-        // the *active* plan only, so an archived week's rows are left alone
-        // (SY2) — see also the matching scoped fetch in `CloudSnapshotLoader`.
-        if !hasCompleteCloudView {
-            Self.logger.error("push skipped prune: no complete cloud read yet")
+        // loop depends on.
+        if !hasCompletePrunableView {
+            Self.logger.error("push skipped plan prune: no complete plan read yet")
         }
         let activePlanScope = [URLQueryItem(name: "plan_id", value: "eq.\(snapshot.activePlan.id)")]
         _ = try await client.prune(
             targets: [
-                CloudPruneTarget(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id), filters: activePlanScope),
-                CloudPruneTarget(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id), filters: activePlanScope),
-                CloudPruneTarget(table: "training_plan_days", keepIds: bundle.planDays.map(\.id), filters: activePlanScope),
-                CloudPruneTarget(table: "exercise_sets", keepIds: bundle.exerciseSets.map(\.id)),
-                CloudPruneTarget(table: "exercises", keepIds: bundle.exercises.map(\.id)),
-                CloudPruneTarget(table: "workout_sessions", keepIds: bundle.sessions.map(\.id)),
-                CloudPruneTarget(table: "running_workouts", keepIds: bundle.running.map(\.id)),
-                CloudPruneTarget(table: "custom_exercises", keepIds: bundle.customExercises.map(\.id))
+                planPruneTarget(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id), scope: activePlanScope),
+                planPruneTarget(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id), scope: activePlanScope),
+                planPruneTarget(table: "training_plan_days", keepIds: bundle.planDays.map(\.id), scope: activePlanScope)
             ],
-            keepIdsAreComplete: hasCompleteCloudView,
+            keepIdsAreComplete: hasCompletePrunableView,
             // Logged from the callback rather than from the return value: a
             // prune that throws on its third delete batch has still destroyed
             // the first two, and only the callback has already run for those.
             didDelete: { Self.logPruneOutcome($0) }
         )
 
+        // Everything we just upserted is now provably in the cloud and came
+        // from this device, so it joins the set a later prune may reconcile.
+        // Without this a row created *and* deleted between two pulls would
+        // never be eligible, and the orphan would sit in the cloud until the
+        // next pull happened to observe it.
+        noteRowsPushed(table: "training_plan_days", ids: bundle.planDays.map(\.id))
+        noteRowsPushed(table: "training_plan_exercises", ids: bundle.planExercises.map(\.id))
+        noteRowsPushed(table: "training_plan_sets", ids: bundle.planSets.map(\.id))
+
         // The cloud now holds everything up to the snapshot we sent; clear
         // the persisted "owes a push" flag (no-op if a mutation landed
         // mid-push — the coalescing loop re-pushes and re-acknowledges).
         await database.acknowledgePushedState(mutationSeq: snapshot.mutationSeq)
+    }
+
+    /// One plan child table's prune target, carrying the ids this device has
+    /// actually observed so the diff can never reach a row it has not seen.
+    private func planPruneTarget(
+        table: String,
+        keepIds: [String],
+        scope: [URLQueryItem]
+    ) -> CloudPruneTarget {
+        CloudPruneTarget(
+            table: table,
+            keepIds: keepIds,
+            observedIds: observedPrunableIds[table] ?? [],
+            filters: scope
+        )
+    }
+
+    private func noteRowsPushed(table: String, ids: [String]) {
+        guard !ids.isEmpty else { return }
+        observedPrunableIds[table, default: []].formUnion(ids)
+    }
+
+    /// Deletes exactly the records the user deleted — the ids the local
+    /// tombstone log names — and retires each table's tombstones the moment
+    /// its request lands.
+    ///
+    /// This is the Issue #132 fix. The push no longer asks the cloud "drop
+    /// everything I don't have"; it says "drop these". A row device B inserted
+    /// after this device's last read is simply not in the log, so no ordering
+    /// of the two devices' pushes can destroy it, and no amount of re-reading
+    /// before the push is needed to make that true.
+    ///
+    /// Clearing per table rather than once at the end is the same reasoning as
+    /// the prune audit log: if `running_workouts` fails after
+    /// `workout_sessions` succeeded, the sessions really are gone and their
+    /// tombstones must not survive to be re-sent — while the running
+    /// tombstones must, so the next push retries them. `clearPushedRecordDeletions`
+    /// subtracts rather than clears, so a deletion the user makes *during* the
+    /// push keeps its tombstone.
+    private func deleteTombstonedRecords(in snapshot: LocalDataSnapshot) async throws {
+        let targets = snapshot.pendingRecordDeletions.deleteTargets(
+            excluding: RecordIdentitySet(snapshot: snapshot),
+            customExerciseCloudId: CloudMapper.strippedCustomId
+        )
+        for target in targets {
+            try await client.deleteIds(table: target.table, ids: target.ids)
+            Self.logPruneOutcome(CloudPruneOutcome(table: target.table, deletedIds: target.ids))
+            await database.clearPushedRecordDeletions(target.confirmation)
+        }
     }
 
     /// Deleting is the only irreversible thing sync does and the only thing a

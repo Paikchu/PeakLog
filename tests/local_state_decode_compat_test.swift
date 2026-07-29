@@ -9,6 +9,7 @@ struct LocalStateDecodeCompatTestRunner {
         await legacyStateFileWithDarkModePreferenceLoads()
         await unknownCardioActivityDoesNotResetState()
         await legacyStateFileWithoutUnpushedFlagLoads()
+        await legacyStateFileWithoutRecordDeletionLogLoads()
         print("local_state_decode_compat_test passed")
     }
 
@@ -83,6 +84,42 @@ struct LocalStateDecodeCompatTestRunner {
         precondition(!dirty, "Missing flag keys decode as a clean outbox")
         let seq = await legacyDatabase.snapshot().mutationSeq
         precondition(seq == 0, "Missing localMutationSeq decodes as 0")
+    }
+
+    /// Simulates a state file written before the record deletion log
+    /// (Issue #132) existed. An empty log is the right default: the old client
+    /// expressed deletion as absence and its prune had already carried those
+    /// deletions to the cloud, so there is nothing pending to reconstruct.
+    /// What must NOT happen is the file failing to decode — that reseeds the
+    /// cache and loses every offline record in it.
+    private static func legacyStateFileWithoutRecordDeletionLogLoads() async {
+        let seededURL = tempFileURL("tombstone-seeded.json")
+        let seededDatabase = LocalAppDatabase(fileURL: seededURL)
+        let originalProfile = await seededDatabase.fetchProfile()
+
+        guard let data = try? Data(contentsOf: seededURL),
+              var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            preconditionFailure("Expected seeded state file to be readable JSON")
+        }
+        precondition(json["pendingRecordDeletions"] != nil,
+            "Seeded file should contain the new pendingRecordDeletions key")
+        json.removeValue(forKey: "pendingRecordDeletions")
+
+        let legacyURL = tempFileURL("tombstone-legacy.json")
+        try? FileManager.default.createDirectory(
+            at: legacyURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        guard let legacyData = try? JSONSerialization.data(withJSONObject: json) else {
+            preconditionFailure("Expected legacy JSON to serialize")
+        }
+        try? legacyData.write(to: legacyURL)
+
+        let legacyDatabase = LocalAppDatabase(fileURL: legacyURL)
+        let profile = await legacyDatabase.fetchProfile()
+        precondition(profile.id == originalProfile.id, "Legacy file must load, not be replaced by a fresh seed")
+        let pending = await legacyDatabase.snapshot().pendingRecordDeletions
+        precondition(pending.isEmpty, "A missing deletion log decodes as no pending deletions")
     }
 
     private static func unknownCardioActivityDoesNotResetState() async {

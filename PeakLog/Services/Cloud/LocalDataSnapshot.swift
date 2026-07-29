@@ -19,4 +19,10 @@ nonisolated struct LocalDataSnapshot: Sendable {
     /// "owes a push" flag is only cleared when nothing mutated mid-push.
     /// Snapshots assembled from a pull leave the default.
     var mutationSeq: Int64 = 0
+    /// Records the user deleted that the cloud has not confirmed dropping yet.
+    /// The push deletes exactly these ids — it never infers a deletion from a
+    /// row's absence, because absence also describes rows another device added
+    /// and this one has not seen (Issue #132). Empty on a snapshot assembled
+    /// from a pull: cloud rows carry no local deletion intent.
+    var pendingRecordDeletions: RecordDeletionLog = RecordDeletionLog()
 }
