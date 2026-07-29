@@ -55,9 +55,25 @@ nonisolated func makeExercisePRs(from sessions: [WorkoutSession]) -> [String: Ex
 /// dropped so they never get pushed to the cloud (the original pull-first
 /// intent); only real offline user data survives the merge.
 private extension String {
-    var isUserGeneratedID: Bool {
+    /// `nonisolated` because every caller is inside the `LocalAppDatabase`
+    /// actor or one of its `nonisolated` value types; without it the default
+    /// main-actor isolation makes each use a concurrency warning (an error
+    /// under the Swift 6 language mode).
+    nonisolated var isUserGeneratedID: Bool {
         let trimmed = hasPrefix("custom-") ? String(dropFirst("custom-".count)) : self
         return UUID(uuidString: trimmed) != nil
+    }
+}
+
+private extension RecordIdentitySet {
+    /// The five record tables' ids as they stand in one local state.
+    /// `nonisolated` for the same reason as `isUserGeneratedID` above.
+    nonisolated init(state: LocalAppState) {
+        self.init(
+            strengthSessions: state.strengthSessions,
+            runningRecords: state.runningRecords,
+            customExercises: state.customExercises
+        )
     }
 }
 
@@ -88,6 +104,13 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     /// and acknowledges that value on success, so a mutation landing while a
     /// push is in flight can never be wrongly marked clean.
     var localMutationSeq: Int64
+    /// Records this device deleted that the cloud has not confirmed dropping
+    /// yet. Persisted in the same atomic write as the deletion itself, for the
+    /// same reason `hasUnpushedChanges` is: a kill between the delete and its
+    /// push must not lose the fact that the user deleted something. See
+    /// `RecordDeletionLog` for why deletion is an explicit intent here rather
+    /// than an absence inferred at push time (Issue #132).
+    var pendingRecordDeletions: RecordDeletionLog
 
     init(
         ownerUserId: String? = nil,
@@ -100,7 +123,8 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         pendingEditEvents: [PlanEditEvent] = [],
         editEventSeq: Int64 = 0,
         hasUnpushedChanges: Bool = false,
-        localMutationSeq: Int64 = 0
+        localMutationSeq: Int64 = 0,
+        pendingRecordDeletions: RecordDeletionLog = RecordDeletionLog()
     ) {
         self.ownerUserId = ownerUserId
         self.profile = profile
@@ -113,6 +137,7 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         self.editEventSeq = editEventSeq
         self.hasUnpushedChanges = hasUnpushedChanges
         self.localMutationSeq = localMutationSeq
+        self.pendingRecordDeletions = pendingRecordDeletions
     }
 
     // Custom decode keeps state files written before newer fields existed loadable.
@@ -129,6 +154,24 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         editEventSeq = try container.decodeIfPresent(Int64.self, forKey: .editEventSeq) ?? 0
         hasUnpushedChanges = try container.decodeIfPresent(Bool.self, forKey: .hasUnpushedChanges) ?? false
         localMutationSeq = try container.decodeIfPresent(Int64.self, forKey: .localMutationSeq) ?? 0
+        // Absent in state files written before tombstones existed. An empty
+        // log is the only *possible* default — the old format recorded which
+        // rows were gone nowhere but in their absence, so there is nothing to
+        // reconstruct from — but it is not a lossless one, and the gap is
+        // worth naming rather than glossing.
+        //
+        // If such a file was clean, the old client's absence-prune had already
+        // carried its deletions to the cloud and nothing is owed. If it was
+        // dirty (`hasUnpushedChanges`) *because of a deletion*, that intent is
+        // lost: the cloud row survives, and the first pull merges it back.
+        // Reconstructing it would mean inferring "deleted" from "in the cloud,
+        // not in my cache" one more time, which is the inference this whole
+        // change exists to remove — and getting it wrong destroys another
+        // device's rows permanently, whereas getting this wrong resurfaces a
+        // record the user can delete again. See the Issue #132 PR discussion.
+        pendingRecordDeletions = try container.decodeIfPresent(
+            RecordDeletionLog.self, forKey: .pendingRecordDeletions
+        ) ?? RecordDeletionLog()
     }
 }
 
@@ -1227,6 +1270,35 @@ actor LocalAppDatabase {
         state.pendingEditEvents.removeAll { ids.contains($0.id) }
     }
 
+    /// Drops the tombstones the cloud has confirmed deleting. Written straight
+    /// to disk (not through `persist`) because this is sync bookkeeping, not a
+    /// user mutation: it must not fire `onChange`, advance `localMutationSeq`
+    /// or re-derive tombstones from itself.
+    ///
+    /// Subtracting the confirmed set rather than clearing wholesale keeps a
+    /// deletion made *during* the push — which is already tombstoned and still
+    /// owed — from being thrown away.
+    ///
+    /// Throws (rather than swallowing, the way `acknowledgePushedState` does)
+    /// when the write fails: the cloud rows are already gone, so a caller that
+    /// carried on and acknowledged the push clean would leave a restart
+    /// holding tombstones nothing will re-send or retire. Failing the push
+    /// instead is safe because the DELETE names its ids — resending it deletes
+    /// nothing a second time.
+    func clearPushedRecordDeletions(_ confirmed: RecordDeletionLog) throws {
+        guard !confirmed.isEmpty else { return }
+        let remaining = state.pendingRecordDeletions.removing(confirmed)
+        guard remaining != state.pendingRecordDeletions else { return }
+        state.pendingRecordDeletions = remaining
+        do {
+            try writeStateToDisk()
+            lastPersistedState = state
+        } catch {
+            state = lastPersistedState
+            throw error
+        }
+    }
+
     private func persist() throws {
         guard recoveryStatus == .healthy else { throw LocalAppDatabaseError.recoveryRequired }
         // Mark the outbox dirty in the same atomic write as the mutation
@@ -1238,6 +1310,23 @@ actor LocalAppDatabase {
         if state.ownerUserId != nil {
             state.localMutationSeq += 1
             state.hasUnpushedChanges = true
+            // Derive tombstones from the same write. `lastPersistedState` is
+            // the pre-mutation baseline (it is what the rollback below
+            // restores), so diffing against it names exactly the records this
+            // mutation removed — including exercises and sets removed while
+            // their session survived. Gated on ownership like the flag above:
+            // a deletion made in local-only mode has no cloud counterpart to
+            // tombstone. See `RecordDeletionLog`.
+            //
+            // Both walks are O(records + sets), i.e. the same order as — and
+            // far cheaper than — the full-state `JSONEncoder` pass
+            // `writeStateToDisk()` runs on the very next line, so this does
+            // not reintroduce the per-mutation cost Issue #17 removed.
+            state.pendingRecordDeletions = state.pendingRecordDeletions.advanced(
+                from: RecordIdentitySet(state: lastPersistedState),
+                to: RecordIdentitySet(state: state),
+                isSyncable: { $0.isUserGeneratedID }
+            )
         }
         do {
             try writeStateToDisk()
@@ -1269,7 +1358,8 @@ actor LocalAppDatabase {
             customExercises: state.customExercises,
             goalSpec: state.goalSpec,
             pendingEditEvents: state.pendingEditEvents,
-            mutationSeq: state.localMutationSeq
+            mutationSeq: state.localMutationSeq,
+            pendingRecordDeletions: state.pendingRecordDeletions
         )
     }
 
@@ -1332,6 +1422,7 @@ actor LocalAppDatabase {
         state.customExercises = customExercises
         state.goalSpec = goalSpec
         sanitizePlanCompletionLinks()
+        reconcileRecordDeletionsWithMergedState()
         recalculateDerivedProfile()
         if (try? writeStateToDisk()) != nil {
             lastPersistedState = state
@@ -1376,15 +1467,18 @@ actor LocalAppDatabase {
         state.activePlan = mergePlanPreservingCompletions(cloud: activePlan, local: state.activePlan)
         state.strengthSessions = mergeRecords(
             cloud: strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId },
-            local: state.strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId }
+            local: state.strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            tombstoned: state.pendingRecordDeletions.sessions
         )
         state.runningRecords = mergeRecords(
             cloud: runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId },
-            local: state.runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId }
+            local: state.runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            tombstoned: state.pendingRecordDeletions.runningRecords
         )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
         state.goalSpec = goalSpec
         sanitizePlanCompletionLinks()
+        reconcileRecordDeletionsWithMergedState()
         // pendingEditEvents / editEventSeq deliberately untouched (EV1).
         recalculateDerivedProfile()
         if (try? writeStateToDisk()) != nil {
@@ -1403,9 +1497,11 @@ actor LocalAppDatabase {
     /// merging is last-write-wins on `updatedAt` and keeps local-only
     /// user-generated rows, so it cannot revert a local edit — whereas the
     /// cloud-wins halves (plan structure, profile, goal spec) could, which is
-    /// why they are excluded here. Without it, the push's full-state
-    /// `deleteNotIn` would delete rows another device added while this device
-    /// was away and which this cache therefore never saw.
+    /// why they are excluded here. It used to also be a safety requirement —
+    /// the push's full-state `deleteNotIn` would otherwise delete rows another
+    /// device added and this cache never saw — but deleting is now driven by
+    /// `pendingRecordDeletions` instead (Issue #132), so this merge is about
+    /// convergence rather than about keeping the push from destroying data.
     ///
     /// Like `mergeFromCloud`: does NOT fire `onChange`, and (writing through
     /// `writeStateToDisk` rather than `persist`) does not advance
@@ -1420,20 +1516,40 @@ actor LocalAppDatabase {
         let ownerUserId = state.ownerUserId
         state.strengthSessions = mergeRecords(
             cloud: strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId },
-            local: state.strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId }
+            local: state.strengthSessions.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            tombstoned: state.pendingRecordDeletions.sessions
         )
         state.runningRecords = mergeRecords(
             cloud: runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId },
-            local: state.runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId }
+            local: state.runningRecords.filter { ownerUserId == nil || $0.userId == ownerUserId },
+            tombstoned: state.pendingRecordDeletions.runningRecords
         )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
         sanitizePlanCompletionLinks()
+        reconcileRecordDeletionsWithMergedState()
         recalculateDerivedProfile()
         if (try? writeStateToDisk()) != nil {
             lastPersistedState = state
         } else {
             state = lastPersistedState
         }
+    }
+
+    /// Restores the "never upsert and delete the same id in one push"
+    /// invariant after a write that bypassed `persist()`.
+    ///
+    /// `persist()` keeps that invariant for user mutations (see
+    /// `RecordDeletionLog.advanced`), but a cloud merge writes straight to
+    /// disk, and record merging resolves last-write-wins per *session*: a
+    /// session whose cloud copy is newer is adopted whole, which can carry
+    /// back an exercise or set this device deleted out of it. Once LWW has
+    /// ruled the other device's edit newer, the stale deletion intent has to
+    /// go — otherwise the next push would write those rows and then delete
+    /// them.
+    private func reconcileRecordDeletionsWithMergedState() {
+        guard !state.pendingRecordDeletions.isEmpty else { return }
+        state.pendingRecordDeletions = state.pendingRecordDeletions
+            .clearingIdsPresent(in: RecordIdentitySet(state: state))
     }
 
     private func sanitizePlanCompletionLinks() {
@@ -1475,10 +1591,20 @@ actor LocalAppDatabase {
     /// the base; local-only user-generated rows are added (offline records
     /// survive); same-id collisions take the newer `updatedAt` (tie → cloud,
     /// which is already in the dictionary).
-    private func mergeRecords<T: CloudMergeableRecord>(cloud: [T], local: [T]) -> [T] {
+    /// Cloud rows carrying an id this device has tombstoned are dropped rather
+    /// than merged. Without this a pull landing between the deletion and its
+    /// push would put the deleted record back on screen, and the push would
+    /// then upsert and delete the same row in one pass. The tombstone is the
+    /// newer fact: the cloud copy only still exists because we have not
+    /// managed to tell it yet.
+    private func mergeRecords<T: CloudMergeableRecord>(
+        cloud: [T],
+        local: [T],
+        tombstoned: Set<String>
+    ) -> [T] {
         var byId: [String: T] = [:]
         byId.reserveCapacity(cloud.count)
-        for row in cloud { byId[row.id] = row }
+        for row in cloud where !tombstoned.contains(row.id) { byId[row.id] = row }
         for row in local {
             if let cloudRow = byId[row.id] {
                 if row.updatedAt > cloudRow.updatedAt { byId[row.id] = row }
@@ -1493,9 +1619,10 @@ actor LocalAppDatabase {
     /// `ExerciseDefinition` has no timestamps, so no LWW — a same-id
     /// collision keeps cloud.
     private func mergeCustomExercises(cloud: [ExerciseDefinition], local: [ExerciseDefinition]) -> [ExerciseDefinition] {
+        let tombstoned = state.pendingRecordDeletions.customExercises
         var byId: [String: ExerciseDefinition] = [:]
         byId.reserveCapacity(cloud.count)
-        for exercise in cloud { byId[exercise.id] = exercise }
+        for exercise in cloud where !tombstoned.contains(exercise.id) { byId[exercise.id] = exercise }
         for exercise in local where byId[exercise.id] == nil && exercise.id.isUserGeneratedID {
             byId[exercise.id] = exercise
         }

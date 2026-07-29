@@ -62,9 +62,13 @@ enum CloudSyncE2ECheck {
             log("FAIL row never appeared in cloud — sync diagnostics: error=\(diag?.error ?? "nil") pending=\(diag?.pending.description ?? "nil")")
         }
 
-        // 5. Clean up so the dev account is left empty. "Keep nothing" is the
-        // one prune where the listing is the delete list.
-        try? await client.prune(targets: [CloudPruneTarget(table: "running_workouts", keepIds: [])])
+        // 5. Clean up so the dev account is left empty. Expressed as a plain
+        // list-then-delete rather than a prune: a prune only destroys rows it
+        // has observed, which is the point of the prune, whereas "wipe the dev
+        // account" genuinely does mean "delete whatever is there".
+        if let listed = try? await client.listIds(table: "running_workouts") {
+            try? await client.deleteIds(table: "running_workouts", ids: listed.elements)
+        }
         log("done")
     }
 

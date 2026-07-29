@@ -30,6 +30,10 @@ import Foundation
 //  10. a prune that fails partway through still reports every delete batch
 //      that already landed — those rows are gone and nothing else can name
 //      them afterwards.
+//  11. a row inserted below the cursor mid-scan — missed by a read that still
+//      reports isComplete — is NOT deletable, even though the prune's own
+//      listing sees it (Codex P1 on #141 / the Issue #132 race), plus the
+//      same fixture with the guard removed to prove it still reproduces.
 //
 // Compile with:
 //   swiftc -parse-as-library \
@@ -49,6 +53,8 @@ struct CloudPaginationTest {
         await testPruneSendsNoDeleteWhenNothingIsDoomed()
         await testTruncatedKeepSetDisablesPruneEntirely()
         await testPartialPruneStillReportsCompletedBatches()
+        await testConcurrentInsertMissedByTheScanIsNotDeletable()
+        await testWithoutTheObservedGuardTheInsertIsDestroyed()
         print("cloud_pagination_test passed")
     }
 
@@ -130,7 +136,7 @@ struct CloudPaginationTest {
         let recorder = DeleteRecorder()
 
         let outcomes = try! await CloudPagination.pruneAll(
-            targets: [CloudPruneTarget(table: "exercise_sets", keepIds: keep)],
+            targets: [CloudPruneTarget(table: "exercise_sets", keepIds: keep, observedIds: Set(cloudIds))],
             keepIdsAreComplete: true,
             listCloudIds: { _ in CloudPagedResult(elements: cloudIds, isComplete: true) },
             deleteBatch: { target, ids in await recorder.record(table: target.table, ids: ids) }
@@ -150,7 +156,7 @@ struct CloudPaginationTest {
     static func testPruneSendsNoDeleteWhenNothingIsDoomed() async {
         let recorder = DeleteRecorder()
         let outcomes = try! await CloudPagination.pruneAll(
-            targets: [CloudPruneTarget(table: "workout_sessions", keepIds: ["a", "b"])],
+            targets: [CloudPruneTarget(table: "workout_sessions", keepIds: ["a", "b"], observedIds: ["a", "b"])],
             keepIdsAreComplete: true,
             listCloudIds: { _ in CloudPagedResult(elements: ["a", "b"], isComplete: true) },
             deleteBatch: { target, ids in await recorder.record(table: target.table, ids: ids) }
@@ -169,8 +175,8 @@ struct CloudPaginationTest {
         do {
             _ = try await CloudPagination.pruneAll(
                 targets: [
-                    CloudPruneTarget(table: "exercise_sets", keepIds: []),
-                    CloudPruneTarget(table: "workout_sessions", keepIds: [])
+                    CloudPruneTarget(table: "exercise_sets", keepIds: [], observedIds: ["doomed-1"]),
+                    CloudPruneTarget(table: "workout_sessions", keepIds: [], observedIds: ["doomed-1"])
                 ],
                 keepIdsAreComplete: true,
                 listCloudIds: { target in
@@ -191,7 +197,7 @@ struct CloudPaginationTest {
         let recorder = DeleteRecorder()
         do {
             _ = try await CloudPagination.pruneAll(
-                targets: [CloudPruneTarget(table: "exercise_sets", keepIds: [])],
+                targets: [CloudPruneTarget(table: "exercise_sets", keepIds: [], observedIds: ["doomed-1"])],
                 keepIdsAreComplete: true,
                 listCloudIds: { _ in CloudPagedResult(elements: ["doomed-1"], isComplete: false) },
                 deleteBatch: { target, ids in await recorder.record(table: target.table, ids: ids) }
@@ -214,8 +220,8 @@ struct CloudPaginationTest {
 
         let outcomes = try! await CloudPagination.pruneAll(
             targets: [
-                CloudPruneTarget(table: "exercise_sets", keepIds: (0..<1000).map(Self.id)),
-                CloudPruneTarget(table: "workout_sessions", keepIds: [])
+                CloudPruneTarget(table: "exercise_sets", keepIds: (0..<1000).map(Self.id), observedIds: Set((0..<2001).map(Self.id))),
+                CloudPruneTarget(table: "workout_sessions", keepIds: [], observedIds: Set((0..<2001).map(Self.id)))
             ],
             keepIdsAreComplete: false,
             listCloudIds: { _ in
@@ -228,6 +234,73 @@ struct CloudPaginationTest {
         expect(outcomes.isEmpty, "a truncated keep set must produce no prune outcome")
         expect(await recorder.batches.isEmpty, "a truncated keep set must cost zero DELETE requests")
         expect(await listings.count == 0, "a disabled prune should not even list the cloud")
+    }
+
+    // MARK: - 11: a concurrent insert the scan missed is not deletable
+
+    /// Codex's P1 on #141, and the same root cause as Issue #132. Ids are
+    /// random UUIDs, so a row another device inserts after page 1 can sort
+    /// *below* the cursor and be skipped for good — while the scan still ends
+    /// on a short page and reports `isComplete: true`. The prune's own listing
+    /// runs later and does see the row, so a plain `listed − keep` diff deletes
+    /// a perfectly valid concurrent write.
+    ///
+    /// The guard is `observedIds`: only rows the snapshot actually returned are
+    /// eligible. This test drives the real `fetchAll` to produce that set, so
+    /// it fails if the scan ever starts reporting rows it did not return.
+    static func testConcurrentInsertMissedByTheScanIsNotDeletable() async {
+        let server = StubTable(ids: (0..<700).map(Self.id))
+        server.insertAfterPage(1, ids: ["id-00250a"])
+
+        let scan = try! await CloudPagination.fetchAll(key: { $0 }, page: server.page)
+        expect(scan.isComplete, "fixture: the scan is supposed to *look* complete")
+        expect(!scan.elements.contains("id-00250a"), "fixture: the scan is supposed to miss the insert")
+
+        // The prune lists the cloud fresh, so its listing DOES contain the row
+        // the snapshot missed. Local state keeps everything the scan saw — the
+        // user deleted nothing.
+        let recorder = DeleteRecorder()
+        let outcomes = try! await CloudPagination.pruneAll(
+            targets: [CloudPruneTarget(
+                table: "exercise_sets",
+                keepIds: scan.elements,
+                observedIds: Set(scan.elements)
+            )],
+            keepIdsAreComplete: true,
+            listCloudIds: { _ in
+                CloudPagedResult(elements: (scan.elements + ["id-00250a"]).sorted(), isComplete: true)
+            },
+            deleteBatch: { target, ids in await recorder.record(table: target.table, ids: ids) }
+        )
+
+        let deleted = await recorder.allIds
+        expect(outcomes.isEmpty, "a row the scan never saw must not be prunable")
+        expect(deleted.isEmpty, "the concurrent insert was deleted: \(deleted)")
+    }
+
+    /// The same fixture with the guard removed — `observedIds` widened to the
+    /// listing, which is what "delete everything absent from my snapshot"
+    /// amounts to. Keeps the test above from passing vacuously.
+    static func testWithoutTheObservedGuardTheInsertIsDestroyed() async {
+        let server = StubTable(ids: (0..<700).map(Self.id))
+        server.insertAfterPage(1, ids: ["id-00250a"])
+        let scan = try! await CloudPagination.fetchAll(key: { $0 }, page: server.page)
+        let listing = (scan.elements + ["id-00250a"]).sorted()
+
+        let recorder = DeleteRecorder()
+        _ = try! await CloudPagination.pruneAll(
+            targets: [CloudPruneTarget(
+                table: "exercise_sets",
+                keepIds: scan.elements,
+                observedIds: Set(listing)
+            )],
+            keepIdsAreComplete: true,
+            listCloudIds: { _ in CloudPagedResult(elements: listing, isComplete: true) },
+            deleteBatch: { target, ids in await recorder.record(table: target.table, ids: ids) }
+        )
+
+        let destroyed = await recorder.allIds
+        expect(destroyed == ["id-00250a"], "fixture no longer reproduces the concurrent-insert loss")
     }
 
     // MARK: - 10: the audit trail survives a partial prune
@@ -243,7 +316,7 @@ struct CloudPaginationTest {
 
         do {
             _ = try await CloudPagination.pruneAll(
-                targets: [CloudPruneTarget(table: "exercise_sets", keepIds: [])],
+                targets: [CloudPruneTarget(table: "exercise_sets", keepIds: [], observedIds: Set(doomed))],
                 keepIdsAreComplete: true,
                 listCloudIds: { _ in CloudPagedResult(elements: doomed, isComplete: true) },
                 deleteBatch: { target, ids in

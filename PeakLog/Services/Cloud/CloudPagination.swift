@@ -54,9 +54,16 @@ nonisolated enum CloudPagination {
     /// Guarantee under concurrent writes: every row that existed when the
     /// first page was issued and still exists when the last one returns is
     /// yielded **exactly once** — no gaps, no duplicates. Rows *inserted
-    /// concurrently* may or may not appear (one inserted below the cursor is
-    /// simply missed), which is precisely why a snapshot is never authoritative
-    /// enough on its own to delete from; see `pruneAll`.
+    /// concurrently* may or may not appear: ids are random UUIDs, so one
+    /// inserted below the cursor after we passed it is simply missed, and the
+    /// scan still reports `isComplete` because a later page came back short.
+    ///
+    /// That last sentence is the whole reason `pruneAll` takes an
+    /// `observedIds` set. A read reaching EOF proves "we saw the end of the
+    /// table", **not** "we saw every row that is in it now" — so `isComplete`
+    /// alone can never authorise a delete. Deleting is restricted to rows this
+    /// scan actually returned; a row it missed is, by construction, a row we
+    /// have no opinion about.
     ///
     /// - Throws: whatever `page` throws. A mid-scan failure aborts the whole
     ///   read instead of returning a short result a caller might mistake for
@@ -119,8 +126,8 @@ nonisolated enum CloudPagination {
     /// already has, and a retry recomputes the diff.
     ///
     /// A prune diffs two sets, and **both** of them have to be provably
-    /// complete or the difference is meaningless. The two incomplete cases are
-    /// handled deliberately differently:
+    /// complete or the difference is meaningless. The three incomplete cases
+    /// are handled deliberately differently:
     ///
     /// - `keepIdsAreComplete == false` — the *local* side came from a
     ///   truncated cloud read, so rows past the cutoff are missing from it and
@@ -132,9 +139,15 @@ nonisolated enum CloudPagination {
     ///   we cannot even enumerate what to delete. That throws, because unlike
     ///   the case above it does not self-heal: it means a table blew past
     ///   `maxPages` and someone needs to know.
+    /// - a row the snapshot read never returned — this is the one `isComplete`
+    ///   cannot speak to at all. A keyset scan reaching EOF can still have
+    ///   missed a row another device inserted below the cursor mid-scan, and
+    ///   the fresh listing here *does* see it, so a plain `listed − keep` diff
+    ///   deletes a valid concurrent write. `target.observedIds` fixes the
+    ///   asymmetry: only rows the snapshot itself returned are eligible.
     ///
     /// - Parameter keepIdsAreComplete: whether every `keepIds` set was derived
-    ///   from a cloud read that reached EOF on every table.
+    ///   from a cloud read that reached EOF on every table it covers.
     /// - Parameter targets: evaluated in order during phase 2, so callers can
     ///   put child tables before parents.
     /// - Parameter didDelete: called with each batch **the moment that batch
@@ -167,7 +180,16 @@ nonisolated enum CloudPagination {
                 throw CloudPaginationError.incompleteListing(table: target.table)
             }
             let keep = Set(target.keepIds)
-            plans.append((target, listed.elements.filter { !keep.contains($0) }))
+            // "Present in the cloud and absent locally" is only evidence of a
+            // deletion for rows the snapshot read actually handed us. A row it
+            // never returned — because a concurrent insert landed below the
+            // cursor — is absent from `keepIds` for a reason that has nothing
+            // to do with the user, so it is not eligible no matter what the
+            // listing says.
+            plans.append((
+                target,
+                listed.elements.filter { target.observedIds.contains($0) && !keep.contains($0) }
+            ))
         }
 
         // Phase 2 — destructive.
@@ -194,9 +216,10 @@ nonisolated enum CloudPagination {
     }
 }
 
-/// One table's share of a prune: which table, which ids survive, and the
-/// scoping filters that define the slice being reconciled (e.g. the plan-child
-/// tables are only ever pruned within the *active* plan, SY2).
+/// One table's share of a prune: which table, which ids survive, which ids are
+/// even eligible to be destroyed, and the scoping filters that define the slice
+/// being reconciled (e.g. the plan-child tables are only ever pruned within the
+/// *active* plan, SY2).
 ///
 /// The same `filters` must reach the listing and the deletes — a listing wider
 /// than the delete would compute doomed rows the delete cannot reach; a
@@ -205,11 +228,26 @@ nonisolated enum CloudPagination {
 nonisolated struct CloudPruneTarget: Sendable {
     let table: String
     let keepIds: [String]
+    /// Ids this device has actually held in its hand: everything the snapshot
+    /// read returned, plus everything a successful push of ours put there.
+    /// A prune may only ever destroy rows from this set.
+    ///
+    /// There is no default. Omitting it would have to mean "anything the
+    /// listing finds is fair game", which is the exact assumption that made a
+    /// concurrent insert deletable — an unsafe default is worse than a
+    /// required argument.
+    let observedIds: Set<String>
     let filters: [URLQueryItem]
 
-    init(table: String, keepIds: [String], filters: [URLQueryItem] = []) {
+    init(
+        table: String,
+        keepIds: [String],
+        observedIds: Set<String>,
+        filters: [URLQueryItem] = []
+    ) {
         self.table = table
         self.keepIds = keepIds
+        self.observedIds = observedIds
         self.filters = filters
     }
 }

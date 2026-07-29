@@ -14,8 +14,34 @@ nonisolated struct CloudSnapshot: Sendable {
     /// Tables whose paginated read hit `CloudPagination.maxPages` before EOF.
     /// Empty in every healthy case; named so the log says which table blew up.
     let incompleteTables: [String]
+    /// The ids this read actually returned, for the tables a push may prune.
+    ///
+    /// `isComplete` says "we reached the end of the table"; this says "these
+    /// are the rows we saw". They are not the same claim — a keyset scan can
+    /// reach EOF and still have missed a row another device inserted below the
+    /// cursor while we were paging — and it is the second one a prune needs
+    /// (see `CloudPagination.pruneAll`). Only the prunable tables are
+    /// collected: nothing else is ever diffed for deletion, and the record
+    /// tables carry deletion as an explicit tombstone log instead (Issue #132).
+    let observedPruneIds: [String: Set<String>]
 
     var isComplete: Bool { incompleteTables.isEmpty }
+
+    /// Whether the tables a push actually prunes were all read to EOF.
+    ///
+    /// Deliberately narrower than `isComplete`: a truncated `exercise_sets`
+    /// read says nothing about whether the active plan's day/exercise/set rows
+    /// arrived in full, and letting it veto the plan prune is what left a
+    /// user's plan edit un-pushed but acknowledged.
+    var isCompleteForPrunableTables: Bool {
+        incompleteTables.allSatisfy { !Self.prunableTables.contains($0) }
+    }
+
+    /// The plan child tables — the only ones a push still reconciles by
+    /// absence. Scoped to the active plan (SY2), so one week's structure.
+    static let prunableTables: Set<String> = [
+        "training_plan_days", "training_plan_exercises", "training_plan_sets"
+    ]
 }
 
 /// The read path: fetch every table the app caches and assemble one
@@ -115,7 +141,15 @@ nonisolated struct CloudSnapshotLoader: Sendable {
             ("training_plan_sets", planSetsPage.isComplete)
         ].filter { !$0.1 }.map(\.0)
 
-        return CloudSnapshot(data: data, incompleteTables: incompleteTables)
+        return CloudSnapshot(
+            data: data,
+            incompleteTables: incompleteTables,
+            observedPruneIds: [
+                "training_plan_days": Set(planDaysPage.elements.map(\.id)),
+                "training_plan_exercises": Set(planExercisesPage.elements.map(\.id)),
+                "training_plan_sets": Set(planSetsPage.elements.map(\.id))
+            ]
+        )
     }
 
     /// A no-op (empty result, no request) when there's no active plan yet —
