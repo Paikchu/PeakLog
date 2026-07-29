@@ -136,8 +136,16 @@ final class CloudSyncController: ObservableObject {
     /// rather than the stale seed/local cache it would otherwise render.
     @Published private(set) var isPreparingSession = false
 
-    /// User-visible sync state (see `CloudSyncStatus`). `.idle` while signed out
-    /// or in DEBUG local mode — there is nothing to report.
+    /// Internal/diagnostic sync state (see `CloudSyncStatus`). **Must not be
+    /// bound into any view** — Issue #102 decided sync is silent. `.idle` while
+    /// signed out or in DEBUG local mode.
+    ///
+    /// This property is the one that matters for that decision: it is the
+    /// `@Published` member of an `ObservableObject` already in the environment,
+    /// so binding it into a view compiles and looks helpful. It is published
+    /// rather than private only so the DEBUG E2E check and logging can observe
+    /// it. `tests/silent_sync_contract_test.swift` fails the build for any
+    /// reference outside `Services/Cloud/`.
     @Published private(set) var syncStatus: CloudSyncStatus = .idle
 
     private let database: LocalAppDatabase
