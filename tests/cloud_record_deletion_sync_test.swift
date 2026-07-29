@@ -41,6 +41,9 @@ import Foundation
 //      failed DELETE leaves the intent pending instead of acknowledging it
 //      away (Codex P2 on #141: a skipped prune used to undo the user's
 //      deletion silently, because absence was the only delete channel).
+//  10. a tombstone confirmation that cannot be written to disk fails the push
+//      instead of being swallowed, so a restart never holds a deletion intent
+//      nothing will re-send or retire.
 //
 // Compile with:
 //   swiftc -parse-as-library \
@@ -70,6 +73,7 @@ struct CloudRecordDeletionSyncTest {
         try await testLastWriteWinsResurrectionDropsTheTombstone()
         try await testSkippedPruneCannotSilentlyUndoADeletion()
         try await testFailedDeleteKeepsTheIntentPending()
+        try await testUnwritableConfirmationFailsThePush()
         testRunningAndCustomExerciseTombstones()
         print("cloud_record_deletion_sync_test passed")
     }
@@ -431,6 +435,58 @@ struct CloudRecordDeletionSyncTest {
         expect(cloud.sessions[doomed.id] == nil, "the retry did not deliver the deletion")
     }
 
+    // MARK: - 10: a tombstone confirmation that cannot be written must fail
+
+    /// The cloud DELETE succeeded, so those rows are gone — but the write that
+    /// retires their tombstones failed. Swallowing that and letting the push
+    /// acknowledge clean would leave a restart holding a deletion intent
+    /// nothing is going to re-send or clear. Throwing keeps the push dirty,
+    /// and re-sending a delete-by-id on the retry costs nothing.
+    static func testUnwritableConfirmationFailsThePush() async throws {
+        guard getuid() != 0 else {
+            print("  (skipped testUnwritableConfirmationFailsThePush: running as root)")
+            return
+        }
+        let cloud = StubCloud()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("peaklog-readonly-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let deviceA = await makeDevice(fileURL: directory.appendingPathComponent("state.json"))
+
+        let doomed = try await deviceA.createStrengthSession(draft(title: "to delete"))
+        try await push(deviceA, to: cloud, using: .tombstones)
+        try await deviceA.deleteExercise(sessionId: doomed.id, exerciseId: doomed.exercises[0].id)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        var threw = false
+        do {
+            try await push(deviceA, to: cloud, using: .tombstones)
+        } catch {
+            threw = true
+        }
+        expect(threw, "an unwritable confirmation must fail the push, not be swallowed")
+        // Targets run children-first, so `exercise_sets` is the one that got
+        // as far as a DELETE before its confirmation failed; the tables after
+        // it were never attempted.
+        expect(cloud.sets[doomed.exercises[0].sets[0].id] == nil, "fixture: the first DELETE should have landed")
+        expect(cloud.sessions[doomed.id] != nil, "fixture: later tables should not have been attempted")
+
+        let stillPending = await deviceA.snapshot().pendingRecordDeletions
+        expect(stillPending.sessions == [doomed.id],
+               "the session tombstone must survive the failed push: \(stillPending)")
+        expect(stillPending.exerciseSets == [doomed.exercises[0].sets[0].id],
+               "the in-memory tombstone must roll back with the failed write: \(stillPending)")
+
+        // With the directory writable again the retry re-sends a delete-by-id
+        // (a no-op against the already-deleted row) and retires the tombstone.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        try await push(deviceA, to: cloud, using: .tombstones)
+        let cleared = await deviceA.snapshot().pendingRecordDeletions
+        expect(cleared.isEmpty, "the retry did not retire the tombstone: \(cleared)")
+    }
+
     // MARK: - 8: running / custom exercise tombstones (pure)
 
     /// `LocalAppDatabase` has no delete path for cardio records or custom
@@ -533,7 +589,7 @@ struct CloudRecordDeletionSyncTest {
             for target in targets {
                 if deletesFail { throw StubCloudError.network }
                 cloud.delete(table: target.table, ids: target.ids)
-                await database.clearPushedRecordDeletions(target.confirmation)
+                try await database.clearPushedRecordDeletions(target.confirmation)
             }
         }
 

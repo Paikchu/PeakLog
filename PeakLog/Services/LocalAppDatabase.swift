@@ -155,8 +155,20 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         hasUnpushedChanges = try container.decodeIfPresent(Bool.self, forKey: .hasUnpushedChanges) ?? false
         localMutationSeq = try container.decodeIfPresent(Int64.self, forKey: .localMutationSeq) ?? 0
         // Absent in state files written before tombstones existed. An empty
-        // log is the correct migration default: any deletion made by the old
-        // client had already propagated through its absence-prune.
+        // log is the only *possible* default — the old format recorded which
+        // rows were gone nowhere but in their absence, so there is nothing to
+        // reconstruct from — but it is not a lossless one, and the gap is
+        // worth naming rather than glossing.
+        //
+        // If such a file was clean, the old client's absence-prune had already
+        // carried its deletions to the cloud and nothing is owed. If it was
+        // dirty (`hasUnpushedChanges`) *because of a deletion*, that intent is
+        // lost: the cloud row survives, and the first pull merges it back.
+        // Reconstructing it would mean inferring "deleted" from "in the cloud,
+        // not in my cache" one more time, which is the inference this whole
+        // change exists to remove — and getting it wrong destroys another
+        // device's rows permanently, whereas getting this wrong resurfaces a
+        // record the user can delete again. See the Issue #132 PR discussion.
         pendingRecordDeletions = try container.decodeIfPresent(
             RecordDeletionLog.self, forKey: .pendingRecordDeletions
         ) ?? RecordDeletionLog()
@@ -1266,15 +1278,24 @@ actor LocalAppDatabase {
     /// Subtracting the confirmed set rather than clearing wholesale keeps a
     /// deletion made *during* the push — which is already tombstoned and still
     /// owed — from being thrown away.
-    func clearPushedRecordDeletions(_ confirmed: RecordDeletionLog) {
+    ///
+    /// Throws (rather than swallowing, the way `acknowledgePushedState` does)
+    /// when the write fails: the cloud rows are already gone, so a caller that
+    /// carried on and acknowledged the push clean would leave a restart
+    /// holding tombstones nothing will re-send or retire. Failing the push
+    /// instead is safe because the DELETE names its ids — resending it deletes
+    /// nothing a second time.
+    func clearPushedRecordDeletions(_ confirmed: RecordDeletionLog) throws {
         guard !confirmed.isEmpty else { return }
         let remaining = state.pendingRecordDeletions.removing(confirmed)
         guard remaining != state.pendingRecordDeletions else { return }
         state.pendingRecordDeletions = remaining
-        if (try? writeStateToDisk()) != nil {
+        do {
+            try writeStateToDisk()
             lastPersistedState = state
-        } else {
+        } catch {
             state = lastPersistedState
+            throw error
         }
     }
 

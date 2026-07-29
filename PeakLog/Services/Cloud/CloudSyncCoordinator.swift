@@ -348,6 +348,17 @@ actor CloudSyncCoordinator {
         try await client.upsert(table: "training_plan_exercises", rows: bundle.planExercises)
         try await client.upsert(table: "training_plan_sets", rows: bundle.planSets)
 
+        // These rows are now provably in the cloud and came from this device,
+        // so they join the set a later prune may reconcile. Recorded here,
+        // immediately after the upserts and *before* anything that can throw:
+        // if the prune below failed and the user then deleted one of these
+        // rows, a retry would find it in the cloud, refuse to delete it for
+        // never having been observed, and acknowledge clean — leaving the next
+        // pull to restore what the user deleted.
+        noteRowsPushed(table: "training_plan_days", ids: bundle.planDays.map(\.id))
+        noteRowsPushed(table: "training_plan_exercises", ids: bundle.planExercises.map(\.id))
+        noteRowsPushed(table: "training_plan_sets", ids: bundle.planSets.map(\.id))
+
         // Append-only: insert, skipping rows the cloud already has (a retried
         // push resending the same client-generated ids), never pruned or
         // overwritten (RLS grants plan_edit_events no UPDATE policy). Cleared
@@ -411,15 +422,6 @@ actor CloudSyncCoordinator {
             didDelete: { Self.logPruneOutcome($0) }
         )
 
-        // Everything we just upserted is now provably in the cloud and came
-        // from this device, so it joins the set a later prune may reconcile.
-        // Without this a row created *and* deleted between two pulls would
-        // never be eligible, and the orphan would sit in the cloud until the
-        // next pull happened to observe it.
-        noteRowsPushed(table: "training_plan_days", ids: bundle.planDays.map(\.id))
-        noteRowsPushed(table: "training_plan_exercises", ids: bundle.planExercises.map(\.id))
-        noteRowsPushed(table: "training_plan_sets", ids: bundle.planSets.map(\.id))
-
         // The cloud now holds everything up to the snapshot we sent; clear
         // the persisted "owes a push" flag (no-op if a mutation landed
         // mid-push — the coalescing loop re-pushes and re-acknowledges).
@@ -471,7 +473,12 @@ actor CloudSyncCoordinator {
         for target in targets {
             try await client.deleteIds(table: target.table, ids: target.ids)
             Self.logPruneOutcome(CloudPruneOutcome(table: target.table, deletedIds: target.ids))
-            await database.clearPushedRecordDeletions(target.confirmation)
+            // Throws if the confirmation cannot be written down. Failing the
+            // push here is the point: acknowledging it clean while the retired
+            // tombstones are still on disk would leave a restart holding a
+            // deletion intent nothing is going to re-send or clear. The DELETE
+            // is delete-by-id, so the retry re-sending it is a no-op.
+            try await database.clearPushedRecordDeletions(target.confirmation)
         }
     }
 
