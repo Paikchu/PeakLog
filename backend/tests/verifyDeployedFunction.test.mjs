@@ -88,7 +88,7 @@ test('a cyclic import graph terminates', () => {
 // module, this test is the one that notices — and the release runbook's file
 // list stops being a hand-maintained lie.
 
-test('the real generate-weekly-plan closure is the entrypoint plus its nine shared modules', () => {
+test('the real generate-weekly-plan closure is the entrypoint plus its ten shared modules', () => {
   const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
   const readFromHead = (rel) => {
     try {
@@ -106,6 +106,7 @@ test('the real generate-weekly-plan closure is the entrypoint plus its nine shar
     '_shared/generationWindow.mjs',
     '_shared/llm.mjs',
     '_shared/ownershipQueries.mjs',
+    '_shared/planGenerationQueue.mjs',
     '_shared/prompt.mjs',
     '_shared/referenceWeight.mjs',
     '_shared/timezone.mjs',
