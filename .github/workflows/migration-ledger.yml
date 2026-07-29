@@ -1,0 +1,198 @@
+name: Migration Ledger
+
+# Issue #131：仓库 migration ledger 与生产库分叉后，`supabase db push`、干净环境
+# replay、灾难恢复都无法判断哪些 SQL 已执行。这个 workflow 的职责是让分叉在**再次
+# 发生时立刻失败**，而不是等到部署当天才发现。
+#
+# 两层检查，故意分成两个 job：
+#   1. static  —— 不需要任何凭据，无条件跑，fork PR 也跑。
+#   2. drift   —— 需要 Supabase 凭据；**没有凭据时是 skip 而不是 pass**。
+# 这个区分是本 workflow 最重要的设计点：一个"因为拿不到 secret 所以打绿勾"的门禁
+# 比没有门禁更糟，它会让人以为对账过了。
+#
+# 为什么多出一个 detect job：`secrets` 上下文在 job 级 `if:` 里不可用，所以
+# "有没有凭据"必须先在某个 job 的 step 里物化成 output。第一版把探测和执行放在
+# 同一个 job 里、用 step 级 `if:` 跳过，实测下来 PR 的 checks 列表里那一项显示
+# 的仍是绿色 **pass**（run 30389701908：全部执行步骤 skipped，job conclusion
+# success）—— `::warning` 只躺在日志里，没人会去点开。把 drift 拆成独立 job 并用
+# `needs.detect.outputs.*` 门控，checks 列表里才会显示成灰色的 **Skipped**，
+# 与真正通过在视觉上和 API 上都可区分。
+
+on:
+  pull_request:
+    paths:
+      - "backend/supabase/migrations/**"
+      - "backend/scripts/migration-ledger-*"
+      - ".github/workflows/migration-ledger.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/supabase/migrations/**"
+      - "backend/scripts/migration-ledger-*"
+      - ".github/workflows/migration-ledger.yml"
+  # 分叉也可能由「线上被直接改动」引入，而那不产生任何 commit。每天定时跑一次，
+  # 让这类漂移最多一天就暴露出来。
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 静态自检：命名格式 / 版本号合法性 / 唯一性 / 严格递增
+  # ---------------------------------------------------------------------------
+  static:
+    name: Migration file invariants (no credentials)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 这些不变量纯靠 checkout 就能验证，所以无条件跑：一个时间戳写错、重复或
+      # 倒序的迁移能一路合进 main，等到部署时才炸，而那时它已经"是历史"了
+      # （AGENTS.md：只新增迁移，不改写已部署迁移），改都不能改。
+      - name: Check migration filenames and version ordering
+        run: node backend/scripts/migration-ledger-check.mjs
+
+  # ---------------------------------------------------------------------------
+  # 凭据探测：只为把"有没有凭据"变成一个 job 级可用的 output
+  # ---------------------------------------------------------------------------
+  # 这个 job 存在的唯一理由，是 GitHub 不允许在 job 级 `if:` 里读 `secrets`
+  # 上下文——所以判断必须先在某个 job 的 step 里跑一次，再经 `outputs` 传出去。
+  # 它自己永远成功，不构成门禁。
+  detect:
+    name: Detect Supabase credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      available: ${{ steps.creds.outputs.available }}
+    steps:
+      - name: Detect credentials
+        id: creds
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # 只导出"有没有"这个答案，绝不导出凭据本身。
+          if [ -n "${SUPABASE_ACCESS_TOKEN}" ] && [ -n "${SUPABASE_PROJECT_REF}" ] && [ -n "${SUPABASE_DB_PASSWORD}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 说清楚"这次没有验证"，而不是留一个语焉不详的绿勾。fork PR 拿不到 secret
+      # 是 GitHub 的既定行为，不是配置错误，所以这里不 fail —— 但也绝不假装通过。
+      # 写在本 job 而不是 drift job 里：drift 整个被 skip 时它的 step 一句都不会
+      # 执行，解释也就无处可写。
+      - name: Explain skip (no credentials)
+        if: steps.creds.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          {
+            echo "### Ledger drift check: SKIPPED (not passed)"
+            echo
+            echo "缺少 Supabase 凭据，**本次没有对账**，这不代表 ledger 已对齐。"
+            echo
+            echo "需要的 secrets："
+            echo "- \`SUPABASE_ACCESS_TOKEN\`  —— Supabase 个人访问令牌"
+            echo "- \`SUPABASE_PROJECT_REF\`   —— 线上项目 ref"
+            echo "- \`SUPABASE_DB_PASSWORD\`   —— 数据库密码（\`--linked\` 连接用）"
+            echo
+            echo "fork 发起的 PR 拿不到仓库 secret，是 GitHub 的既定行为；"
+            echo "这类 PR 请在合并前于 base 仓库手动触发一次本 workflow。"
+            echo
+            echo "本地等价命令："
+            echo '```'
+            echo "SUPABASE_PROJECT_REF=<ref> ./backend/scripts/migration-ledger-audit.sh --out /tmp/ledger"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Ledger drift not verified::缺少 Supabase 凭据，本次跳过线上对账（不是通过）"
+
+  # ---------------------------------------------------------------------------
+  # 线上 ledger 漂移对账（只读）
+  # ---------------------------------------------------------------------------
+  # 门控放在 job 级而不是 step 级：step 级 `if:` 会让这个 job 在没有凭据时以
+  # conclusion=success 结束，PR 的 checks 列表里就是一个和"真的对过账"长得一模
+  # 一样的绿勾（实测 run 30389701908）。job 级 `if:` 为假时 GitHub 报的是
+  # Skipped，在 UI 和 API 上都与 success 可区分——对一个"没验证就不许显示通过"
+  # 的门禁来说，这个区别就是它全部的意义。
+  drift:
+    name: Local/remote ledger drift (requires Supabase credentials)
+    needs: detect
+    if: needs.detect.outputs.available == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # 脚本内部只调用 `supabase migration list --linked` 与
+      # `supabase migration fetch --linked`，两者都是只读；fetch 的 --workdir
+      # 指向仓库外的临时目录，不会把线上正文写进 backend/supabase/migrations/。
+      # 退出码语义：0 已对齐 / 1 有分叉 / 2 参数错 / 3 连不上（不是通过）。
+      - name: Audit local vs remote ledger (read-only)
+        id: audit
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        # 刻意不开 `set -e`：脚本用退出码表达结论（1=有分叉、3=连不上），
+        # 这一步的任务是把结论**记下来**并让后面的报告/artifact 步骤照常产出，
+        # 判定推迟到 Enforce 步骤。这里直接 fail 会把报告一起吞掉。
+        run: |
+          set -uo pipefail
+          ./backend/scripts/migration-ledger-audit.sh --out "${RUNNER_TEMP}/ledger"
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Publish audit report
+        run: |
+          set -euo pipefail
+          if [ -f "${RUNNER_TEMP}/ledger/ledger-report.md" ]; then
+            cat "${RUNNER_TEMP}/ledger/ledger-report.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # 报告本身不含 SQL 正文之外的敏感信息，但 remote-mirror/ 是线上 ledger 的
+      # 完整正文，仅在 artifact 里保留供人工审计，不写回仓库。
+      - name: Upload audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-ledger-audit
+          path: |
+            ${{ runner.temp }}/ledger/ledger-report.md
+            ${{ runner.temp }}/ledger/local-ledger.tsv
+            ${{ runner.temp }}/ledger/remote-ledger.tsv
+            ${{ runner.temp }}/ledger/migration-list.txt
+            ${{ runner.temp }}/ledger/diffs
+          if-no-files-found: warn
+          retention-days: 30
+
+      # 单独一个步骤做判定，是为了让上面的报告与 artifact 在 fail 之前就已产出 ——
+      # 门禁红了以后最需要的恰恰是那份报告。
+      - name: Enforce
+        run: |
+          set -euo pipefail
+          case "${{ steps.audit.outputs.status }}" in
+            0)
+              echo "ledger 已对齐。" ;;
+            1)
+              echo "::error title=Migration ledger drift::local-only / remote-only 版本非空，见 job summary 与 artifact。修复流程：docs/architecture/supabase-migration-ledger-repair.md"
+              exit 1 ;;
+            3)
+              echo "::error title=Ledger audit could not run::有凭据却连不上线上项目，属于配置或网络问题，不是通过。"
+              exit 1 ;;
+            *)
+              echo "::error title=Ledger audit failed::脚本以未预期的退出码 ${{ steps.audit.outputs.status }} 结束。"
+              exit 1 ;;
+          esac
