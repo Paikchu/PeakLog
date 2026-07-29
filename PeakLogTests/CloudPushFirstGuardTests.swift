@@ -44,11 +44,18 @@ final class CloudPushFirstGuardTests: XCTestCase {
             .joined()
         XCTAssertTrue(pushedSets.contains("62.5"))
 
+        // The prune now names the rows it destroys (`id=in.(…)`) instead of
+        // naming the survivors (`id=not.in.(…)`), so "the remote-only row was
+        // kept" flips from "it appears in the DELETE filter" to "no DELETE
+        // mentions it at all" — and since it is the only cloud session, the
+        // diff is empty and no DELETE is issued for the table whatsoever.
         let sessionDeletes = requests.filter {
             $0.method == "DELETE" && $0.table == "workout_sessions"
         }
-        XCTAssertFalse(sessionDeletes.isEmpty)
-        XCTAssertTrue(sessionDeletes.allSatisfy { $0.query.contains(remoteOnlySessionId) })
+        XCTAssertTrue(sessionDeletes.isEmpty)
+        XCTAssertFalse(requests.contains {
+            $0.method == "DELETE" && $0.query.contains(remoteOnlySessionId)
+        })
         let isDirty = await database.hasUnpushedLocalChanges()
         XCTAssertFalse(isDirty)
     }

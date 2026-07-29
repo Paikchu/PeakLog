@@ -120,23 +120,96 @@ final class SupabaseDataClientTests: XCTestCase {
         XCTAssertTrue(prefer.contains("return=minimal"))
     }
 
-    func testDeleteNotInHandlesEmptyAndScopedNonEmptySets() async throws {
+    // Issue #30: the prune is now list-then-delete-by-id, so the wire trace is
+    // a paginated `select=id` GET followed by a DELETE naming only the doomed
+    // rows — never a `not.in` carrying the whole local id list.
+    func testPruneListsScopedIdsThenDeletesOnlyTheDifference() async throws {
+        SDKRecordingURLProtocol.enqueueJSON(#"[{"id":"day-1"},{"id":"day-2"},{"id":"day-3"}]"#)
+        SDKRecordingURLProtocol.enqueue(status: 204)
+        let client = makeClient()
+
+        let outcomes = try await client.prune(targets: [
+            CloudPruneTarget(
+                table: "training_plan_days",
+                keepIds: ["day-1", "day-2"],
+                filters: [URLQueryItem(name: "plan_id", value: "eq.plan-1")]
+            )
+        ])
+
+        XCTAssertEqual(outcomes.map(\.table), ["training_plan_days"])
+        XCTAssertEqual(outcomes.first?.deletedIds, ["day-3"])
+
+        let listRequest = SDKRecordingURLProtocol.requests[0]
+        XCTAssertEqual(listRequest.httpMethod, "GET")
+        let listItems = try queryItems(for: listRequest)
+        XCTAssertEqual(listItems["select"], "id")
+        XCTAssertEqual(listItems["plan_id"], "eq.plan-1")
+        XCTAssertEqual(listItems["limit"], String(CloudPagination.pageSize))
+        XCTAssertTrue(listItems["order"]?.hasPrefix("id.asc") == true)
+
+        let deleteRequest = SDKRecordingURLProtocol.requests[1]
+        XCTAssertEqual(deleteRequest.httpMethod, "DELETE")
+        let deleteItems = try queryItems(for: deleteRequest)
+        XCTAssertEqual(deleteItems["plan_id"], "eq.plan-1")
+        XCTAssertEqual(deleteItems["id"], "in.(day-3)")
+    }
+
+    // Nothing to delete must cost zero destructive requests — the old
+    // `deleteNotIn` fired a full-table DELETE on every push regardless.
+    func testPruneSendsNoDeleteWhenCloudMatchesLocal() async throws {
+        SDKRecordingURLProtocol.enqueueJSON(#"[{"id":"run-1"}]"#)
+        let client = makeClient()
+
+        let outcomes = try await client.prune(targets: [
+            CloudPruneTarget(table: "running_workouts", keepIds: ["run-1"])
+        ])
+
+        XCTAssertTrue(outcomes.isEmpty)
+        XCTAssertEqual(SDKRecordingURLProtocol.requests.count, 1)
+        XCTAssertEqual(SDKRecordingURLProtocol.requests[0].httpMethod, "GET")
+    }
+
+    // The paging loop must carry the keyset cursor forward and keep asking
+    // until a short page proves EOF.
+    func testFetchAllPagesFollowsKeysetCursorUntilShortPage() async throws {
+        let fullPage = (0..<CloudPagination.pageSize)
+            .map { #"{"id":"id-\#(String(format: "%04d", $0))"}"# }
+            .joined(separator: ",")
+        SDKRecordingURLProtocol.enqueueJSON("[\(fullPage)]")
+        SDKRecordingURLProtocol.enqueueJSON(#"[{"id":"id-9999"}]"#)
+        let client = makeClient()
+
+        let page = try await client.fetchAllPages(
+            TestIdRow.self,
+            table: "exercise_sets",
+            key: { $0.id }
+        )
+
+        XCTAssertTrue(page.isComplete)
+        XCTAssertEqual(page.elements.count, CloudPagination.pageSize + 1)
+        XCTAssertEqual(SDKRecordingURLProtocol.requests.count, 2)
+        XCTAssertNil(try queryItems(for: SDKRecordingURLProtocol.requests[0])["id"])
+        XCTAssertEqual(
+            try queryItems(for: SDKRecordingURLProtocol.requests[1])["id"],
+            "gt.id-\(String(format: "%04d", CloudPagination.pageSize - 1))"
+        )
+    }
+
+    // Issue #39: a delete list longer than one batch must go out as several
+    // short URLs, not one unbounded query string.
+    func testDeleteIdsSplitsIntoBoundedBatches() async throws {
+        let ids = (0..<(CloudPagination.deleteBatchSize + 1)).map { "id-\($0)" }
         SDKRecordingURLProtocol.enqueue(status: 204)
         SDKRecordingURLProtocol.enqueue(status: 204)
         let client = makeClient()
 
-        try await client.deleteNotIn(table: "running_workouts", keepIds: [])
-        try await client.deleteNotIn(
-            table: "training_plan_days",
-            keepIds: ["day-1", "day-2"],
-            extraFilters: [URLQueryItem(name: "plan_id", value: "eq.plan-1")]
-        )
+        try await client.deleteIds(table: "exercise_sets", ids: ids)
 
-        let emptyItems = try queryItems(for: SDKRecordingURLProtocol.requests[0])
-        XCTAssertEqual(emptyItems["id"], "not.is.null")
-        let scopedItems = try queryItems(for: SDKRecordingURLProtocol.requests[1])
-        XCTAssertEqual(scopedItems["plan_id"], "eq.plan-1")
-        XCTAssertEqual(scopedItems["id"], "not.in.(day-1,day-2)")
+        XCTAssertEqual(SDKRecordingURLProtocol.requests.count, 2)
+        for request in SDKRecordingURLProtocol.requests {
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertLessThan(request.url?.absoluteString.count ?? .max, 8000)
+        }
     }
 
     func testTokenFailureSendsNoRequest() async {
@@ -286,6 +359,11 @@ final class SupabaseDataClientTests: XCTestCase {
 private struct TestReadRow: Codable, Equatable {
     let id: String
     let focus: String?
+}
+
+/// Mirrors the `select=id` projection the paginated reads use.
+private struct TestIdRow: Decodable, Sendable {
+    let id: String
 }
 
 private struct TestWriteRow: Encodable {

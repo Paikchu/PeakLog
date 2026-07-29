@@ -62,8 +62,9 @@ enum CloudSyncE2ECheck {
             log("FAIL row never appeared in cloud — sync diagnostics: error=\(diag?.error ?? "nil") pending=\(diag?.pending.description ?? "nil")")
         }
 
-        // 5. Clean up so the dev account is left empty.
-        try? await client.deleteNotIn(table: "running_workouts", keepIds: [])
+        // 5. Clean up so the dev account is left empty. "Keep nothing" is the
+        // one prune where the listing is the delete list.
+        try? await client.prune(targets: [CloudPruneTarget(table: "running_workouts", keepIds: [])])
         log("done")
     }
 
