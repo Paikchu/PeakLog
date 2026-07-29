@@ -9,7 +9,7 @@ import {
   localDateString,
   resolveTimezone,
 } from '../supabase/functions/_shared/generationWindow.mjs';
-import { localMidnightToUtc, localDayUtcRange } from '../supabase/functions/_shared/timezone.mjs';
+import { localMidnightToUtc, localDayUtcRange, getTimezoneOffsetMs } from '../supabase/functions/_shared/timezone.mjs';
 
 // 2026-07-12 is a Sunday; 07-13 Monday, 07-15 Wednesday, 07-18 Saturday.
 const SUNDAY = '2026-07-12';
@@ -33,11 +33,67 @@ function instantAt(timezone, dateStr, hh, mm = 0) {
   return instant;
 }
 
-// MARK: - The four required boundaries (plan §8.2: "周日 20:00 后第一个整点")
+// Issue #133 states the required coverage by UTC OFFSET ("UTC+14", "UTC-12"),
+// but ZONES has to name IANA identifiers, and an identifier does not carry its
+// offset on its face. Two ways that mapping can quietly be wrong:
+//
+//   * `Etc/GMT+12` is signed the POSIX way — it is UTC MINUS 12, not plus.
+//     Reading it as "+12" and "fixing" it to `Etc/GMT-12` would swap the two
+//     extremes and leave the real UTC-12 case untested.
+//   * A plausible misspelling passes resolveTimezone's `includes("/")` gate
+//     and only fails deeper in Intl, where the fallback is UTC.
+//
+// So pin the offsets. Without this the matrix below could silently collapse
+// toward UTC while every single assertion still went green — which is the
+// same "the check stopped checking" failure mode this whole issue is about.
+const ZONE_OFFSET_HOURS = {
+  'UTC': 0,
+  'Asia/Shanghai': 8,
+  'America/Los_Angeles': -7, // PDT: mid-July is inside DST
+  'Pacific/Kiritimati': 14,
+  'Etc/GMT+12': -12,
+};
 
+test('the five zones really do span UTC-12 .. UTC+14, as the issue requires', () => {
+  assert.deepEqual([...ZONES].sort(), Object.keys(ZONE_OFFSET_HOURS).sort(), 'ZONES and the pinned offsets must describe the same set');
+  const midJuly = new Date('2026-07-12T12:00:00Z');
+  for (const [tz, hours] of Object.entries(ZONE_OFFSET_HOURS)) {
+    assert.equal(getTimezoneOffsetMs(tz, midJuly) / 3_600_000, hours, `${tz} offset`);
+  }
+  // 26 hours between the extremes: wide enough that any predicate reading
+  // UTC's clock is wrong for someone at every instant of the week.
+  assert.equal(ZONE_OFFSET_HOURS['Pacific/Kiritimati'] - ZONE_OFFSET_HOURS['Etc/GMT+12'], 26);
+});
+
+// MARK: - Both edges of the window, at one-minute resolution (plan §8.2:
+// "周日 20:00 后第一个整点"), each asserted in all five ZONES.
+//
+// Both edges matter, and for different reasons. The OPENING edge (19:59 vs
+// 20:00) is the one the spec states outright. The CLOSING edge (Sunday 23:59
+// vs Monday 00:00) is the one the original inverted predicate got wrong, and
+// it is the dangerous one: it is not merely "an hour too early/late" but a
+// change of *target week*, because nextMondayString derives the target from
+// `now` and jumps a further seven days the moment local time rolls into
+// Monday. So the closing edge is pinned at minute resolution too, not just at
+// the hourly ticks the cron happens to fire on — a predicate written against
+// UTC's clock, or one that compared `hour > 20` / `weekday <= 1`, would pass
+// the opening edge and still fail here.
+//
+// Flanking those two are the WEEKDAY transitions — Saturday 23:59 and Sunday
+// 00:00 — which isolate the day check from the hour check by varying one at a
+// time. Saturday 23:59 is the right hour on the wrong day: it is the only row
+// here that satisfies `hour >= 20` while NOT being Sunday, so an off-by-one in
+// the Sun=0..Sat=6 mapping (`weekday === 6`) is open exactly there and closed
+// everywhere else in the matrix. Sunday 00:00 is the mirror image — the right
+// day at an hour nowhere near the window — which is what a predicate that
+// dropped the hour test altogether trips on.
 const BOUNDARIES = [
+  { label: 'Saturday 23:59 — the last minute before a Sunday', date: SATURDAY, hh: 23, mm: 59, open: false },
+  { label: 'Sunday 00:00 — the right weekday, twenty hours too early', date: SUNDAY, hh: 0, mm: 0, open: false },
   { label: 'Sunday 19:59 — one minute too early', date: SUNDAY, hh: 19, mm: 59, open: false },
   { label: 'Sunday 20:00 — the window opens', date: SUNDAY, hh: 20, mm: 0, open: true },
+  { label: 'Sunday 23:59 — the last minute the window is still open', date: SUNDAY, hh: 23, mm: 59, open: true },
+  { label: 'Monday 00:00 — the window shuts the instant the target week starts', date: MONDAY, hh: 0, mm: 0, open: false },
   { label: 'Monday 09:00 — the week has already started', date: MONDAY, hh: 9, mm: 0, open: false },
   { label: 'Wednesday 12:00 — mid-week', date: WEDNESDAY, hh: 12, mm: 0, open: false },
 ];
