@@ -118,13 +118,68 @@ jobs:
           fi
           echo "bundled ${found} function(s)"
 
+  # Exists only to turn "are the credentials configured?" into something a
+  # job-level `if:` can read: GitHub forbids the `secrets` context there, so the
+  # answer has to be computed inside some job's step and handed out via
+  # `outputs`. This job is never a gate — it always succeeds.
+  detect-credentials:
+    name: Detect deployment credentials
+    needs: [tests, bundle]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configured: ${{ steps.creds.outputs.configured }}
+    steps:
+      - name: Are the read-only deployment credentials configured?
+        id: creds
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          # Only the ANSWER is exported, never the value.
+          if [ -n "${SUPABASE_ACCESS_TOKEN}" ] && [ -n "${SUPABASE_PROJECT_REF}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Say plainly that nothing was verified. This lives here rather than in
+      # verify-deployment because that job is skipped wholesale when the answer
+      # is "no" — none of its steps would run, so the explanation would never
+      # be printed.
+      - name: No credentials — the deployment was NOT verified
+        if: steps.creds.outputs.configured != 'true'
+        run: |
+          set -euo pipefail
+          echo "::warning title=Deployment NOT verified::SUPABASE_ACCESS_TOKEN (secret) and/or SUPABASE_PROJECT_REF (variable) are not configured, so the deployed Edge Function was not compared against this commit. Configure them per docs/architecture/edge-function-release-runbook.md."
+          {
+            echo "### Deployment integrity — SKIPPED"
+            echo
+            echo "The deployed Edge Function was **not** compared against this commit:"
+            echo "\`SUPABASE_ACCESS_TOKEN\` (secret) and/or \`SUPABASE_PROJECT_REF\` (variable) are unset."
+            echo
+            echo "Nothing here says anything about production. See"
+            echo "\`docs/architecture/edge-function-release-runbook.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   verify-deployment:
     name: Deployed function matches commit
-    needs: [tests, bundle]
-    # Not on pull_request: production is deployed from `main`, a PR merge
-    # commit is never deployed, and `pull_request` from a fork cannot read
-    # secrets anyway — the job could only ever skip and would read as noise.
-    if: github.event_name != 'pull_request'
+    needs: [tests, bundle, detect-credentials]
+    # Two separate reasons to not run, and the gate must be at JOB level for the
+    # second one:
+    #
+    #   * Not on pull_request: production is deployed from `main`, a PR merge
+    #     commit is never deployed, and a fork PR cannot read secrets anyway.
+    #   * Not without credentials: gating the STEPS instead would leave this job
+    #     finishing with conclusion=success, i.e. a check named "Deployed
+    #     function matches commit" showing a green tick when nothing was
+    #     compared — indistinguishable from a real pass in both the UI and the
+    #     API. A job-level `if:` reports Skipped instead. For a gate whose whole
+    #     purpose is "unverified must never look verified", that distinction is
+    #     the entire point.
+    if: github.event_name != 'pull_request' && needs.detect-credentials.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -144,24 +199,7 @@ jobs:
           # is needed on the runner. Pinned for the same reason as Deno above.
           version: "2.75.0"
 
-      - name: Are the read-only deployment credentials configured?
-        id: creds
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        run: |
-          set -euo pipefail
-          # GitHub does not allow the `secrets` context in a job- or step-level
-          # `if:`, so branching on "is it configured" has to happen inside a
-          # step. Only the ANSWER is exported, never the value.
-          if [ -n "${SUPABASE_ACCESS_TOKEN}" ] && [ -n "${SUPABASE_PROJECT_REF}" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Compare deployed bytes against the commit
-        if: steps.creds.outputs.configured == 'true'
         env:
           # The project ref is a repository VARIABLE, not a secret: it is
           # already public in every function URL, and `vars` (unlike `secrets`)
@@ -190,21 +228,3 @@ jobs:
           # 1 means "checked, and it drifted". Both fail the job — a check that
           # could not run must not be reported as a passing check.
           exit "${status}"
-
-      - name: No credentials — the deployment was NOT verified
-        if: steps.creds.outputs.configured != 'true'
-        run: |
-          set -euo pipefail
-          # A skipped check is still a green job, so say plainly that nothing
-          # was verified: both as a run annotation and in the summary, so it
-          # is visible without expanding the log.
-          echo "::warning title=Deployment NOT verified::SUPABASE_ACCESS_TOKEN (secret) and/or SUPABASE_PROJECT_REF (variable) are not configured, so the deployed Edge Function was not compared against this commit. Configure them per docs/architecture/edge-function-release-runbook.md."
-          {
-            echo "### Deployment integrity — SKIPPED"
-            echo
-            echo "The deployed Edge Function was **not** compared against this commit:"
-            echo "\`SUPABASE_ACCESS_TOKEN\` (secret) and/or \`SUPABASE_PROJECT_REF\` (variable) are unset."
-            echo
-            echo "This job passing therefore says nothing about production. See"
-            echo "\`docs/architecture/edge-function-release-runbook.md\`."
-          } >> "$GITHUB_STEP_SUMMARY"
