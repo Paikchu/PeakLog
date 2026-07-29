@@ -133,11 +133,14 @@ nonisolated struct SupabaseDataClient: Sendable {
     /// - Parameter keepIdsAreComplete: false when the local cache behind
     ///   `keepIds` came from a truncated cloud read, in which case nothing is
     ///   listed or deleted at all. See `CloudPagination.pruneAll`.
+    /// - Parameter didDelete: invoked per delete batch as it lands, so the
+    ///   audit trail survives a throw partway through the prune.
     /// - Returns: what was deleted, per table, for the caller to log.
     @discardableResult
     func prune(
         targets: [CloudPruneTarget],
-        keepIdsAreComplete: Bool = true
+        keepIdsAreComplete: Bool = true,
+        didDelete: @Sendable @escaping (CloudPruneOutcome) -> Void = { _ in }
     ) async throws -> [CloudPruneOutcome] {
         try await CloudPagination.pruneAll(
             targets: targets,
@@ -147,7 +150,8 @@ nonisolated struct SupabaseDataClient: Sendable {
             },
             deleteBatch: { target, ids in
                 try await self.deleteIds(table: target.table, ids: ids, extraFilters: target.filters)
-            }
+            },
+            didDelete: didDelete
         )
     }
 

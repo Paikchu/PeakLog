@@ -137,15 +137,24 @@ nonisolated enum CloudPagination {
     ///   from a cloud read that reached EOF on every table.
     /// - Parameter targets: evaluated in order during phase 2, so callers can
     ///   put child tables before parents.
+    /// - Parameter didDelete: called with each batch **the moment that batch
+    ///   lands**, before the next one is attempted. The return value below is
+    ///   only produced on the success path, so on a mid-prune failure it is
+    ///   thrown away along with the record of every batch that already
+    ///   succeeded — and those rows are gone from the cloud, so nothing can
+    ///   reconstruct them afterwards. The callback is what makes the audit
+    ///   trail survive exactly the partial failure it exists for.
     /// - Returns: per table, the ids actually deleted — empty in the normal
-    ///   case, and the audit trail for the deletion intent otherwise.
+    ///   case, and the aggregated view of the same deletions the callback
+    ///   already reported.
     @discardableResult
     static func pruneAll(
         targets: [CloudPruneTarget],
         keepIdsAreComplete: Bool,
         batchSize: Int = deleteBatchSize,
         listCloudIds: @Sendable (CloudPruneTarget) async throws -> CloudPagedResult<String>,
-        deleteBatch: @Sendable (CloudPruneTarget, [String]) async throws -> Void
+        deleteBatch: @Sendable (CloudPruneTarget, [String]) async throws -> Void,
+        didDelete: @Sendable (CloudPruneOutcome) -> Void = { _ in }
     ) async throws -> [CloudPruneOutcome] {
         guard keepIdsAreComplete else { return [] }
 
@@ -166,6 +175,7 @@ nonisolated enum CloudPagination {
         for plan in plans where !plan.doomed.isEmpty {
             for batch in batched(plan.doomed, size: batchSize) {
                 try await deleteBatch(plan.target, batch)
+                didDelete(CloudPruneOutcome(table: plan.target.table, deletedIds: batch))
             }
             outcomes.append(CloudPruneOutcome(table: plan.target.table, deletedIds: plan.doomed))
         }

@@ -351,7 +351,7 @@ actor CloudSyncCoordinator {
             Self.logger.error("push skipped prune: no complete cloud read yet")
         }
         let activePlanScope = [URLQueryItem(name: "plan_id", value: "eq.\(snapshot.activePlan.id)")]
-        let outcomes = try await client.prune(
+        _ = try await client.prune(
             targets: [
                 CloudPruneTarget(table: "training_plan_sets", keepIds: bundle.planSets.map(\.id), filters: activePlanScope),
                 CloudPruneTarget(table: "training_plan_exercises", keepIds: bundle.planExercises.map(\.id), filters: activePlanScope),
@@ -362,9 +362,12 @@ actor CloudSyncCoordinator {
                 CloudPruneTarget(table: "running_workouts", keepIds: bundle.running.map(\.id)),
                 CloudPruneTarget(table: "custom_exercises", keepIds: bundle.customExercises.map(\.id))
             ],
-            keepIdsAreComplete: hasCompleteCloudView
+            keepIdsAreComplete: hasCompleteCloudView,
+            // Logged from the callback rather than from the return value: a
+            // prune that throws on its third delete batch has still destroyed
+            // the first two, and only the callback has already run for those.
+            didDelete: { Self.logPruneOutcome($0) }
         )
-        logPruneOutcomes(outcomes)
 
         // The cloud now holds everything up to the snapshot we sent; clear
         // the persisted "owes a push" flag (no-op if a mutation landed
@@ -377,16 +380,19 @@ actor CloudSyncCoordinator {
     /// are `.public` because they are client-generated UUIDs carrying no user
     /// content, and without them a report of "my workouts vanished" is
     /// unanswerable after the fact.
-    private func logPruneOutcomes(_ outcomes: [CloudPruneOutcome]) {
-        for outcome in outcomes {
-            Self.logger.notice(
-                """
-                cloud prune deleted \(outcome.deletedIds.count, privacy: .public) row(s) \
-                from \(outcome.table, privacy: .public): \
-                \(outcome.deletedIds.joined(separator: ","), privacy: .public)
-                """
-            )
-        }
+    ///
+    /// `static` so it can be handed to `prune` as a `@Sendable` callback
+    /// without capturing the actor — the point of logging from the callback is
+    /// that it runs *before* the next batch is attempted, so the entry exists
+    /// even when a later batch throws and unwinds the whole push.
+    private static func logPruneOutcome(_ outcome: CloudPruneOutcome) {
+        logger.notice(
+            """
+            cloud prune deleted \(outcome.deletedIds.count, privacy: .public) row(s) \
+            from \(outcome.table, privacy: .public): \
+            \(outcome.deletedIds.joined(separator: ","), privacy: .public)
+            """
+        )
     }
 
     /// Lightweight check: has the server's active-plan `revision` moved past the

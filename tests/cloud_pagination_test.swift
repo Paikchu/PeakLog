@@ -27,6 +27,9 @@ import Foundation
 //   9. a keep-set derived from a TRUNCATED cloud read disables the prune
 //      entirely — not one listing, not one delete (the Issue #30 headline: the
 //      1001st row must not be deletable just because the read stopped at 1000).
+//  10. a prune that fails partway through still reports every delete batch
+//      that already landed — those rows are gone and nothing else can name
+//      them afterwards.
 //
 // Compile with:
 //   swiftc -parse-as-library \
@@ -45,6 +48,7 @@ struct CloudPaginationTest {
         await testPruneRefusesTruncatedListing()
         await testPruneSendsNoDeleteWhenNothingIsDoomed()
         await testTruncatedKeepSetDisablesPruneEntirely()
+        await testPartialPruneStillReportsCompletedBatches()
         print("cloud_pagination_test passed")
     }
 
@@ -226,6 +230,41 @@ struct CloudPaginationTest {
         expect(await listings.count == 0, "a disabled prune should not even list the cloud")
     }
 
+    // MARK: - 10: the audit trail survives a partial prune
+
+    static func testPartialPruneStillReportsCompletedBatches() async {
+        // 250 doomed ids => 3 batches; the third fails. The first two are
+        // already gone from the cloud and can never be reconstructed, so the
+        // deletion log has to name them even though `pruneAll` throws and its
+        // return value is discarded.
+        let recorder = DeleteRecorder()
+        let audit = OutcomeLog()
+        let doomed = (0..<250).map(Self.id)
+
+        do {
+            _ = try await CloudPagination.pruneAll(
+                targets: [CloudPruneTarget(table: "exercise_sets", keepIds: [])],
+                keepIdsAreComplete: true,
+                listCloudIds: { _ in CloudPagedResult(elements: doomed, isComplete: true) },
+                deleteBatch: { target, ids in
+                    if ids.contains(Self.id(200)) { throw StubError.network }
+                    await recorder.record(table: target.table, ids: ids)
+                },
+                didDelete: { audit.append($0) }
+            )
+            fatalError("expected the third delete batch to propagate its failure")
+        } catch StubError.network {
+        } catch {
+            fatalError("unexpected error: \(error)")
+        }
+
+        let reported = audit.allIds
+        let actuallyDeleted = await recorder.allIds
+        expect(actuallyDeleted == Array(doomed.prefix(200)), "fixture should have deleted exactly two batches")
+        expect(reported == actuallyDeleted, "the audit log must name every row the prune actually destroyed")
+        expect(audit.outcomes.allSatisfy { $0.table == "exercise_sets" }, "audit entries lost their table")
+    }
+
     // MARK: - helpers
 
     static func id(_ index: Int) -> String { "id-" + String(format: "%05d", index) }
@@ -272,6 +311,28 @@ private final class StubTable: @unchecked Sendable {
 private actor ListingCounter {
     private(set) var count = 0
     func bump() { count += 1 }
+}
+
+/// Collects the `didDelete` callback. A lock rather than an actor because the
+/// callback is synchronous — which is the point: it has to finish recording
+/// before the next batch is attempted.
+private final class OutcomeLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [CloudPruneOutcome] = []
+
+    func append(_ outcome: CloudPruneOutcome) {
+        lock.lock()
+        defer { lock.unlock() }
+        stored.append(outcome)
+    }
+
+    var outcomes: [CloudPruneOutcome] {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+
+    var allIds: [String] { outcomes.flatMap(\.deletedIds) }
 }
 
 private actor DeleteRecorder {
