@@ -9,6 +9,14 @@ name: Migration Ledger
 #   2. drift   —— 需要 Supabase 凭据；**没有凭据时是 skip 而不是 pass**。
 # 这个区分是本 workflow 最重要的设计点：一个"因为拿不到 secret 所以打绿勾"的门禁
 # 比没有门禁更糟，它会让人以为对账过了。
+#
+# 为什么多出一个 detect job：`secrets` 上下文在 job 级 `if:` 里不可用，所以
+# "有没有凭据"必须先在某个 job 的 step 里物化成 output。第一版把探测和执行放在
+# 同一个 job 里、用 step 级 `if:` 跳过，实测下来 PR 的 checks 列表里那一项显示
+# 的仍是绿色 **pass**（run 30389701908：全部执行步骤 skipped，job conclusion
+# success）—— `::warning` 只躺在日志里，没人会去点开。把 drift 拆成独立 job 并用
+# `needs.detect.outputs.*` 门控，checks 列表里才会显示成灰色的 **Skipped**，
+# 与真正通过在视觉上和 API 上都可区分。
 
 on:
   pull_request:
