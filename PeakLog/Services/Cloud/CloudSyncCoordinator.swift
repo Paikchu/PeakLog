@@ -344,19 +344,20 @@ actor CloudSyncCoordinator {
         try await client.upsert(table: "exercise_sets", rows: bundle.exerciseSets)
         try await client.upsert(table: "running_workouts", rows: bundle.running)
         try await client.upsert(table: "training_plans", rows: bundle.plans)
-        try await client.upsert(table: "training_plan_days", rows: bundle.planDays)
-        try await client.upsert(table: "training_plan_exercises", rows: bundle.planExercises)
-        try await client.upsert(table: "training_plan_sets", rows: bundle.planSets)
 
-        // These rows are now provably in the cloud and came from this device,
-        // so they join the set a later prune may reconcile. Recorded here,
-        // immediately after the upserts and *before* anything that can throw:
-        // if the prune below failed and the user then deleted one of these
-        // rows, a retry would find it in the cloud, refuse to delete it for
-        // never having been observed, and acknowledge clean — leaving the next
-        // pull to restore what the user deleted.
+        // Each plan child table's ids are recorded immediately after *its own*
+        // upsert returns, not after all three: once a call has returned, those
+        // rows are provably in the cloud and came from this device, so they
+        // join the set a later prune may reconcile — and every line after this
+        // one can throw. Batch the bookkeeping and a failure two tables later
+        // leaves earlier, genuinely uploaded rows unobserved; deleting one of
+        // them before the retry then makes the retry refuse the delete (never
+        // observed), acknowledge clean, and let the next pull restore it.
+        try await client.upsert(table: "training_plan_days", rows: bundle.planDays)
         noteRowsPushed(table: "training_plan_days", ids: bundle.planDays.map(\.id))
+        try await client.upsert(table: "training_plan_exercises", rows: bundle.planExercises)
         noteRowsPushed(table: "training_plan_exercises", ids: bundle.planExercises.map(\.id))
+        try await client.upsert(table: "training_plan_sets", rows: bundle.planSets)
         noteRowsPushed(table: "training_plan_sets", ids: bundle.planSets.map(\.id))
 
         // Append-only: insert, skipping rows the cloud already has (a retried
