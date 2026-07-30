@@ -36,7 +36,7 @@ struct HistoryRunningViewModelTestRunner {
 
         let viewModel = HistoryViewModel(
             workoutService: HistoryRunningWorkoutService(records: records),
-            trainingPlanService: EmptyTrainingPlanService()
+            trainingPlanService: LocalTrainingPlanService(database: .shared)
         )
         viewModel.selectDate(targetDate)
         await viewModel.loadSessionsForSelectedDate()

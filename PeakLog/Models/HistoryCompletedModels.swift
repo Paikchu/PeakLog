@@ -70,10 +70,13 @@ enum HistoryCompletedAggregator {
         sessions: [WorkoutSession],
         runningRecords: [RunningWorkoutRecord]
     ) -> CompletedDaySummary {
-        CompletedDaySummary(
+        // Built once and reused: the projection walks every session/exercise/set,
+        // so calling it per summary field doubled the work for identical output.
+        let exercises = strengthExercises(from: sessions)
+        return CompletedDaySummary(
             date: selectedDate,
-            strengthExerciseCount: strengthExercises(from: sessions).count,
-            strengthSetCount: strengthExercises(from: sessions).reduce(0) { $0 + $1.sets.count },
+            strengthExerciseCount: exercises.count,
+            strengthSetCount: exercises.reduce(0) { $0 + $1.sets.count },
             cardioRecordCount: runningRecords.count,
             totalDurationMinutes: sessions.reduce(0) { $0 + ($1.durationMinutes ?? 0) } +
                 runningRecords.reduce(0) { $0 + $1.durationMinutes },

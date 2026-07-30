@@ -402,38 +402,6 @@ final class HistoryViewModel: ObservableObject {
         return Array(days.prefix(42))
     }
 
-    func completePlannedSet(
-        planSetId: String,
-        actualWeight: Double?,
-        actualWeightUnit: WeightUnit,
-        actualReps: Int
-    ) async {
-        do {
-            let updatedSet = try await trainingPlanService.completePlannedSet(
-                planSetId: planSetId,
-                actualWeight: actualWeight,
-                actualWeightUnit: actualWeightUnit,
-                actualReps: actualReps
-            )
-
-            if var plan = activePlan {
-                for dayIndex in plan.days.indices {
-                    for exerciseIndex in plan.days[dayIndex].exercises.indices {
-                        if let setIndex = plan.days[dayIndex].exercises[exerciseIndex].sets.firstIndex(where: { $0.id == planSetId }) {
-                            plan.days[dayIndex].exercises[exerciseIndex].sets[setIndex] = updatedSet
-                        }
-                    }
-                }
-                activePlan = plan
-                selectedPlanDay = planDay(for: selectedDate, in: plan)
-            }
-
-            await loadSessionsForSelectedDate()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     private func planDay(for date: Date, in plan: TrainingPlan?) -> TrainingPlanDay? {
         guard let plan else { return nil }
         return plan.days.first(where: { $0.planDate == workoutDateFormatter.string(from: date) })

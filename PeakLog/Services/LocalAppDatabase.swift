@@ -670,7 +670,9 @@ actor LocalAppDatabase {
             rpe: nil
         )
 
-        let sessionId = ensureStrengthSessionForPlanDay(
+        // The strength session is created/extended for its side effect on
+        // `state.strengthSessions`; the plan set only needs the linked set's id.
+        _ = ensureStrengthSessionForPlanDay(
             day,
             exerciseName: exercise.exerciseName,
             exerciseId: exercise.exerciseId,
@@ -684,10 +686,7 @@ actor LocalAppDatabase {
         derivedProfileIsStale = true
         try persist()
 
-        var result = state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex]
-        result.linkedExerciseSetId = linkedSet.id
-        _ = sessionId
-        return result
+        return state.activePlan.days[planLocation.dayIndex].exercises[planLocation.exerciseIndex].sets[planLocation.setIndex]
     }
 
     func updatePlannedSet(
@@ -1700,8 +1699,14 @@ actor LocalAppDatabase {
     }
 
     private static func defaultFileURL() -> URL {
+        // On iOS the Application Support lookup always resolves, so this keeps
+        // returning the exact same path as before for every real install. The
+        // extra temp-directory rung only replaces a force-unwrap that would
+        // have crashed the app outright if both container lookups came back
+        // empty (sandbox not yet mounted, hostile test host).
         let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         return baseURL.appendingPathComponent("PeakLog/peaklog-local-state.json")
     }
 
@@ -1913,10 +1918,6 @@ actor LocalAppDatabase {
         return formatter.string(from: date)
     }
 
-    private static func timestampString(from date: Date) -> String {
-        ISO8601DateFormatter().string(from: date)
-    }
-
     private static func date(from planDate: String) -> Date? {
         WorkoutDateFormatter().date(from: planDate)
     }
@@ -2005,10 +2006,4 @@ enum AppServices {
         exerciseLibraryService: exerciseLibraryService,
         profileService: profileService
     )
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
 }
