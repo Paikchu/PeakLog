@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import CoreGraphics
 
 struct PlanLiveWorkoutSet: Identifiable, Equatable, Codable {
     let id: String
