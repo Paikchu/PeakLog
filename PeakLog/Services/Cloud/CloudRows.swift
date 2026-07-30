@@ -18,19 +18,35 @@ nonisolated enum CloudDate {
     /// timestamptz columns. Postgres emits fractional seconds; tolerate both.
     static func timestamp(from string: String?) -> Date? {
         guard let string else { return nil }
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFractional.date(from: string) { return date }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: string)
+        if let date = fractionalTimestampFormatter.date(from: string) { return date }
+        return plainTimestampFormatter.date(from: string)
     }
 
     static func timestampString(from date: Date) -> String {
+        fractionalTimestampFormatter.string(from: date)
+    }
+
+    // `ISO8601DateFormatter` construction is the expensive part, and these two
+    // configurations are fixed, so they're built once instead of per call —
+    // every sync push/pull runs them across whole tables of rows.
+    //
+    // `nonisolated(unsafe)`: `ISO8601DateFormatter` is a non-`Sendable` class,
+    // so a plain `static let` of it is rejected under the Swift 6 language
+    // mode. Same justification as `WorkoutDateFormatter`'s cached formatter —
+    // `formatOptions` is assigned once during initialization and never mutated
+    // afterward, and `date(from:)`/`string(from:)` on a fully configured
+    // formatter are documented as safe to call concurrently.
+    nonisolated(unsafe) private static let fractionalTimestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
+
+    nonisolated(unsafe) private static let plainTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }
 
 // MARK: - shared projections
