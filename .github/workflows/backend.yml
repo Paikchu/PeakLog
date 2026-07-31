@@ -12,7 +12,15 @@ name: Backend
 # Scope note: this file is intentionally separate from testflight.yml. That one
 # releases the iOS app on tags; this one gates backend changes on every PR.
 # Sharing a file would couple two release cadences that have nothing to do with
-# each other.
+# each other. Since Issue #136 testflight.yml *calls* this workflow
+# (`workflow_call`) so a release re-runs the exact same gates on the exact same
+# commit — reused, not duplicated.
+#
+# Issue #136 also added the `replay` job: the ledger workflow only proved the
+# migration *filenames* were well-formed and that the remote ledger listed the
+# same versions. Neither answers "does this set of SQL actually apply to an
+# empty database?" — a migration that only works because production already had
+# some object lying around passes both of those and fails on the day it matters.
 
 on:
   pull_request:
@@ -30,6 +38,42 @@ on:
         required: false
         default: generate-weekly-plan
         type: string
+  # Called by testflight.yml. The inputs mirror workflow_dispatch so the release
+  # path and the manual path resolve `verify_commit`/`verify_function` through
+  # exactly the same expressions below.
+  workflow_call:
+    inputs:
+      verify_commit:
+        description: "Commit the deployment must match (default: this ref's HEAD)"
+        required: false
+        type: string
+      verify_function:
+        description: "Edge Function to verify"
+        required: false
+        default: generate-weekly-plan
+        type: string
+      skip_deployment_verification:
+        description: >-
+          Skip the "deployed bytes == this commit" comparison. Only for callers
+          building a commit that was never meant to be deployed (a branch
+          dry-run): comparing production against such a commit fails by
+          construction and says nothing. A real release must never set this.
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      edge_function_version:
+        description: >-
+          Deployed Edge Function version this commit was verified against.
+          EMPTY means it was not verified (no credentials, or the job was
+          skipped) — an empty string must never be read as "matched".
+        value: ${{ jobs.verify-deployment.outputs.version }}
+      migration_count:
+        description: "Number of migrations replayed onto an empty database."
+        value: ${{ jobs.replay.outputs.migration_count }}
+      migration_ledger_digest:
+        description: "sha256 over the ordered (version, file sha256) ledger."
+        value: ${{ jobs.replay.outputs.ledger_digest }}
 
 # Deliberately NOT path-filtered. The jobs take seconds, and a `paths:` list is
 # one more hand-maintained mapping that stops firing the moment a shared module
@@ -118,6 +162,133 @@ jobs:
           fi
           echo "bundled ${found} function(s)"
 
+  # ---------------------------------------------------------------------------
+  # Migration clean replay (Issue #136)
+  # ---------------------------------------------------------------------------
+  # Applies every committed migration, in order, to an EMPTY database and dumps
+  # the resulting schema. No credentials, no production contact: the replay
+  # script only ever touches `--local`, i.e. a throwaway Postgres in Docker on
+  # this runner.
+  #
+  # Why here and not in migration-ledger.yml, where the other migration checks
+  # live: that workflow is `paths:`-filtered, and a required check that does not
+  # report on a PR leaves the PR stuck at "Expected — waiting for status". A
+  # gate that is meant to be required has to run on every PR, which is exactly
+  # the reason backend.yml has no path filter either. migration-ledger.yml keeps
+  # what belongs to it — filename invariants and *remote* ledger drift, the
+  # latter credential-dependent and therefore not required-check material.
+  replay:
+    name: Migration clean replay
+    runs-on: ubuntu-latest
+    # `supabase start` pulls the local stack images on a cold runner. Generous
+    # on purpose: a timeout here reads as "migrations broken" to whoever sees
+    # the red X, which would be a lie.
+    timeout-minutes: 30
+    outputs:
+      migration_count: ${{ steps.ledger.outputs.count }}
+      ledger_digest: ${{ steps.ledger.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          # Pinned for the same reason as Deno above: `db reset` behaviour and
+          # the dump format are CLI-version dependent, and this job's output is
+          # compared across runs.
+          version: "2.75.0"
+
+      # Recorded BEFORE the replay so the ledger is in the log even when the
+      # replay fails — "which migrations were we replaying?" is the first
+      # question anyone asks about a red run. The digest is also handed to the
+      # release manifest in testflight.yml, so a TestFlight build can be tied
+      # back to an exact set of migration bytes.
+      - name: Record the migration ledger
+        id: ledger
+        run: |
+          set -euo pipefail
+          cd backend/supabase/migrations
+          # `version<TAB>sha256`, sorted by filename = applied order.
+          # LC_ALL=C so the glob order is locale-independent and reproducible —
+          # this digest is compared against the one testflight.yml computes.
+          export LC_ALL=C
+          for f in ./*.sql; do
+            printf '%s\t%s\n' "$(basename "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
+          done > "${RUNNER_TEMP}/ledger.tsv"
+          count="$(wc -l < "${RUNNER_TEMP}/ledger.tsv" | tr -d ' ')"
+          digest="$(sha256sum "${RUNNER_TEMP}/ledger.tsv" | cut -d' ' -f1)"
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Migration ledger"
+            echo
+            echo "- migrations: \`${count}\`"
+            echo "- ledger digest (sha256 over \`version<TAB>sha256\` lines): \`${digest}\`"
+            echo
+            echo '<details><summary>ledger</summary>'
+            echo
+            echo '```'
+            cat "${RUNNER_TEMP}/ledger.tsv"
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Replay every migration onto an empty database
+        id: replay
+        env:
+          # NOT a secret and not a credential: `[auth.external.apple]` in
+          # backend/supabase/config.toml is `enabled = true` with
+          # `secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"`, and the CLI
+          # refuses to start the local stack while that variable is unset. The
+          # local gotrue container never talks to Apple in this job — nothing
+          # signs in — so any non-empty string satisfies config parsing. Putting
+          # the real secret here would be strictly worse: it would hand a
+          # production credential to every PR run for no benefit at all.
+          SUPABASE_AUTH_EXTERNAL_APPLE_SECRET: "local-replay-placeholder-not-a-real-secret"
+        # Deliberately no `set -e` on the script call: the script encodes its
+        # verdict in the exit code (3 = could not run, 4 = replay failed) and
+        # the artifact/summary steps below must still run so a red build ships
+        # with its evidence attached.
+        run: |
+          set -uo pipefail
+          status=0
+          ./backend/scripts/migration-ledger-replay.sh --out "${RUNNER_TEMP}/replay" \
+            > "${RUNNER_TEMP}/replay.out" 2>&1 || status=$?
+          cat "${RUNNER_TEMP}/replay.out"
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload replayed schema
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-replay-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/replay/replayed-schema.sql
+            ${{ runner.temp }}/replay/replay.log
+            ${{ runner.temp }}/replay.out
+            ${{ runner.temp }}/ledger.tsv
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Separate step so the artifact above exists before anything fails, and so
+      # each exit code gets an error message that says what to actually do.
+      - name: Enforce
+        run: |
+          set -euo pipefail
+          case "${{ steps.replay.outputs.status }}" in
+            0)
+              echo "干净库 replay 通过：${{ steps.ledger.outputs.count }} 份迁移全部应用成功。" ;;
+            3)
+              echo "::error title=Replay could not run::supabase CLI 或 Docker 不可用，本次没有验证迁移（不是通过）。"
+              exit 1 ;;
+            4)
+              echo "::error title=Migrations do not replay::仓库里的迁移在空库上跑不通，见 artifact 里的 replay.log。这类失败意味着灾难恢复和新环境搭建都会失败。"
+              exit 1 ;;
+            *)
+              echo "::error title=Replay failed::脚本以未预期的退出码 ${{ steps.replay.outputs.status }} 结束。"
+              exit 1 ;;
+          esac
+
   # Exists only to turn "are the credentials configured?" into something a
   # job-level `if:` can read: GitHub forbids the `secrets` context there, so the
   # answer has to be computed inside some job's step and handed out via
@@ -179,9 +350,18 @@ jobs:
     #     API. A job-level `if:` reports Skipped instead. For a gate whose whole
     #     purpose is "unverified must never look verified", that distinction is
     #     the entire point.
-    if: github.event_name != 'pull_request' && needs.detect-credentials.outputs.configured == 'true'
+    #   * Not when the caller asked to skip it: a dry-run build of a branch
+    #     commit was never deployed, so the comparison would fail by
+    #     construction. `inputs` is null for push/pull_request/workflow_dispatch,
+    #     and `!null` is true, so those paths still run the check.
+    if: github.event_name != 'pull_request' && !inputs.skip_deployment_verification && needs.detect-credentials.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      # Read by testflight.yml for the release manifest. When this job is
+      # skipped the output is the empty string, which the caller renders as
+      # "NOT VERIFIED" — never as a version that happened to be blank.
+      version: ${{ steps.verify.outputs.deployed_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -200,6 +380,7 @@ jobs:
           version: "2.75.0"
 
       - name: Compare deployed bytes against the commit
+        id: verify
         env:
           # The project ref is a repository VARIABLE, not a secret: it is
           # already public in every function URL, and `vars` (unlike `secrets`)
@@ -217,6 +398,16 @@ jobs:
             --function "${TARGET_FUNCTION}" \
             --commit "${TARGET_COMMIT}" > "${RUNNER_TEMP}/verify.log" 2>&1 || status=$?
           cat "${RUNNER_TEMP}/verify.log"
+          # The script prints `deployed ver : <version> (STATUS) updated <ts>`.
+          # Only the version token is exported, and only when the comparison
+          # actually succeeded — a version string next to a failed comparison
+          # would be an audit record of something that was never true.
+          if [ "${status}" -eq 0 ]; then
+            deployed_version="$(sed -n 's/^deployed ver *: *//p' "${RUNNER_TEMP}/verify.log" | head -1 | awk '{print $1}')"
+          else
+            deployed_version=""
+          fi
+          echo "deployed_version=${deployed_version}" >> "$GITHUB_OUTPUT"
           {
             echo "### Deployment integrity — ${TARGET_FUNCTION}"
             echo

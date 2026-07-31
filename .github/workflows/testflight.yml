@@ -1,11 +1,38 @@
 name: TestFlight
 
+# Issue #136：这个 workflow 原来是一条**没有任何门禁**的直通管道 —— push 一个
+# tag（或手动挑任意分支）就直接 archive、export、upload。没有编译验证、没有测试、
+# 没有迁移 replay、也没有任何东西保证这个 commit 属于 `main`。一个从未被机器验证过
+# 的分支可以在 15 分钟内变成 TestFlight 上的一个 build。
+#
+# 现在的形状是四段式：
+#
+#   guard ──┬── validate-ios      (复用 .github/workflows/ios.yml)
+#           ├── validate-backend  (复用 .github/workflows/backend.yml)
+#           └────────────┬────────────────────────► deploy
+#
+# 「发布产物来自已验证的 commit」这条链路是这样闭合的：
+#
+#   1. guard 把 tag 指向的 commit 解析出来，并要求它是 `origin/main` 的祖先。
+#      不是 main 上的 tag 直接失败——这就是「release tag 必须来自 main」。
+#   2. validate-* 是 `workflow_call` 复用，**跑在同一个 workflow run 里、同一个
+#      `github.sha` 上**。GitHub 保证被调用的 workflow checkout 的是调用方的 ref，
+#      所以这里不存在「测的是另一个 commit」的可能，也不需要去查 check 名字或者
+#      依赖 branch protection 已经开启。
+#   3. deploy 用 `needs: [guard, validate-ios, validate-backend]`。三者任一失败或
+#      被跳过，deploy 根本不会启动 —— 没有 archive，也就没有可上传的产物。
+#   4. deploy 里 `xcodebuild archive` 用的就是同一个 checkout，上传步骤额外被
+#      `needs.guard.outputs.can_upload` 门控：只有 release 模式才可能上传。
+#   5. 最后写出 release-manifest.json：commit SHA、迁移 ledger 摘要、Edge Function
+#      线上版本、ipa 的 sha256，全部落在 artifact 和 job summary 里。
+
 on:
   # Tag a release and the build lands on TestFlight unattended.
   push:
     tags:
       - "v*"
-  # Manual runs stay available for re-uploading a build number or testing a branch.
+  # 手动运行保留两个用途：在 tag 上重传一个 build number，或者在分支上做一次
+  # 「能不能签、能不能 archive」的演练。后者**永远不会上传**（见 guard）。
   workflow_dispatch:
     inputs:
       build_number:
@@ -19,16 +46,133 @@ concurrency:
   group: testflight
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 env:
   # Pinned rather than following the runner default, so a release build does not
   # change toolchain underneath us when GitHub rolls the image default forward.
   # macos-26 currently ships 26.0.1 / 26.1.1 / 26.2 / 26.3 / 26.4.1 / 26.5 / 26.6
   # with 26.5 as the default. Bump deliberately, not by drift.
+  # 与 ios.yml 保持一致：门禁和发布必须用同一个工具链。
   XCODE_VERSION: "26.6"
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1. 溯源门禁：这个 commit 有没有资格被发布
+  # ---------------------------------------------------------------------------
+  # 放在最前面且跑在 ubuntu 上，是因为它几秒钟就能给出答案。一个不该发布的 ref
+  # 不值得占用 40 分钟的 macOS runner，更不该在跑完之后才发现不能上传。
+  guard:
+    name: Release provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.resolve.outputs.mode }}
+      can_upload: ${{ steps.resolve.outputs.can_upload }}
+      commit: ${{ steps.resolve.outputs.commit }}
+      build_number: ${{ steps.resolve.outputs.build_number }}
+      marketing_version: ${{ steps.resolve.outputs.marketing_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 需要完整历史才能回答「这个 commit 在 main 上吗」。
+          fetch-depth: 0
+
+      - name: Resolve release mode
+        id: resolve
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          BUILD_NUMBER_INPUT: ${{ inputs.build_number }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          BUILD_NUMBER="${BUILD_NUMBER_INPUT}"
+          if [ -z "$BUILD_NUMBER" ]; then
+            BUILD_NUMBER="${RUN_NUMBER}"
+          fi
+
+          # 用 rev-parse 而不是直接用 $GITHUB_SHA：annotated tag 的情况下前者
+          # 才一定解析到 commit 对象。
+          COMMIT="$(git rev-parse "HEAD^{commit}")"
+
+          MODE="dry-run"
+          CAN_UPLOAD="false"
+          MARKETING_VERSION=""
+
+          if [ "$REF_TYPE" = "tag" ]; then
+            # A release tag is the source of truth for the marketing version, so a
+            # tag can never disagree with what ships.
+            MARKETING_VERSION="${REF_NAME#v}"
+            # CFBundleShortVersionString must be one to three dot-separated
+            # integers. Reject anything else here rather than letting Apple
+            # bounce the upload minutes later.
+            if ! printf '%s' "$MARKETING_VERSION" | grep -Eq '^[0-9]+(\.[0-9]+){0,2}$'; then
+              echo "::error title=Not a release tag::Tag '$REF_NAME' is not a release version. Expected vMAJOR[.MINOR[.PATCH]], e.g. v1.2 or v1.2.3."
+              exit 1
+            fi
+
+            # 「release tag 必须来自 main」。tag 可以打在任何地方——包括一个从未
+            # 被 review、从未跑过 CI 的分支上。祖先关系是唯一能证明「这份代码走过
+            # main 的合并流程」的东西，而不是靠约定俗成。
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            if git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/main; then
+              MODE="release"
+              CAN_UPLOAD="true"
+            else
+              echo "::error title=Tag is not on main::commit ${COMMIT} 不是 origin/main 的祖先。tag '${REF_NAME}' 指向的代码没有走过 main 的合并流程，拒绝发布。"
+              echo "  如果这是一次紧急修复：先把修复合进 main，再在 main 上的 commit 重新打 tag。" >&2
+              exit 1
+            fi
+          else
+            echo "::warning title=Not a release::手动从 '${REF_NAME}' 触发，这是一次**演练**（dry-run）：会完整 archive + export 以验证签名和构型，但绝不会上传到 TestFlight。要发布请在 main 上打 v* tag。"
+          fi
+
+          {
+            echo "mode=$MODE"
+            echo "can_upload=$CAN_UPLOAD"
+            echo "commit=$COMMIT"
+            echo "build_number=$BUILD_NUMBER"
+            echo "marketing_version=$MARKETING_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Mode:    $MODE (can_upload=$CAN_UPLOAD)"
+          echo "Commit:  $COMMIT"
+          echo "Version: ${MARKETING_VERSION:-(from project)}"
+          echo "Build:   $BUILD_NUMBER"
+
+  # ---------------------------------------------------------------------------
+  # 2. 验证：与 PR 上跑的是同一套 workflow，不是复制粘贴的一份副本
+  # ---------------------------------------------------------------------------
+  # 复用而不是重写的理由很直接：任何一份「发布专用的验证脚本」都会和 PR 上那份慢慢
+  # 分叉，而分叉的方向永远是发布这边更松。
+  validate-ios:
+    name: Validate iOS
+    needs: guard
+    uses: ./.github/workflows/ios.yml
+
+  validate-backend:
+    name: Validate backend
+    needs: guard
+    uses: ./.github/workflows/backend.yml
+    # 演练模式下跳过「线上 Edge Function 与本 commit 逐字节一致」这一项：分支上的
+    # commit 本来就没有被部署过，拿它去比线上必然失败，那不是发现问题，只是噪声。
+    # release 模式下这一项照常执行 —— 如果 main 上有尚未部署的 Edge Function 改动，
+    # 发布会在这里停下，这正是 Issue #133 想要的耦合。
+    with:
+      skip_deployment_verification: ${{ needs.guard.outputs.mode != 'release' }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # 3. 构建与上传
+  # ---------------------------------------------------------------------------
   deploy:
     name: Build and upload to TestFlight
+    # 这一行就是「不能上传未通过同 commit 验证的产物」的实现：三个 needs 任一
+    # 失败或被跳过，这个 job 不会启动，产物根本不存在。
+    needs: [guard, validate-ios, validate-backend]
     # Standard macOS runners are free on public repositories.
     # Do NOT switch to macos-26-large/-xlarge: large runners are billed even here.
     runs-on: macos-26
@@ -37,6 +181,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # checkout 默认取的就是本次 run 的 ref，和 guard/validate-* 是同一个 commit。
+      # 但「默认应该是」和「确实是」之间的差别，正是这个 issue 的全部内容，所以显式断言一次。
+      - name: Assert this is the commit that was validated
+        env:
+          EXPECTED: ${{ needs.guard.outputs.commit }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse "HEAD^{commit}")"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error title=Commit mismatch::验证的是 ${EXPECTED}，这里 checkout 的却是 ${ACTUAL}。拒绝构建。"
+            exit 1
+          fi
+          echo "building validated commit ${ACTUAL}"
 
       - name: Select Xcode
         run: |
@@ -53,39 +211,6 @@ jobs:
             sudo xcode-select -s "$XCODE_APP"
           fi
           xcodebuild -version
-
-      - name: Resolve version and build number
-        id: version
-        env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          BUILD_NUMBER="${{ inputs.build_number }}"
-          if [ -z "$BUILD_NUMBER" ]; then
-            BUILD_NUMBER="${{ github.run_number }}"
-          fi
-          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
-
-          # A release tag is the source of truth for the marketing version, so a
-          # tag can never disagree with what ships. Manual runs carry no tag and
-          # keep whatever MARKETING_VERSION the project declares.
-          MARKETING_VERSION=""
-          if [ "$REF_TYPE" = "tag" ]; then
-            MARKETING_VERSION="${REF_NAME#v}"
-            # CFBundleShortVersionString must be one to three dot-separated
-            # integers. Reject anything else here rather than letting Apple
-            # bounce the upload minutes later.
-            if ! printf '%s' "$MARKETING_VERSION" | grep -Eq '^[0-9]+(\.[0-9]+){0,2}$'; then
-              echo "Tag '$REF_NAME' is not a release version." >&2
-              echo "Expected vMAJOR[.MINOR[.PATCH]], e.g. v1.2 or v1.2.3." >&2
-              exit 1
-            fi
-          fi
-          echo "marketing_version=$MARKETING_VERSION" >> "$GITHUB_OUTPUT"
-
-          echo "Version: ${MARKETING_VERSION:-(from project)}"
-          echo "Build:   $BUILD_NUMBER"
 
       # The distribution certificate must be supplied, not auto-created:
       # -allowProvisioningUpdates would mint a NEW certificate on every run
@@ -131,9 +256,6 @@ jobs:
       # Manual signing: the profiles are supplied, not fetched. Nothing in the
       # build talks to the provisioning API.
       - name: Install provisioning profiles
-        env:
-          PROFILE_APP_BASE64: ${{ secrets.PROFILE_APP_BASE64 }}
-          PROFILE_EXTENSION_BASE64: ${{ secrets.PROFILE_EXTENSION_BASE64 }}
         run: |
           set -euo pipefail
           # Xcode 16+ reads the UserData path; older tooling reads the legacy
@@ -143,8 +265,8 @@ jobs:
           TMP="$RUNNER_TEMP/profiles"
           mkdir -p "$LEGACY" "$MODERN" "$TMP"
 
-          echo "$PROFILE_APP_BASE64" | base64 --decode > "$TMP/app.mobileprovision"
-          echo "$PROFILE_EXTENSION_BASE64" | base64 --decode > "$TMP/ext.mobileprovision"
+          printf '%s' "$PROFILE_APP_BASE64" | base64 --decode > "$TMP/app.mobileprovision"
+          printf '%s' "$PROFILE_EXTENSION_BASE64" | base64 --decode > "$TMP/ext.mobileprovision"
 
           for p in "$TMP"/*.mobileprovision; do
             PLIST="$(security cms -D -i "$p")"
@@ -152,28 +274,132 @@ jobs:
             NAME="$(echo "$PLIST" | plutil -extract Name raw -)"
             cp "$p" "$LEGACY/$UUID.mobileprovision"
             cp "$p" "$MODERN/$UUID.mobileprovision"
-            # The name must match PROVISIONING_PROFILE_SPECIFIER exactly, and
-            # the profile must carry the App Group. A profile minted before the
-            # capability was enabled lacks the entitlement; archive would catch
-            # it, but four minutes later and behind a wall of signing errors.
-            # Failing here names the offending profile and the fix directly.
             printf "installed %-32s uuid=%s\n" "'$NAME'" "$UUID"
-            if echo "$PLIST" | grep -q "group.com.max.PeakForm"; then
-              echo "    app group: present"
-            else
-              echo "    app group: MISSING in '$NAME'" >&2
-              echo "    enable App Groups on this profile's App ID, then regenerate it" >&2
-              exit 1
-            fi
           done
-          rm -rf "$TMP"
+        env:
+          PROFILE_APP_BASE64: ${{ secrets.PROFILE_APP_BASE64 }}
+          PROFILE_EXTENSION_BASE64: ${{ secrets.PROFILE_EXTENSION_BASE64 }}
+
+      # ---------------------------------------------------------------------
+      # Provisioning profile 预检（Issue #136）
+      # ---------------------------------------------------------------------
+      # 旧版本只 grep 了一个写死的 App Group 字符串。Sign in with Apple 在那之后
+      # 进了 Release，entitlements 文件里多了 `com.apple.developer.applesignin`，
+      # 而预检对此一无所知：一个在启用该 capability 之前签发的描述文件会一路通过
+      # 预检，然后在四分钟后的 archive 里、在一屏签名报错的最后一行暴露出来。
+      #
+      # 所以这里不再维护「要检查哪些 entitlement」的清单，而是**从仓库里那份
+      # entitlements 文件反推**：target 声明要用的每一个 entitlement key，描述文件
+      # 里都必须有；数组类型（App Group 列表、applesignin 的 ["Default"]）逐项核对。
+      # 下次再加 capability，只要改 .entitlements，这个门禁自动跟着变严，不需要
+      # 有人记得回来改 workflow —— 这正是这次失效的根因。
+      #
+      # 描述文件名同样按 pbxproj 里的 PROVISIONING_PROFILE_SPECIFIER 反推，
+      # 顺带把「secret 里放错了描述文件」这类错误也挡在 archive 之前。
+      - name: Verify provisioning profiles against the app's entitlements
+        run: |
+          set -euo pipefail
+          TMP="$RUNNER_TEMP/profiles"
+          EXPECTED_NAMES="$(grep -o 'PROVISIONING_PROFILE_SPECIFIER = "[^"]*"' PeakLog.xcodeproj/project.pbxproj \
+            | sed 's/.*= "//; s/"$//' | sort -u)"
+          if [ -z "$EXPECTED_NAMES" ]; then
+            echo "::error title=No profile specifiers::project.pbxproj 里找不到 PROVISIONING_PROFILE_SPECIFIER —— 签名方式变了，这个预检已经失去意义，先修它。"
+            exit 1
+          fi
+          echo "pbxproj 期望的描述文件名："
+          printf '%s\n' "$EXPECTED_NAMES" | sed 's/^/  /'
+
+          EXPECTED_NAMES="$EXPECTED_NAMES" python3 - \
+            "$TMP/app.mobileprovision" PeakLog/PeakLog.entitlements \
+            "$TMP/ext.mobileprovision" PeakLogLiveActivityExtension/PeakLogLiveActivityExtension.entitlements <<'PY'
+          import datetime
+          import os
+          import plistlib
+          import subprocess
+          import sys
+
+          def profile_plist(path):
+              xml = subprocess.run(
+                  ["security", "cms", "-D", "-i", path],
+                  capture_output=True, check=True,
+              ).stdout
+              return plistlib.loads(xml)
+
+          def entitlements_of(path):
+              with open(path, "rb") as handle:
+                  return plistlib.load(handle)
+
+          expected_names = {n for n in os.environ["EXPECTED_NAMES"].splitlines() if n.strip()}
+          seen_names = set()
+          failures = []
+          args = sys.argv[1:]
+
+          for profile_path, entitlements_path in zip(args[0::2], args[1::2]):
+              profile = profile_plist(profile_path)
+              name = profile.get("Name", "(unnamed)")
+              seen_names.add(name)
+              granted = profile.get("Entitlements", {})
+              expires = profile.get("ExpirationDate")
+
+              print("")
+              print("profile      : %s" % name)
+              print("  file       : %s" % os.path.basename(profile_path))
+              print("  uuid       : %s" % profile.get("UUID"))
+              print("  team       : %s" % ",".join(profile.get("TeamIdentifier", [])))
+              print("  expires    : %s" % expires)
+              print("  entitlements declared by %s:" % entitlements_path)
+
+              if name not in expected_names:
+                  failures.append(
+                      "描述文件 '%s' 不在 pbxproj 的 PROVISIONING_PROFILE_SPECIFIER 列表里 —— "
+                      "secret 里装的可能不是这个 target 的描述文件" % name
+                  )
+
+              # plist 的日期是 UTC，plistlib 返回的是 naive datetime。
+              if expires is not None and expires <= datetime.datetime.utcnow():
+                  failures.append("描述文件 '%s' 已于 %s 过期，需要重新签发" % (name, expires))
+
+              for key, want in sorted(entitlements_of(entitlements_path).items()):
+                  have = granted.get(key)
+                  if have is None:
+                      print("    %-45s MISSING" % key)
+                      failures.append(
+                          "描述文件 '%s' 缺少 entitlement `%s`（%s 声明要用它）。"
+                          "去 Apple Developer 后台给这个 App ID 打开对应 capability，重新签发描述文件，"
+                          "再更新仓库 secret。" % (name, key, entitlements_path)
+                      )
+                      continue
+                  if isinstance(want, list):
+                      have_list = have if isinstance(have, list) else [have]
+                      missing = [v for v in want if v not in have_list]
+                      if missing:
+                          print("    %-45s INCOMPLETE (缺 %s)" % (key, ", ".join(map(str, missing))))
+                          failures.append(
+                              "描述文件 '%s' 的 `%s` 缺少 %s（当前是 %s）"
+                              % (name, key, missing, have_list)
+                          )
+                          continue
+                  print("    %-45s ok" % key)
+
+          for name in sorted(expected_names - seen_names):
+              failures.append(
+                  "pbxproj 要求描述文件 '%s'，但本次没有安装任何叫这个名字的描述文件" % name
+              )
+
+          print("")
+          if failures:
+              for message in failures:
+                  print("::error title=Provisioning profile precheck::%s" % message)
+              sys.exit(1)
+          print("provisioning precheck: 所有 target 声明的 entitlement 都在描述文件里，且描述文件未过期。")
+          PY
 
       # No -allowProvisioningUpdates and no API key: signing settings live in
       # the Release configs and the profiles are already on disk.
       - name: Archive
         env:
-          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-          MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ needs.guard.outputs.build_number }}
+          MARKETING_VERSION: ${{ needs.guard.outputs.marketing_version }}
         run: |
           set -euo pipefail
           # Only override MARKETING_VERSION when a tag supplied one; passing an
@@ -199,7 +425,25 @@ jobs:
             -exportPath "$RUNNER_TEMP/export"
           ls -lh "$RUNNER_TEMP/export"
 
+      # 演练模式在这里停下。刻意做成一个**会出现在 job 日志和 summary 里**的显式
+      # 步骤，而不是让上传步骤悄悄 skip：一次没有上传的运行如果看起来和上传了的
+      # 一模一样，早晚有人会以为自己发过版了。
+      - name: Dry run — not a release, nothing will be uploaded
+        if: needs.guard.outputs.can_upload != 'true'
+        run: |
+          set -euo pipefail
+          echo "::warning title=Dry run::这是一次演练构建，产物不会上传到 TestFlight。"
+          {
+            echo "### 演练构建（NOT A RELEASE）"
+            echo
+            echo "从 \`${{ github.ref_name }}\` 触发，不是 \`main\` 上的 \`v*\` tag。"
+            echo "archive 与 export 已完成并作为 artifact 保留，**没有**上传到 TestFlight。"
+            echo
+            echo "要发布：把改动合进 \`main\`，在 main 的 commit 上打 \`vX.Y.Z\` tag 并推送。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload to TestFlight
+        if: needs.guard.outputs.can_upload == 'true'
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
@@ -217,28 +461,91 @@ jobs:
             --apiKey "$ASC_API_KEY_ID" \
             --apiIssuer "$ASC_API_ISSUER_ID"
 
+      # ---------------------------------------------------------------------
+      # 发布记录（Issue #136：记录 commit SHA / migration ledger / Edge Function version）
+      # ---------------------------------------------------------------------
+      # 这份 manifest 存在的意义是：三个月后 TestFlight 上躺着一个 build，有人问
+      # 「它是哪个 commit、当时数据库是什么 schema、Edge Function 是哪一版」时，
+      # 有一个不依赖任何人记忆的答案。ipa 的 sha256 让这份记录能和产物本身对上。
+      - name: Write release manifest
+        if: always()
+        env:
+          MODE: ${{ needs.guard.outputs.mode }}
+          COMMIT: ${{ needs.guard.outputs.commit }}
+          BUILD_NUMBER: ${{ needs.guard.outputs.build_number }}
+          MARKETING_VERSION: ${{ needs.guard.outputs.marketing_version }}
+          # 迁移 ledger 直接取自 backend.yml 的 replay job，而不是在这里重算一遍：
+          # 重算出来的只是「这些文件的摘要」，取自 replay 的则是「在空库上成功
+          # replay 过的那一组文件的摘要」——后者才是这份记录想说的话。
+          MIGRATION_COUNT: ${{ needs.validate-backend.outputs.migration_count }}
+          LEDGER_DIGEST: ${{ needs.validate-backend.outputs.migration_ledger_digest }}
+          EDGE_FUNCTION_VERSION: ${{ needs.validate-backend.outputs.edge_function_version }}
+        run: |
+          set -euo pipefail
+          IPA="$(find "$RUNNER_TEMP/export" -name '*.ipa' -maxdepth 1 2>/dev/null | head -1 || true)"
+          IPA_SHA="(no ipa)"
+          if [ -n "$IPA" ]; then
+            IPA_SHA="$(shasum -a 256 "$IPA" | cut -d' ' -f1)"
+          fi
+          # 空字符串意味着「没有验证」，绝不能被读成「验证过，版本号恰好是空」。
+          EDGE_DESC="${EDGE_FUNCTION_VERSION:-NOT VERIFIED (no Supabase credentials, or skipped in dry-run)}"
+
+          cat > "$RUNNER_TEMP/release-manifest.json" <<JSON
+          {
+            "mode": "${MODE}",
+            "uploaded_to_testflight": ${{ needs.guard.outputs.can_upload == 'true' && 'true' || 'false' }},
+            "tag": "${{ github.ref_type == 'tag' && github.ref_name || '' }}",
+            "commit": "${COMMIT}",
+            "marketing_version": "${MARKETING_VERSION}",
+            "build_number": "${BUILD_NUMBER}",
+            "xcode": "${XCODE_VERSION}",
+            "migration_count": "${MIGRATION_COUNT}",
+            "migration_ledger_digest": "${LEDGER_DIGEST}",
+            "edge_function": "generate-weekly-plan",
+            "edge_function_deployed_version": "${EDGE_DESC}",
+            "ipa_sha256": "${IPA_SHA}",
+            "validation_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          JSON
+          cat "$RUNNER_TEMP/release-manifest.json"
+
+          {
+            echo "### Release record"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Mode | \`${MODE}\` |"
+            echo "| Uploaded to TestFlight | \`${{ needs.guard.outputs.can_upload }}\` |"
+            echo "| Commit | \`${COMMIT}\` |"
+            echo "| Version / build | \`${MARKETING_VERSION:-from project}\` / \`${BUILD_NUMBER}\` |"
+            echo "| Migrations | \`${MIGRATION_COUNT}\` (ledger \`${LEDGER_DIGEST}\`) |"
+            echo "| Edge Function \`generate-weekly-plan\` | \`${EDGE_DESC}\` |"
+            echo "| .ipa sha256 | \`${IPA_SHA}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # dSYMs are the only way to symbolicate TestFlight crashes later, and the
       # archive is gone once the runner is torn down.
       - name: Upload build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: peaklog-build-${{ steps.version.outputs.build_number }}
+          name: peaklog-${{ needs.guard.outputs.mode }}-${{ needs.guard.outputs.build_number }}
           path: |
             ${{ runner.temp }}/export/*.ipa
             ${{ runner.temp }}/PeakLog.xcarchive/dSYMs
+            ${{ runner.temp }}/release-manifest.json
           if-no-files-found: warn
           retention-days: 30
 
       - name: Summary
-        if: success()
+        if: needs.guard.outputs.can_upload == 'true' && success()
         run: |
           {
             echo "### Uploaded to TestFlight"
             echo ""
-            echo "- Version: \`${{ steps.version.outputs.marketing_version || 'from project' }}\`"
-            echo "- Build number: \`${{ steps.version.outputs.build_number }}\`"
-            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Version: \`${{ needs.guard.outputs.marketing_version || 'from project' }}\`"
+            echo "- Build number: \`${{ needs.guard.outputs.build_number }}\`"
+            echo "- Commit: \`${{ needs.guard.outputs.commit }}\`"
             echo ""
             echo "App Store Connect processing usually takes 5-30 minutes."
             echo "The build then auto-distributes to the internal testing group."
