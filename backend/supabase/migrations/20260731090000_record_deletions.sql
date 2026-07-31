@@ -172,19 +172,25 @@ CREATE TRIGGER custom_exercises_record_deletion
 -- long a phone may sit in a drawer before its owner can see a record they
 -- deleted elsewhere come back.
 --
--- 180 days rather than 30: the table costs ~64 bytes per *deleted* row (not per
--- row), so even a user who deletes a hundred records a month accrues a few
--- hundred kilobytes a year — the storage argument for a short window simply
--- does not exist here, while the correctness argument for a long one is direct.
+-- 180 days rather than 30: a row here is on the order of a hundred bytes (tuple
+-- header, two uuids, a short text, a timestamp, plus its index entry) and the
+-- table grows with the number of *deletions*, not with the number of records.
+-- Even a user who deletes a hundred records every month accrues well under a
+-- megabyte a year, so the storage argument for a short window does not exist
+-- here, while the correctness argument for a long one is direct.
+--
 -- It is not unbounded because "unbounded" is not a retention policy: without a
 -- sweep, an account that churns records grows a table nothing ever reads past
 -- its first few days, and every client's first-sync pull pays for all of it.
 --
 -- Devices offline longer than this degrade in a documented, non-destructive
--- direction — see CloudSyncCoordinator: the client detects that its cursor has
--- fallen outside the window and refuses to claim it is caught up, and the
--- failure mode is "a record the user deleted on another device reappears and
--- must be deleted again", never "a record is destroyed".
+-- direction — see `CloudSyncCoordinator.loadRemoteRecordDeletions`, which
+-- detects that this cache has been out of touch longer than the window and logs
+-- it. Deliberately a log line and not a behaviour change: every available
+-- "action" is the absence inference this whole protocol exists to remove,
+-- pointed at the user's own device. So the failure mode is "a record the user
+-- deleted on another device reappears and has to be deleted again", never "a
+-- record is destroyed" — and the next deletion converges normally.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.purge_record_deletions(
   p_retain interval DEFAULT interval '180 days'

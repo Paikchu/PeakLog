@@ -181,6 +181,7 @@ CloudSyncController          // 绑定 auth，生命周期 & 前台触发
 - 计划：`training_plans` / `training_plan_days` / `training_plan_exercises` / `training_plan_sets`。计划条目以 `item_type` 区分力量/有氧；有氧条目直接保存类型与目标指标，并通过 `linked_cardio_workout_id` 关联实际记录。
 - 历史遗留（当前客户端未使用）：`conversations` / `messages` / `attachments` / `parse_tasks` / `parse_results` / `conversation_pending_actions` —— 这些是旧聊天/解析管线的产物，当前版本已不再走该路径。
 - PR：`exercise_prs`，以及自定义动作字段。
+- 同步：`record_deletions` —— 服务端墓碑日志（Issue #148）。五张记录表每被删掉一行（含 `ON DELETE CASCADE` 带走的子行）就由 `AFTER DELETE` 触发器写一条，客户端只可读。删除意图因此不再只存在于某一台设备的本地状态文件里，pull 按 `deleted_at` 增量读回并应用；保留 180 天。
 
 `backend/supabase/config.toml`：`project_id = "peaklog-core"`，Postgres 17，Realtime 开启，Apple OAuth 客户端 `com.max.PeakLog`，`deno_version = 2`。
 

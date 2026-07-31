@@ -236,16 +236,6 @@ extension RecordDeletionLog {
         }
     }
 
-    func union(_ other: RecordDeletionLog) -> RecordDeletionLog {
-        RecordDeletionLog(
-            sessions: sessions.union(other.sessions),
-            exercises: exercises.union(other.exercises),
-            exerciseSets: exerciseSets.union(other.exerciseSets),
-            runningRecords: runningRecords.union(other.runningRecords),
-            customExercises: customExercises.union(other.customExercises)
-        )
-    }
-
     /// Removes every tombstoned row from a session list, cascading the way the
     /// database does.
     ///
@@ -300,8 +290,6 @@ extension RecordDeletionLog {
 nonisolated struct RemoteRecordDeletions: Sendable, Equatable {
     var log = RecordDeletionLog()
     var newestDeletedAt: Date?
-
-    var isEmpty: Bool { log.isEmpty }
 
     /// How far back a pull re-reads before its stored cursor.
     ///

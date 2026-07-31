@@ -651,6 +651,14 @@ struct CloudRecordDeletionSyncTest {
         try await push(deviceD, to: staleCloud, using: .tombstones)
         expect(staleCloud.sessions[expired.id] != nil,
                "fixture: the documented degradation is that the row comes back, not that it vanishes")
+        // C sees it come back too — its own tombstone was retired when the
+        // deletion was confirmed, so there is nothing left holding it out. This
+        // is the full shape of the degradation, and it is what makes the
+        // convergence assertion below say something.
+        await pull(deviceC, from: staleCloud)
+        expect((await deviceC.snapshot()).strengthSessions.contains { $0.id == expired.id },
+               "fixture: the resurrected row should have reached C as well")
+
         // …and it converges the moment either device deletes it again, this
         // time with a live tombstone.
         try await deviceD.deleteExercise(sessionId: expired.id, exerciseId: expired.exercises[0].id)
