@@ -1500,7 +1500,9 @@ actor LocalAppDatabase {
     ///
     /// `remoteDeletions` carries the tombstones a pull read out of the
     /// server-side `record_deletions` log. They are applied *after* the merge,
-    /// unconditionally — see `applyRemoteRecordDeletions`.
+    /// unconditionally — see `noteRemoteRecordDeletions`. nil means "this merge
+    /// did not read the log", which is not the same as "the log was empty":
+    /// only a real read may record that the cache is up to date with it.
     func mergeFromCloud(
         profile: UserProfile,
         activePlan: TrainingPlan,
@@ -1508,7 +1510,7 @@ actor LocalAppDatabase {
         runningRecords: [RunningWorkoutRecord],
         customExercises: [ExerciseDefinition],
         goalSpec: GoalSpec?,
-        remoteDeletions: RemoteRecordDeletions = RemoteRecordDeletions()
+        remoteDeletions: RemoteRecordDeletions? = nil
     ) {
         let ownerUserId = state.ownerUserId
         state.profile = profile
@@ -1525,7 +1527,7 @@ actor LocalAppDatabase {
         )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
         state.goalSpec = goalSpec
-        noteRemoteRecordDeletions(remoteDeletions)
+        if let remoteDeletions { noteRemoteRecordDeletions(remoteDeletions) }
         applyPendingRecordDeletionsToState()
         sanitizePlanCompletionLinks()
         // pendingEditEvents / editEventSeq deliberately untouched (EV1).
@@ -1561,7 +1563,7 @@ actor LocalAppDatabase {
         strengthSessions: [WorkoutSession],
         runningRecords: [RunningWorkoutRecord],
         customExercises: [ExerciseDefinition],
-        remoteDeletions: RemoteRecordDeletions = RemoteRecordDeletions()
+        remoteDeletions: RemoteRecordDeletions? = nil
     ) {
         let ownerUserId = state.ownerUserId
         state.strengthSessions = mergeRecords(
@@ -1575,7 +1577,7 @@ actor LocalAppDatabase {
             tombstoned: state.pendingRecordDeletions.runningRecords
         )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
-        noteRemoteRecordDeletions(remoteDeletions)
+        if let remoteDeletions { noteRemoteRecordDeletions(remoteDeletions) }
         applyPendingRecordDeletionsToState()
         sanitizePlanCompletionLinks()
         recalculateDerivedProfile()

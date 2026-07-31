@@ -1002,7 +1002,7 @@ struct CloudRecordDeletionSyncTest {
             planExerciseRows: [],
             planSetRows: []
         )
-        var remote = RemoteRecordDeletions()
+        var remote: RemoteRecordDeletions?
         if case .serverLog = deletionProtocol {
             let (cursor, _) = await database.recordDeletionSyncState()
             remote = cloud.deletionLog(since: cursor)
