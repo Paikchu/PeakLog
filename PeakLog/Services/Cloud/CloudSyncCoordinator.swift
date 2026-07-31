@@ -164,6 +164,14 @@ actor CloudSyncCoordinator {
         }
         do {
             let snapshot = try await loader.load(userId: userId)
+            // Rows first, tombstones second — never the other way round, and
+            // never concurrently. A deletion that commits between the two reads
+            // then shows up as "row present in the snapshot, tombstone present
+            // too", and the merge drops it. Read in the opposite order the same
+            // deletion is invisible twice over: no tombstone yet, and the row
+            // already gone from the row read, so the stale cached copy survives
+            // the merge and the next push puts it back in the cloud.
+            let deletions = try await loadRemoteRecordDeletions()
             // Merge (not replace) so offline user records survive the login
             // pull while seed rows are still dropped. See Issue #1 /
             // `LocalAppDatabase.mergeFromCloud`.
@@ -178,7 +186,8 @@ actor CloudSyncCoordinator {
                 strengthSessions: snapshot.data.strengthSessions,
                 runningRecords: snapshot.data.runningRecords,
                 customExercises: snapshot.data.customExercises,
-                goalSpec: snapshot.data.goalSpec
+                goalSpec: snapshot.data.goalSpec,
+                remoteDeletions: deletions
             )
             hasMergedCloudState = true
             noteCloudViewCompleteness(snapshot)
@@ -208,14 +217,50 @@ actor CloudSyncCoordinator {
     /// work from, not about keeping the push from destroying data.
     private func mergeCloudRecordsPreservingLocalEdits() async throws {
         let snapshot = try await loader.load(userId: userId)
+        // Same ordering rule as `pull()`, and load-bearing for the same reason:
+        // this runs immediately before a push, so a deletion missed here is a
+        // deletion the very next request undoes.
+        let deletions = try await loadRemoteRecordDeletions()
         await database.mergeCloudRecordsPreservingLocalState(
             strengthSessions: snapshot.data.strengthSessions,
             runningRecords: snapshot.data.runningRecords,
-            customExercises: snapshot.data.customExercises
+            customExercises: snapshot.data.customExercises,
+            remoteDeletions: deletions
         )
         hasMergedCloudState = true
         noteCloudViewCompleteness(snapshot)
     }
+
+    /// Reads the server deletion log from this cache's cursor forward, and
+    /// says so in the log when the cache has been out of touch longer than the
+    /// server keeps tombstones.
+    ///
+    /// That window (180 days — see migration `20260731090000`) is the supported
+    /// offline period. Past it a tombstone may already have been purged, so a
+    /// record the user deleted on another device can reappear here and has to
+    /// be deleted again. The degradation is deliberately in that direction and
+    /// only that direction: nothing is destroyed, and the resurrected row
+    /// converges again the moment either device deletes it. It is logged rather
+    /// than acted on because every available "action" — dropping local rows the
+    /// cloud read did not return — is the absence inference this whole protocol
+    /// exists to remove, pointed at the user's own device.
+    private func loadRemoteRecordDeletions() async throws -> RemoteRecordDeletions {
+        let (syncedThrough, pulledAt) = await database.recordDeletionSyncState()
+        if let pulledAt, Date().timeIntervalSince(pulledAt) > Self.deletionRetentionWindow {
+            let days = Int(Date().timeIntervalSince(pulledAt) / 86_400)
+            Self.logger.error(
+                """
+                deletion log last read \(days, privacy: .public) days ago, past the server retention \
+                window; deletions made on other devices in that gap may have expired and can reappear
+                """
+            )
+        }
+        return try await loader.loadRecordDeletions(since: syncedThrough)
+    }
+
+    /// Mirrors `purge_record_deletions`'s default retention. Only used to
+    /// decide whether to log the warning above — nothing branches on it.
+    private static let deletionRetentionWindow: TimeInterval = 180 * 86_400
 
     /// Records whether the cache may now be used as the authority for
     /// deleting, and says so in the log when it may not — a silently skipped
@@ -458,6 +503,13 @@ actor CloudSyncCoordinator {
     /// after this device's last read is simply not in the log, so no ordering
     /// of the two devices' pushes can destroy it, and no amount of re-reading
     /// before the push is needed to make that true.
+    ///
+    /// Nothing here has to *record* the deletion for other devices: the DELETE
+    /// itself does that. An `AFTER DELETE` trigger writes `record_deletions` in
+    /// the same transaction (migration `20260731090000`), which is both why
+    /// there is no second request to get out of step with this one and why
+    /// rows destroyed by `ON DELETE CASCADE` — children another device added
+    /// and this one never heard of — are tombstoned too. Issue #148.
     ///
     /// Clearing per table rather than once at the end is the same reasoning as
     /// the prune audit log: if `running_workouts` fails after

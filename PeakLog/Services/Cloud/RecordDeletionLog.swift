@@ -33,16 +33,30 @@ import Foundation
 /// `recordDeletion(...)` would have to be remembered every time, and forgetting
 /// it fails silently and destructively.
 ///
-/// ## What this does NOT do
+/// ## The other direction
 ///
-/// A tombstone is local. It tells *the cloud* that this device deleted a row;
-/// it does not tell the other device. Device B learning that device A deleted
-/// something still needs a server-side deletion log, and until that exists B's
-/// cached copy of the row survives B's next merge and gets re-upserted. That
-/// is unchanged pre-existing behaviour, deliberately not papered over here:
-/// dropping a local row because it is missing from a cloud read would be the
-/// same absence-as-deletion mistake pointed the other way, and it would put
-/// the destructive edge on the user's own device.
+/// This log is the *outbound* half. It tells the cloud that this device deleted
+/// a row; on its own it says nothing to the other device, and that gap was
+/// Issue #148: after B deleted a record and pushed, A's cached copy survived
+/// A's merge and got re-upserted.
+///
+/// The inbound half is the server-side `record_deletions` table (migration
+/// `20260731090000`), written by an `AFTER DELETE` trigger — including rows
+/// destroyed by `ON DELETE CASCADE`, which is how a device learns about child
+/// rows the deleting device never knew existed. A pull reads it back into a
+/// `RecordDeletionLog` (in local id space, via `init(cloudRows:)` below) and
+/// applies it to the cache. Neither direction infers anything from absence.
+///
+/// The convergence rule both halves implement is **delete-wins, per row**: a
+/// tombstone for an id beats any update of that id regardless of timestamps.
+/// That is not a preference, it is the only rule that can agree with the
+/// database — `exercises` and `exercise_sets` are `ON DELETE CASCADE`, so the
+/// cloud resolves "one device deleted the session while the other edited a
+/// child of it" by destroying the children, and a client that resolved the same
+/// conflict by last-write-wins would disagree with the storage it syncs to
+/// (Issue #148 gap 3). It is also the only rule that converges without
+/// comparing two devices' clocks: a tombstone is monotone — once it exists it
+/// stays true — whereas LWW's answer depends on whose clock ran fast.
 nonisolated struct RecordDeletionLog: Codable, Sendable, Equatable {
     var sessions: Set<String> = []
     var exercises: Set<String> = []
@@ -184,6 +198,125 @@ nonisolated struct RecordDeletionLog: Codable, Sendable, Equatable {
             confirmation: confirmation(ids)
         )
     }
+}
+
+// MARK: - Inbound: server tombstones → local cache
+
+extension RecordDeletionLog {
+    /// The five tables `record_deletions` may name. Mirrors the CHECK
+    /// constraint in migration `20260731090000`; a row naming anything else is
+    /// ignored rather than trusted, because the only way one can exist is a
+    /// schema change this build has not been taught about.
+    static let syncedCloudTables = [
+        "workout_sessions", "exercises", "exercise_sets",
+        "running_workouts", "custom_exercises"
+    ]
+
+    /// Folds one server tombstone in, translating the cloud id into the id
+    /// space the local cache uses.
+    ///
+    /// - Parameter customExerciseLocalId: `custom_exercises` rows are keyed by
+    ///   a bare uuid in the cloud and `custom-<uuid>` locally
+    ///   (`CloudMapper.localCustomId`) — the mirror of the translation
+    ///   `deleteTargets` does on the way out. Kept as a parameter for the same
+    ///   reason it is there: this type stays free of the mapper, so it can be
+    ///   reasoned about (and tested) without one.
+    mutating func insertCloudId(
+        _ cloudId: String,
+        table: String,
+        customExerciseLocalId: (String) -> String = { $0 }
+    ) {
+        switch table {
+        case "workout_sessions": sessions.insert(cloudId)
+        case "exercises": exercises.insert(cloudId)
+        case "exercise_sets": exerciseSets.insert(cloudId)
+        case "running_workouts": runningRecords.insert(cloudId)
+        case "custom_exercises": customExercises.insert(customExerciseLocalId(cloudId))
+        default: break
+        }
+    }
+
+    func union(_ other: RecordDeletionLog) -> RecordDeletionLog {
+        RecordDeletionLog(
+            sessions: sessions.union(other.sessions),
+            exercises: exercises.union(other.exercises),
+            exerciseSets: exerciseSets.union(other.exerciseSets),
+            runningRecords: runningRecords.union(other.runningRecords),
+            customExercises: customExercises.union(other.customExercises)
+        )
+    }
+
+    /// Removes every tombstoned row from a session list, cascading the way the
+    /// database does.
+    ///
+    /// A tombstoned *session* takes its whole subtree with it, which is exactly
+    /// what `ON DELETE CASCADE` did on the server side; a tombstoned exercise
+    /// or set is stripped out of a session that survives. Both directions are
+    /// unconditional — no `updatedAt` comparison — because that is what
+    /// delete-wins means: the session's cloud copy being newer says the other
+    /// device edited the session, not that it un-deleted this row.
+    ///
+    /// A session left with no exercises is deliberately **kept**. Emptiness is
+    /// not a deletion signal here any more than absence is anywhere else: the
+    /// session row is still in the cloud (it has no tombstone), so dropping it
+    /// locally would just make the next pull bring it back. When the user
+    /// really deletes the last exercise, `LocalAppDatabase.deleteExercise`
+    /// removes the session too and the push tombstones it, so a genuine
+    /// deletion always arrives here as a session tombstone.
+    func applied(toSessions sessions: [WorkoutSession]) -> [WorkoutSession] {
+        guard !self.sessions.isEmpty || !exercises.isEmpty || !exerciseSets.isEmpty else {
+            return sessions
+        }
+        var result: [WorkoutSession] = []
+        result.reserveCapacity(sessions.count)
+        for var session in sessions where !self.sessions.contains(session.id) {
+            session.exercises.removeAll { exercises.contains($0.id) }
+            if !exerciseSets.isEmpty {
+                for index in session.exercises.indices {
+                    session.exercises[index].sets.removeAll { exerciseSets.contains($0.id) }
+                }
+            }
+            result.append(session)
+        }
+        return result
+    }
+
+    func applied(toRunningRecords records: [RunningWorkoutRecord]) -> [RunningWorkoutRecord] {
+        guard !runningRecords.isEmpty else { return records }
+        return records.filter { !runningRecords.contains($0.id) }
+    }
+
+    func applied(toCustomExercises definitions: [ExerciseDefinition]) -> [ExerciseDefinition] {
+        guard !customExercises.isEmpty else { return definitions }
+        return definitions.filter { !customExercises.contains($0.id) }
+    }
+}
+
+/// One pull's worth of server tombstones, plus the cursor for the next pull.
+///
+/// `newestDeletedAt` is a **server** timestamp, read back out of the rows —
+/// never a device clock. That is what keeps a device whose clock is wrong from
+/// advancing its cursor past a deletion it has not seen.
+nonisolated struct RemoteRecordDeletions: Sendable, Equatable {
+    var log = RecordDeletionLog()
+    var newestDeletedAt: Date?
+
+    var isEmpty: Bool { log.isEmpty }
+
+    /// How far back a pull re-reads before its stored cursor.
+    ///
+    /// `deleted_at` defaults to `now()`, which Postgres evaluates when the
+    /// deleting statement runs — not when it commits. A transaction that
+    /// commits after our read started, but stamped a `deleted_at` before it,
+    /// would be invisible to a strict `> cursor` scan and never seen again. So
+    /// the scan is `>= cursor - overlap`, and applying a tombstone twice is a
+    /// no-op (the row is already gone; ids are fresh UUIDs and are never
+    /// reused), which makes the overlap free apart from bytes.
+    ///
+    /// One hour is far beyond any commit latency a phone's single-row DELETE
+    /// can produce, and small enough that a daily user re-reads a handful of
+    /// rows rather than the retention window.
+    static let cursorOverlap: TimeInterval = 3600
 }
 
 /// One table's share of a tombstone push.

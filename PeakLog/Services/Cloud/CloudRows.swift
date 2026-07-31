@@ -57,6 +57,19 @@ nonisolated struct CloudIdRow: Decodable, Sendable {
     let id: String
 }
 
+/// One row of `record_deletions` — the server-side tombstone log (Issue #148).
+///
+/// `Decodable` only, on purpose: the table has no INSERT policy for clients,
+/// because a forged tombstone would delete data on every one of the user's
+/// devices. Rows appear solely as the by-product of a real DELETE (an
+/// `AFTER DELETE` trigger, which also fires for `ON DELETE CASCADE`), so there
+/// is nothing here for the app to encode.
+nonisolated struct RecordDeletionRow: Decodable, Sendable {
+    let id: String
+    let table_name: String
+    let deleted_at: String
+}
+
 // MARK: - profiles / preferences
 
 nonisolated struct ProfileRow: Codable, Sendable {
