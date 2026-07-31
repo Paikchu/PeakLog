@@ -1,0 +1,174 @@
+name: iOS
+
+# Issue #136：在这个 workflow 出现之前，PR 上跑的唯一一个 job 是 Claude review。
+# 也就是说「这份 Swift 代码到底能不能编译」从来没有被机器回答过——一个连
+# `xcodebuild` 都过不去的 commit 可以一路合进 `main`，再从 `main` 打 tag、进 archive，
+# 直到发布当天才在最贵的那一步炸掉。
+#
+# 这个 workflow 只回答一个问题：**当前 commit 能编译，且 PeakLogTests 全绿**。
+# 它同时被两处消费：
+#   1. PR / push main —— 作为合并门禁（建议在 GitHub 设置里勾成 required check）。
+#   2. testflight.yml 通过 `workflow_call` 复用 —— 让发布产物必须来自一个刚刚
+#      在**同一个 commit** 上通过编译与测试的树，而不是「据说之前测过」。
+#
+# 为什么用 workflow_call 而不是「去 API 查这个 commit 在 main 上的 check 结论」：
+# 后者依赖 check 名字不变、依赖 branch protection 已经启用、还要处理 tag 和 main
+# 推送同时发生时 check 尚未跑完的竞态。重跑一遍在公共仓库上是免费的 macOS 分钟数，
+# 换来的是「发布的这个 commit 本身被验证过」这个无需附加前提的事实。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # 供 testflight.yml 在发布链路里复用同一套验证。
+  workflow_call:
+
+# 刻意不做 paths 过滤：Swift 源码、xcodeproj、Package 依赖、资源文件之间的
+# 影响关系没法用一份手维护的路径清单表达，而一旦这个 check 要被设成 required，
+# paths 过滤还会让「不匹配路径的 PR」永远停在 pending 上合不进去。
+permissions:
+  contents: read
+
+concurrency:
+  # 被 workflow_call 调用时 `github.workflow` 是**调用方**的名字（TestFlight），
+  # 所以发布链路里的这次 iOS 验证不会和同 ref 上的 PR/push 运行互相取消。
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # 与 testflight.yml 保持同一个 Xcode 版本：门禁用一个工具链、发布用另一个，
+  # 门禁就证明不了发布能过。改的时候两个文件一起改。
+  XCODE_VERSION: "26.6"
+
+jobs:
+  build-test:
+    name: Build and test
+    # 公共仓库上标准 macOS runner 免费；不要换成 -large/-xlarge，那些即使公共仓库也计费。
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          XCODE_APP="/Applications/Xcode_${XCODE_VERSION}.app"
+          # Runner 镜像会随时间下掉旧 Xcode。直接说清楚现在装的是哪些，
+          # 而不是让 xcode-select 抛一个看不懂的错。
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "Xcode $XCODE_VERSION is not on this runner. Installed:" >&2
+            ls -d /Applications/Xcode*.app >&2
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+
+      # 单独一步解析 SPM 依赖：网络问题导致的失败会以「解析依赖失败」出现，
+      # 而不是混在几千行编译日志中间的一条 "no such module"。
+      - name: Resolve Swift package dependencies
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project PeakLog.xcodeproj \
+            -scheme PeakLog
+
+      # 不写死 "iPhone 17 Pro Max, OS=26.5"：runner 镜像里的模拟器名字和 runtime
+      # 版本会随镜像滚动变化，写死等于给自己埋一颗定时炸弹。这里按「可用 + iOS
+      # 版本 >= 部署目标」筛选，并优先选 AGENTS.md 里指定的验收机型。
+      - name: Pick a simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/devices.json"
+          SELECTED="$(python3 - "$RUNNER_TEMP/devices.json" <<'PY'
+          import json
+          import re
+          import sys
+
+          MIN_IOS = (26, 0)                  # 与 IPHONEOS_DEPLOYMENT_TARGET 保持一致
+          PREFERRED = "iPhone 17 Pro Max"    # AGENTS.md 指定的验收机型
+
+          with open(sys.argv[1]) as handle:
+              catalog = json.load(handle)["devices"]
+
+          best = None
+          for runtime, devices in catalog.items():
+              matched = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              if not matched:
+                  continue
+              version = (int(matched.group(1)), int(matched.group(2)))
+              if version < MIN_IOS:
+                  continue
+              for device in devices:
+                  if not device.get("isAvailable"):
+                      continue
+                  name = device["name"]
+                  if not name.startswith("iPhone"):
+                      continue
+                  # 排序键：先选偏好机型，再选高版本 runtime，最后按名字定序保证可复现。
+                  key = (0 if name == PREFERRED else 1, -version[0], -version[1], name)
+                  if best is None or key < best[0]:
+                      best = (key, device["udid"], name, version)
+
+          if best is None:
+              sys.exit("no available iPhone simulator with iOS >= %d.%d on this runner" % MIN_IOS)
+
+          _, udid, name, version = best
+          print("%s\t%s\tiOS %d.%d" % (udid, name, version[0], version[1]))
+          PY
+          )"
+          UDID="$(printf '%s' "$SELECTED" | cut -f1)"
+          NAME="$(printf '%s' "$SELECTED" | cut -f2)"
+          OSVER="$(printf '%s' "$SELECTED" | cut -f3)"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "destination=$NAME ($OSVER)" >> "$GITHUB_OUTPUT"
+          echo "selected simulator: $NAME ($OSVER) $UDID"
+
+      # 不覆盖任何签名设置：iphonesimulator SDK 下 Xcode 走 ad-hoc 签名，
+      # 不会去连 provisioning 服务，因此 runner 上没有证书也能签。刻意不加
+      # `CODE_SIGNING_ALLOWED=NO`——那会让 entitlements（App Group、Sign in with
+      # Apple）不被写进产物，依赖 App Group 容器的代码在模拟器里会拿到 nil，
+      # 于是门禁测的就不是真实构型了。
+      #
+      # -parallel-testing-enabled NO：与 AGENTS.md 对并行测试的约定一致，
+      # 也让失败日志是线性的、可读的。
+      - name: Build and test
+        env:
+          NSUnbufferedIO: "YES"
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project PeakLog.xcodeproj \
+            -scheme PeakLog \
+            -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath "$RUNNER_TEMP/PeakLog.xcresult" \
+            -parallel-testing-enabled NO \
+            -disable-concurrent-destination-testing \
+            -disableAutomaticPackageResolution \
+            -skipMacroValidation
+
+      # xcresult 是失败后唯一能看到「哪条断言、哪一行」的东西，runner 一销毁就没了。
+      - name: Upload xcresult
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcresult-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/PeakLog.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### iOS build & test"
+            echo
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Xcode: \`${XCODE_VERSION}\`"
+            echo "- Simulator: \`${{ steps.sim.outputs.destination }}\`"
+            echo "- Scheme: \`PeakLog\` (Debug, PeakLogTests)"
+            echo
+            echo "> \`tests/\` 下的 49 个独立 Swift 回归测试**不在**本 job 覆盖范围内，见 Issue #150。"
+          } >> "$GITHUB_STEP_SUMMARY"
