@@ -12,7 +12,7 @@ struct WeekCalendarStrip: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
 
     private var weekdays: [String] {
-        CalendarDateText.weekdays(locale: locale)
+        CachedDateFormatters.shortStandaloneWeekdays(locale: locale)
     }
 
     var body: some View {
@@ -96,7 +96,7 @@ struct WeekCalendarStrip: View {
 
             Spacer()
 
-            Text(CalendarDateText.monthTitle(for: viewModel.displayedMonth, locale: locale))
+            Text(CachedDateFormatters.monthTitle(for: viewModel.displayedMonth, locale: locale))
                 .appFont(size: 15, weight: .bold)
                 .foregroundColor(.textPrimary)
 
@@ -196,7 +196,7 @@ private struct DayCell: View {
                 }
 
                 VStack(spacing: 3) {
-                    Text(CalendarDateText.dayNumber(for: day.date, locale: locale))
+                    Text(CachedDateFormatters.dayNumber(for: day.date, locale: locale))
                         .appFont(size: 14, weight: day.isToday || day.isSelected ? .bold : .regular)
                         .foregroundColor(textColor)
 
@@ -231,61 +231,6 @@ private struct DayCell: View {
         case .muted:
             return .textDarkMuted
         }
-    }
-}
-
-// MARK: - Cached Formatters
-
-@MainActor
-enum CalendarDateText {
-    private static var weekdayFormatters: [String: DateFormatter] = [:]
-    private static var monthTitleFormatters: [String: DateFormatter] = [:]
-    private static var dayNumberFormatters: [String: DateFormatter] = [:]
-
-    static func weekdays(locale: Locale) -> [String] {
-        let formatter = weekdayFormatter(locale: locale)
-        return formatter.shortStandaloneWeekdaySymbols
-    }
-
-    static func monthTitle(for date: Date, locale: Locale) -> String {
-        monthTitleFormatter(locale: locale).string(from: date)
-    }
-
-    static func dayNumber(for date: Date, locale: Locale) -> String {
-        dayNumberFormatter(locale: locale).string(from: date)
-    }
-
-    private static func weekdayFormatter(locale: Locale) -> DateFormatter {
-        cachedFormatter(in: &weekdayFormatters, locale: locale)
-    }
-
-    private static func monthTitleFormatter(locale: Locale) -> DateFormatter {
-        cachedFormatter(in: &monthTitleFormatters, locale: locale) {
-            $0.dateFormat = "MMMM yyyy"
-        }
-    }
-
-    private static func dayNumberFormatter(locale: Locale) -> DateFormatter {
-        cachedFormatter(in: &dayNumberFormatters, locale: locale) {
-            $0.dateFormat = "d"
-        }
-    }
-
-    private static func cachedFormatter(
-        in cache: inout [String: DateFormatter],
-        locale: Locale,
-        configure: (DateFormatter) -> Void = { _ in }
-    ) -> DateFormatter {
-        let key = locale.identifier
-        if let formatter = cache[key] {
-            return formatter
-        }
-
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        configure(formatter)
-        cache[key] = formatter
-        return formatter
     }
 }
 

@@ -62,17 +62,15 @@ enum TrainingHeaderSubtitle: Equatable {
     }
 }
 
+/// `@MainActor`：日期文案走 `CachedDateFormatters` 的主线程缓存（见该类型注释里
+/// 为什么缓存不用 `nonisolated(unsafe)`）。唯一的生产调用点是 `TrainingScreen`，
+/// 本来就在主线程上。
+@MainActor
 enum TodayHeaderDateText {
     /// “7月6日 · 周一” / “Jul 6 · Mon” 眉标文本，按 locale 取模板格式。
     static func eyebrow(for date: Date = Date(), locale: Locale) -> String {
-        let dayFormatter = DateFormatter()
-        dayFormatter.locale = locale
-        dayFormatter.setLocalizedDateFormatFromTemplate("MMMd")
-
-        let weekdayFormatter = DateFormatter()
-        weekdayFormatter.locale = locale
-        weekdayFormatter.setLocalizedDateFormatFromTemplate("EEE")
-
-        return "\(dayFormatter.string(from: date)) · \(weekdayFormatter.string(from: date))"
+        let day = CachedDateFormatters.localizedTemplate("MMMd", for: date, locale: locale)
+        let weekday = CachedDateFormatters.localizedTemplate("EEE", for: date, locale: locale)
+        return "\(day) · \(weekday)"
     }
 }

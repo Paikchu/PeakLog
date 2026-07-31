@@ -325,10 +325,10 @@ final class HistoryViewModel: ObservableObject {
         )
     }
 
+    /// 传 `.current` 与原实现一致：原来没有给 formatter 设 locale，
+    /// `DateFormatter` 的默认 locale 即 `Locale.current`。
     var displayedMonthTitle: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMMM yyyy"
-        return fmt.string(from: displayedMonth)
+        CachedDateFormatters.monthTitle(for: displayedMonth, locale: .current)
     }
 
     /// Builds the 6-row × 7-column grid for the displayed month.
