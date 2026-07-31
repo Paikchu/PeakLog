@@ -21,8 +21,10 @@ struct AuthView: View {
                     .foregroundStyle(Color.textSecondary)
             }
 
-            if let message = auth.errorMessage {
-                Text(message)
+            // Consumes an already-classified case, not a free-form string —
+            // the redaction lives in `AuthDisplayError`, not in this view.
+            if let displayError = auth.displayError {
+                Text(displayError.localizedMessage)
                     .font(.footnote)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -59,7 +61,7 @@ struct AuthView: View {
         .padding(.horizontal, 28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground.ignoresSafeArea())
-        .animation(.easeInOut(duration: 0.2), value: auth.errorMessage)
+        .animation(.easeInOut(duration: 0.2), value: auth.displayError)
     }
 
     private func prepare(_ request: ASAuthorizationAppleIDRequest) {
