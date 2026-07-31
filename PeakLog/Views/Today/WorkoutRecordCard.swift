@@ -10,8 +10,8 @@ struct WorkoutRecordCard: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            ForEach(Array(record.exercises.enumerated()), id: \.element.id) { index, _ in
-                exerciseCard(at: index)
+            ForEach($record.exercises) { $exercise in
+                exerciseCard(for: $exercise)
             }
         }
         // 滑动删除动作后列表平滑收拢。
@@ -26,25 +26,28 @@ struct WorkoutRecordCard: View {
         )
     }
 
+    /// 回调里带的 id 直接取自当前元素，不再回头按下标去数组里捞：
+    /// 下标是在闭包被调用时才求值的，动作被删掉后那个下标可能已经越界。
     @ViewBuilder
-    private func exerciseCard(at index: Int) -> some View {
+    private func exerciseCard(for exercise: Binding<Exercise>) -> some View {
+        let exerciseId = exercise.wrappedValue.id
         let card = ExerciseCardView(
-            exercise: $record.exercises[index],
+            exercise: exercise,
             isEditable: isEditable,
             onSetChanged: { updatedSet in
-                onSetChanged(record.exercises[index].id, updatedSet)
+                onSetChanged(exerciseId, updatedSet)
             },
             onAddSet: {
-                onAddSet?(record.exercises[index].id)
+                onAddSet?(exerciseId)
             },
             onDeleteLastSet: {
-                onDeleteLastSet?(record.exercises[index].id)
+                onDeleteLastSet?(exerciseId)
             }
         )
 
         if let onDeleteExercise {
             // 由右向左滑动删除该动作的全部记录。
-            SwipeToDeleteRow(onDelete: { onDeleteExercise(record.exercises[index].id) }) {
+            SwipeToDeleteRow(onDelete: { onDeleteExercise(exerciseId) }) {
                 card
             }
         } else {

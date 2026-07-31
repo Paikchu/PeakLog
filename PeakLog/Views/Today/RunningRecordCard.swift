@@ -47,11 +47,11 @@ struct RunningRecordCard: View {
         }
     }
 
+    /// 这里刻意传 `.current` 而不是 `@Environment(\.locale)`：原实现没有给
+    /// formatter 设 locale，`DateFormatter` 的默认 locale 就是 `Locale.current`，
+    /// 显式传入是为了保持输出逐字不变，不顺手改本地化行为。
     private var dateLabel: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: record.createdAt)
+        CachedDateFormatters.mediumDateShortTime(for: record.createdAt, locale: .current)
     }
 
     private func metric(title: String, value: String) -> some View {

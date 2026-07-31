@@ -45,6 +45,8 @@ final class TodayPlanHeaderTests: XCTestCase {
         XCTAssertNil(header.subtitle)
     }
 
+    // `TodayHeaderDateText` 走 `CachedDateFormatters` 的主线程缓存后变成 `@MainActor`。
+    @MainActor
     func testEyebrowContainsDateAndWeekdayForBothLocales() {
         var components = DateComponents()
         components.year = 2026

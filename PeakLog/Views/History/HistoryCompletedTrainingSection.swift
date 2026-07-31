@@ -260,11 +260,7 @@ struct HistoryCompletedCardioRecordCard: View {
     }
 
     private var dateLabel: String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: record.createdAt)
+        CachedDateFormatters.mediumDateShortTime(for: record.createdAt, locale: locale)
     }
 
     private func metricChip(title: String, value: String) -> some View {
