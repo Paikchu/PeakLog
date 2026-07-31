@@ -36,7 +36,7 @@ final class AuthStateManager: ObservableObject {
     private var authenticationGeneration: UInt = 0
     private var acceptsProviderSignedInEvents = true
 
-    init(provider: AuthProviding = SupabaseAuthProvider()) {
+    init(provider: AuthProviding = SupabaseAuthProvider() ?? UnconfiguredAuthProvider()) {
         self.provider = provider
     }
 

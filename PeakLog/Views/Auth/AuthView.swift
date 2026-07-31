@@ -130,5 +130,5 @@ struct AuthView: View {
 }
 
 #Preview {
-    AuthView(auth: AuthStateManager(provider: SupabaseAuthProvider()))
+    AuthView(auth: AuthStateManager())
 }

@@ -35,8 +35,12 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
     private let clearPersistedSession: @Sendable () throws -> Void
     private let operationGate: AuthOperationGate
 
-    init() {
-        self = SupabaseClientFactory().makeAuthProvider()
+    /// Fails rather than traps when no Supabase endpoint resolves; callers
+    /// substitute `UnconfiguredAuthProvider` so the app still launches and the
+    /// user is told, instead of crashing on first use (Issue #32).
+    init?() {
+        guard let config = SupabaseConfig.current else { return nil }
+        self = SupabaseClientFactory(config: config).makeAuthProvider()
     }
 
     init(

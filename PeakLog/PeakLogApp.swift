@@ -10,9 +10,11 @@ struct PeakLogApp: App {
     @StateObject private var syncController: CloudSyncController
 
     init() {
-        let factory = SupabaseClientFactory()
-        let provider = factory.makeAuthProvider()
-        let apiClient = factory.makeAPIClient()
+        // No resolvable endpoint means the build is misconfigured; launch into
+        // the login screen and report it there rather than trapping (Issue #32).
+        let factory = SupabaseConfig.current.map { SupabaseClientFactory(config: $0) }
+        let provider: AuthProviding = factory?.makeAuthProvider() ?? UnconfiguredAuthProvider()
+        let apiClient = factory?.makeAPIClient()
         _authManager = StateObject(wrappedValue: AuthStateManager(provider: provider))
         _syncController = StateObject(
             wrappedValue: CloudSyncController(apiClient: apiClient)
