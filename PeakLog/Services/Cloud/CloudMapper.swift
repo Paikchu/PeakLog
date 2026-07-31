@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// All rows for a full push, grouped by table in FK-safe upsert order.
 nonisolated struct CloudPushBundle: Sendable {
@@ -28,6 +29,8 @@ nonisolated enum CloudMappingError: Error, Equatable {
 /// Translates between domain models and PostgREST rows. Pure and static so the
 /// mapping is unit-testable without any network.
 nonisolated enum CloudMapper {
+
+    private static let logger = Logger(subsystem: "com.max.PeakLog", category: "CloudMapper")
 
     // MARK: - Domain → rows (push)
 
@@ -408,6 +411,17 @@ nonisolated enum CloudMapper {
         )
     }
 
+    /// Rows with a null `reps` are treated as dirty and dropped rather than
+    /// coerced (Issue #27). Dropping cascades: an exercise whose every set was
+    /// dirty, and a session whose every exercise was dropped that way, are
+    /// removed too — an empty shell is a shape `LocalAppDatabase` prunes on
+    /// every write, so materializing one here would hand the app a state its
+    /// own writes consider invalid. The cascade is deliberately limited to
+    /// *dropped* emptiness: an exercise that arrives with no set rows at all
+    /// is passed through untouched, exactly as before.
+    ///
+    /// Nothing is deleted in the cloud by this — deletions travel by tombstone,
+    /// never by absence — so the dirty rows stay put for later inspection.
     static func sessions(
         sessionRows: [WorkoutSessionRow],
         exerciseRows: [ExerciseRow],
@@ -416,22 +430,44 @@ nonisolated enum CloudMapper {
         let setsByExercise = Dictionary(grouping: setRows, by: \.exercise_id)
         let exercisesBySession = Dictionary(grouping: exerciseRows, by: \.session_id)
 
-        return sessionRows.map { sessionRow in
-            let exercises = (exercisesBySession[sessionRow.id] ?? [])
+        return sessionRows.compactMap { sessionRow -> WorkoutSession? in
+            let exerciseRowsForSession = (exercisesBySession[sessionRow.id] ?? [])
                 .sorted { $0.order_index < $1.order_index }
-                .map { exerciseRow -> Exercise in
-                    let sets = (setsByExercise[exerciseRow.id] ?? [])
+            let exercises = exerciseRowsForSession
+                .compactMap { exerciseRow -> Exercise? in
+                    let setRowsForExercise = (setsByExercise[exerciseRow.id] ?? [])
                         .sorted { $0.set_index < $1.set_index }
-                        .map { setRow in
-                            ExerciseSet(
+                    let sets = setRowsForExercise
+                        .compactMap { setRow -> ExerciseSet? in
+                            // Unlike `weight_unit` / `load_type` — where an
+                            // unknown value has a sane neutral default (.kg,
+                            // .unknown) — there is no neutral rep count. The
+                            // domain model's `reps` is non-optional because a
+                            // set without one isn't a lighter set, it's an
+                            // unusable one, and `?? 0` would manufacture a
+                            // "0 reps" set that then feeds volume, PRs and the
+                            // next push.
+                            guard let reps = setRow.reps else {
+                                logger.error(
+                                    "dropping exercise_set with null reps: set=\(setRow.id, privacy: .public) exercise=\(setRow.exercise_id, privacy: .public)"
+                                )
+                                return nil
+                            }
+                            return ExerciseSet(
                                 id: setRow.id,
                                 setIndex: setRow.set_index,
                                 weight: setRow.weight,
                                 weightUnit: WeightUnit(rawValue: setRow.weight_unit) ?? .kg,
-                                reps: setRow.reps ?? 0,
+                                reps: reps,
                                 rpe: setRow.rpe
                             )
                         }
+                    if sets.isEmpty, !setRowsForExercise.isEmpty {
+                        logger.error(
+                            "dropping exercise whose every set was dirty: exercise=\(exerciseRow.id, privacy: .public) session=\(exerciseRow.session_id, privacy: .public)"
+                        )
+                        return nil
+                    }
                     return Exercise(
                         id: exerciseRow.id,
                         name: exerciseRow.name,
@@ -440,6 +476,12 @@ nonisolated enum CloudMapper {
                         sets: sets
                     )
                 }
+            if exercises.isEmpty, !exerciseRowsForSession.isEmpty {
+                logger.error(
+                    "dropping session whose every exercise was dirty: session=\(sessionRow.id, privacy: .public)"
+                )
+                return nil
+            }
             let date = CloudDate.day(from: sessionRow.workout_date) ?? Date()
             return WorkoutSession(
                 id: sessionRow.id,

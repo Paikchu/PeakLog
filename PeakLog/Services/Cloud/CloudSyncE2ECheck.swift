@@ -31,16 +31,21 @@ enum CloudSyncE2ECheck {
         log("initial pull done")
 
         // 3. Real mutation through the real service → LocalAppDatabase → onChange → push.
-        let marker = 41 + Int.random(in: 1...58)  // distinctive duration to find the row
+        // The row is identified by the id the service mints for it — a uuid
+        // that is also the cloud PK. An earlier version used the duration as a
+        // marker, which has only 58 possible values and is a field the user's
+        // own runs occupy, so a real 55-minute run could satisfy the check and
+        // (worse) be swept up by the cleanup below.
+        let createdId: String
         do {
-            _ = try await AppServices.workoutService.createRunningRecord(
-                workoutDate: Date(), durationMinutes: marker, distanceKm: 6.66, source: .manual
-            )
+            createdId = try await AppServices.workoutService.createRunningRecord(
+                workoutDate: Date(), durationMinutes: 42, distanceKm: 6.66, source: .manual
+            ).id
         } catch {
             log("FAIL mutation: \(error)")
             return
         }
-        log("created running record dur=\(marker)")
+        log("created running record id=\(createdId)")
 
         // 4. Read back from the cloud with an independent client.
         guard let client = sync.makeE2EDataClient(tokenProvider: auth.makeTokenProvider()) else {
@@ -50,8 +55,12 @@ enum CloudSyncE2ECheck {
         var found = false
         for attempt in 1...30 {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            let rows = (try? await client.fetch(RunningWorkoutRow.self, table: "running_workouts", query: [])) ?? []
-            if rows.contains(where: { $0.duration_minutes == marker }) {
+            let rows = (try? await client.fetch(
+                RunningWorkoutRow.self,
+                table: "running_workouts",
+                query: [URLQueryItem(name: "id", value: "eq.\(createdId)")]
+            )) ?? []
+            if rows.contains(where: { $0.id == createdId }) {
                 log("PASS row present in cloud after \(attempt) checks")
                 found = true
                 break
@@ -62,13 +71,12 @@ enum CloudSyncE2ECheck {
             log("FAIL row never appeared in cloud — sync diagnostics: error=\(diag?.error ?? "nil") pending=\(diag?.pending.description ?? "nil")")
         }
 
-        // 5. Clean up so the dev account is left empty. Expressed as a plain
-        // list-then-delete rather than a prune: a prune only destroys rows it
-        // has observed, which is the point of the prune, whereas "wipe the dev
-        // account" genuinely does mean "delete whatever is there".
-        if let listed = try? await client.listIds(table: "running_workouts") {
-            try? await client.deleteIds(table: "running_workouts", ids: listed.elements)
-        }
+        // 5. Clean up exactly the row this run created. An earlier version
+        // listed every id in `running_workouts` and deleted the lot — "leave
+        // the dev account empty" reads fine until the account being pointed at
+        // is somebody's real one, and PEAKLOG_DEV_EMAIL is just an env var. A
+        // check has no business deleting data it did not create.
+        try? await client.deleteIds(table: "running_workouts", ids: [createdId])
         log("done")
     }
 

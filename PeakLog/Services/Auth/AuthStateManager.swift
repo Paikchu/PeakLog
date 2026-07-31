@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 private struct AuthTokenProvider: TokenProviding {
     let auth: AuthStateManager
@@ -20,14 +21,22 @@ enum AuthGateState: Equatable {
 final class AuthStateManager: ObservableObject {
     @Published private(set) var state: AuthGateState = .checking
     @Published private(set) var isBusy = false
-    @Published var errorMessage: String?
+    /// Classified, already-redacted failure. `private(set)` so nothing outside
+    /// this type can inject an unclassified message (Issue #46).
+    @Published private(set) var displayError: AuthDisplayError?
+
+    /// Convenience for callers that just want the string. Derived, so there is
+    /// still exactly one place that decides what the user is told.
+    var errorMessage: String? { displayError?.localizedMessage }
+
+    private static let logger = Logger(subsystem: "com.max.PeakLog", category: "Auth")
 
     private let provider: AuthProviding
     private var eventTask: Task<Void, Never>?
     private var authenticationGeneration: UInt = 0
     private var acceptsProviderSignedInEvents = true
 
-    init(provider: AuthProviding = SupabaseAuthProvider()) {
+    init(provider: AuthProviding = SupabaseAuthProvider() ?? UnconfiguredAuthProvider()) {
         self.provider = provider
     }
 
@@ -67,7 +76,7 @@ final class AuthStateManager: ObservableObject {
 
         let generation = beginAuthenticationOperation()
         isBusy = true
-        errorMessage = nil
+        displayError = nil
         defer {
             if generation == authenticationGeneration {
                 isBusy = false
@@ -81,10 +90,10 @@ final class AuthStateManager: ObservableObject {
             state = .signedIn(user)
         } catch let error as AppAuthError {
             guard generation == authenticationGeneration else { return }
-            errorMessage = message(for: error)
+            report(error)
         } catch {
             guard generation == authenticationGeneration else { return }
-            errorMessage = message(for: .network)
+            report(.network)
         }
     }
 
@@ -94,13 +103,13 @@ final class AuthStateManager: ObservableObject {
 
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEmail.isEmpty, !password.isEmpty else {
-            errorMessage = String(localized: "auth.error.sign_in_failed")
+            displayError = .signInFailed
             return
         }
 
         let generation = beginAuthenticationOperation()
         isBusy = true
-        errorMessage = nil
+        displayError = nil
         defer {
             if generation == authenticationGeneration {
                 isBusy = false
@@ -114,33 +123,33 @@ final class AuthStateManager: ObservableObject {
             state = .signedIn(user)
         } catch let error as AppAuthError {
             guard generation == authenticationGeneration else { return }
-            errorMessage = message(for: error)
+            report(error)
         } catch {
             guard generation == authenticationGeneration else { return }
-            errorMessage = message(for: .network)
+            report(.network)
         }
     }
     #endif
 
     func clearSignInError() {
-        errorMessage = nil
+        displayError = nil
     }
 
     func reportAppleAuthorizationFailure() {
-        errorMessage = String(localized: "auth.error.apple_authorization_failed")
+        displayError = .appleAuthorizationFailed
     }
 
     func signOut() async {
         invalidateAuthenticationOperations()
         await provider.signOut()
-        errorMessage = nil
+        displayError = nil
         state = .signedOut
     }
 
     #if DEBUG
     func enterLocalMode() {
         invalidateAuthenticationOperations()
-        errorMessage = nil
+        displayError = nil
         state = .localOnly
     }
     #endif
@@ -191,18 +200,11 @@ final class AuthStateManager: ObservableObject {
         isBusy = false
     }
 
-    private func message(for error: AppAuthError) -> String? {
-        switch error {
-        case .invalidCredentials:
-            return String(localized: "auth.error.sign_in_failed")
-        case .network:
-            return String(localized: "auth.error.network")
-        case .notConfigured:
-            return String(localized: "auth.error.not_configured")
-        case .server:
-            return String(localized: "auth.error.sign_in_failed")
-        case .cancelled:
-            return nil
-        }
+    /// Classifies for the UI and keeps the unredacted error for the developer.
+    /// The raw text is logged `.private`, so it stays available in a local
+    /// debug session but is redacted in any log the device hands out.
+    private func report(_ error: AppAuthError) {
+        Self.logger.error("auth failure: \(String(describing: error), privacy: .private)")
+        displayError = AuthDisplayError(error)
     }
 }

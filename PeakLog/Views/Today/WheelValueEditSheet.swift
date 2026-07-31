@@ -80,8 +80,16 @@ struct WeightWheelEditSheet: View {
     @State private var whole: Int
     @State private var fractionIndex: Int
 
+    /// The wheel's integer rows. Normally `0...300`, but grown to cover an
+    /// out-of-range stored value so a real 320 kg lift stays selectable
+    /// instead of being silently rewritten to 300 on Done (Issue #49).
+    private let wholeRange: [Int]
+
     private static let fractionValues: [Double] = [0, 0.25, 0.5, 0.75]
-    private static let wholeRange = Array(0...300)
+    private static let defaultWholeUpperBound = 300
+    /// Hard ceiling so a corrupt value can't inflate the wheel into thousands
+    /// of rows; well above any plausible human load in kg or lb.
+    private static let maximumWholeUpperBound = 2_000
 
     init(
         allowsBodyweightToggle: Bool,
@@ -100,8 +108,17 @@ struct WeightWheelEditSheet: View {
 
         _isBodyweight = State(initialValue: allowsBodyweightToggle && initialWeight == nil)
         let baseline = initialWeight ?? lastTime?.weight ?? 20
-        _whole = State(initialValue: max(0, min(300, Int(baseline))))
+        // Both the stored value and the "last time" shortcut must be reachable,
+        // since tapping the hint writes straight into the selection.
+        let upperBound = Self.wholeUpperBound(covering: [initialWeight, lastTime?.weight])
+        self.wholeRange = Array(0...upperBound)
+        _whole = State(initialValue: max(0, min(upperBound, Int(baseline))))
         _fractionIndex = State(initialValue: Self.nearestFractionIndex(baseline))
+    }
+
+    private static func wholeUpperBound(covering values: [Double?]) -> Int {
+        let required = values.compactMap { $0 }.map { Int($0.rounded(.up)) }.max() ?? 0
+        return min(maximumWholeUpperBound, max(defaultWholeUpperBound, required))
     }
 
     private static func nearestFractionIndex(_ value: Double) -> Int {
@@ -150,7 +167,7 @@ struct WeightWheelEditSheet: View {
                 } else {
                     HStack(spacing: 2) {
                         Picker("", selection: $whole) {
-                            ForEach(Self.wholeRange, id: \.self) { value in
+                            ForEach(wholeRange, id: \.self) { value in
                                 Text("\(value)").tag(value)
                             }
                         }
@@ -188,7 +205,7 @@ struct WeightWheelEditSheet: View {
         }
         isBodyweight = false
         let value = lastTime.weight ?? 0
-        whole = max(0, min(300, Int(value)))
+        whole = max(0, min(wholeRange.last ?? Self.defaultWholeUpperBound, Int(value)))
         fractionIndex = Self.nearestFractionIndex(value)
     }
 }
@@ -203,6 +220,16 @@ struct RepsWheelEditSheet: View {
 
     @State private var reps: Int
 
+    /// Normally `1...50`, grown to cover an out-of-range stored value so a
+    /// persisted 80-rep set stays selectable rather than leaving the wheel on
+    /// a selection it can't render (Issue #49).
+    private let repsRange: ClosedRange<Int>
+
+    private static let defaultRepsUpperBound = 50
+    /// Hard ceiling so a corrupt value can't inflate the wheel into thousands
+    /// of rows.
+    private static let maximumRepsUpperBound = 500
+
     init(
         initialReps: Int,
         lastTime: SetDefaultsSuggestion?,
@@ -213,7 +240,17 @@ struct RepsWheelEditSheet: View {
         self.lastTime = lastTime
         self.onDone = onDone
         self.onCancel = onCancel
-        _reps = State(initialValue: initialReps > 0 ? initialReps : (lastTime?.reps ?? 8))
+        // Both the stored value and the "last time" shortcut must be reachable,
+        // since tapping the hint writes straight into the selection.
+        let upperBound = Self.repsUpperBound(covering: [initialReps, lastTime?.reps])
+        self.repsRange = 1...upperBound
+        let baseline = initialReps > 0 ? initialReps : (lastTime?.reps ?? 8)
+        _reps = State(initialValue: min(max(1, baseline), upperBound))
+    }
+
+    private static func repsUpperBound(covering values: [Int?]) -> Int {
+        let required = values.compactMap { $0 }.max() ?? 0
+        return min(maximumRepsUpperBound, max(defaultRepsUpperBound, required))
     }
 
     var body: some View {
@@ -221,14 +258,16 @@ struct RepsWheelEditSheet: View {
             titleKey: "chat.exercise.edit_reps",
             lastTimeText: lastTime?.reps.map { "\($0)" },
             onLastTimeTap: {
-                if let lastReps = lastTime?.reps { reps = lastReps }
+                if let lastReps = lastTime?.reps {
+                    reps = min(max(1, lastReps), repsRange.upperBound)
+                }
             },
             onCancel: onCancel,
             onDone: { onDone(reps) }
         ) {
             HStack(spacing: 8) {
                 Picker("", selection: $reps) {
-                    ForEach(1...50, id: \.self) { value in
+                    ForEach(repsRange, id: \.self) { value in
                         Text("\(value)").tag(value)
                     }
                 }

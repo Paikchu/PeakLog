@@ -143,6 +143,45 @@ nonisolated enum ExerciseLibraryEngine {
             }
     }
 
+    /// The library definitions the user has already committed to today —
+    /// whatever today's plan lists, plus whatever has actually been logged.
+    /// Takes the plan day and the full session list as parameters rather than
+    /// reading them itself, so the caller can fetch once and so this stays
+    /// testable without a database.
+    static func todaysTrainedDefinitions(
+        library: [ExerciseDefinition],
+        todayPlanDay: TrainingPlanDay?,
+        sessions: [WorkoutSession],
+        today: Date,
+        calendar: Calendar = .current
+    ) -> [ExerciseDefinition] {
+        var definitions: [ExerciseDefinition] = []
+        for exercise in todayPlanDay?.exercises ?? [] {
+            if let definition = resolveDefinition(
+                name: exercise.exerciseName,
+                exerciseId: exercise.exerciseId,
+                in: library
+            ) {
+                definitions.append(definition)
+            }
+        }
+        let todaysSessions = sessions
+            .filter { calendar.isDate($0.date, inSameDayAs: today) }
+            .sorted { $0.createdAt < $1.createdAt }
+        for session in todaysSessions {
+            for exercise in session.exercises {
+                if let definition = resolveDefinition(
+                    name: exercise.name,
+                    exerciseId: exercise.exerciseId,
+                    in: library
+                ) {
+                    definitions.append(definition)
+                }
+            }
+        }
+        return definitions
+    }
+
     /// The full per-set breakdown (weight × reps for every set, in order)
     /// from the most recent session that included this exercise. Used to
     /// prefill a new set's weight/reps with what was actually done last time,
@@ -249,15 +288,25 @@ final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
         todaysSelections: [ExerciseDefinition],
         limit: Int = 8
     ) async -> [ExerciseDefinition] {
+        // One read of each input per recommendation, taken here at the entry
+        // point rather than cached on the instance: caching in `init` would
+        // make a picker opened after a set was logged recommend against stale
+        // history. Everything below is a pure function of what was fetched.
         let library = await fetchLibrary()
         let sessions = await database.allStrengthSessions()
+        let todayPlanDay = await database.todayPlan()
         let today = Date()
 
         var combined: [String: ExerciseDefinition] = [:]
         for definition in todaysSelections {
             combined[definition.id] = definition
         }
-        for definition in await todaysTrainedDefinitions(library: library, today: today) {
+        for definition in ExerciseLibraryEngine.todaysTrainedDefinitions(
+            library: library,
+            todayPlanDay: todayPlanDay,
+            sessions: sessions,
+            today: today
+        ) {
             combined[definition.id] = definition
         }
 
@@ -270,36 +319,6 @@ final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
                 limit: limit
             )
         )
-    }
-
-    private func todaysTrainedDefinitions(
-        library: [ExerciseDefinition],
-        today: Date
-    ) async -> [ExerciseDefinition] {
-        var definitions: [ExerciseDefinition] = []
-        if let planDay = await database.todayPlan() {
-            for exercise in planDay.exercises {
-                if let definition = ExerciseLibraryEngine.resolveDefinition(
-                    name: exercise.exerciseName,
-                    exerciseId: exercise.exerciseId,
-                    in: library
-                ) {
-                    definitions.append(definition)
-                }
-            }
-        }
-        for session in await database.sessionsForDay(today) {
-            for exercise in session.exercises {
-                if let definition = ExerciseLibraryEngine.resolveDefinition(
-                    name: exercise.name,
-                    exerciseId: exercise.exerciseId,
-                    in: library
-                ) {
-                    definitions.append(definition)
-                }
-            }
-        }
-        return definitions
     }
 
     func addCustomExercise(

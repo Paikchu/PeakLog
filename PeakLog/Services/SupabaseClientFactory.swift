@@ -10,8 +10,11 @@ nonisolated struct SupabaseClientFactory: Sendable {
     private let authSession: URLSession
     private let apiSession: URLSession
 
+    /// No default for `config`: `SupabaseConfig.current` is optional now, and
+    /// deciding what to do when it is nil belongs to the caller (see
+    /// `UnconfiguredAuthProvider`), not to a silently substituted default.
     init(
-        config: SupabaseConfig = .current,
+        config: SupabaseConfig,
         authStorage: any AuthLocalStorage = ValidatingAuthLocalStorage(
             storage: KeychainLocalStorage(service: authStorageService)
         ),
