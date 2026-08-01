@@ -74,7 +74,7 @@ jobs:
       build_number: ${{ steps.resolve.outputs.build_number }}
       marketing_version: ${{ steps.resolve.outputs.marketing_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # 需要完整历史才能回答「这个 commit 在 main 上吗」。
           fetch-depth: 0
