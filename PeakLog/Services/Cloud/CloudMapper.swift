@@ -535,6 +535,15 @@ nonisolated enum CloudMapper {
         id.hasPrefix("custom-") ? String(id.dropFirst("custom-".count)) : id
     }
 
+    /// The inverse of `strippedCustomId`, for the one direction that did not
+    /// exist before: `record_deletions` names rows by their **cloud** id, and a
+    /// tombstone has to be matched against the local cache, where the same
+    /// custom exercise is keyed `custom-<uuid>`. Idempotent, so feeding it an
+    /// already-local id is harmless.
+    static func localCustomId(_ id: String) -> String {
+        id.hasPrefix("custom-") ? id : "custom-\(id)"
+    }
+
     /// A synthetic empty plan for a user with nothing in the cloud yet. Given a
     /// stable UUID so the first added day has a real plan to hang off of.
     static func emptyPlan() -> TrainingPlan {

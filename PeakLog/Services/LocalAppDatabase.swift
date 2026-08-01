@@ -111,6 +111,19 @@ nonisolated private struct LocalAppState: Codable, Sendable {
     /// `RecordDeletionLog` for why deletion is an explicit intent here rather
     /// than an absence inferred at push time (Issue #132).
     var pendingRecordDeletions: RecordDeletionLog
+    /// Newest `record_deletions.deleted_at` a completed pull has applied — the
+    /// cursor for the next incremental read of the server deletion log
+    /// (Issue #148). A **server** timestamp, so no device's clock can move it.
+    /// nil means "never read the log", which makes the next pull read the whole
+    /// retained window: the correct behaviour on a first sync and after a
+    /// reinstall alike.
+    var recordDeletionsSyncedThrough: Date?
+    /// Device-clock time of the last completed deletion-log pull. Diagnostics
+    /// only — nothing branches on it. It exists so the one degradation this
+    /// protocol has (a device offline longer than the server's retention window
+    /// never hears about deletions that expired meanwhile) shows up in the log
+    /// instead of only as records quietly coming back.
+    var recordDeletionsPulledAt: Date?
 
     init(
         ownerUserId: String? = nil,
@@ -124,7 +137,9 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         editEventSeq: Int64 = 0,
         hasUnpushedChanges: Bool = false,
         localMutationSeq: Int64 = 0,
-        pendingRecordDeletions: RecordDeletionLog = RecordDeletionLog()
+        pendingRecordDeletions: RecordDeletionLog = RecordDeletionLog(),
+        recordDeletionsSyncedThrough: Date? = nil,
+        recordDeletionsPulledAt: Date? = nil
     ) {
         self.ownerUserId = ownerUserId
         self.profile = profile
@@ -138,6 +153,8 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         self.hasUnpushedChanges = hasUnpushedChanges
         self.localMutationSeq = localMutationSeq
         self.pendingRecordDeletions = pendingRecordDeletions
+        self.recordDeletionsSyncedThrough = recordDeletionsSyncedThrough
+        self.recordDeletionsPulledAt = recordDeletionsPulledAt
     }
 
     // Custom decode keeps state files written before newer fields existed loadable.
@@ -164,14 +181,41 @@ nonisolated private struct LocalAppState: Codable, Sendable {
         // carried its deletions to the cloud and nothing is owed. If it was
         // dirty (`hasUnpushedChanges`) *because of a deletion*, that intent is
         // lost: the cloud row survives, and the first pull merges it back.
-        // Reconstructing it would mean inferring "deleted" from "in the cloud,
-        // not in my cache" one more time, which is the inference this whole
-        // change exists to remove — and getting it wrong destroys another
-        // device's rows permanently, whereas getting this wrong resurfaces a
-        // record the user can delete again. See the Issue #132 PR discussion.
+        //
+        // Reconstructing it is not merely risky, it is **not decidable from the
+        // data available**. The only signal is "this row is in the cloud and
+        // not in my cache", which has two explanations — this device deleted
+        // it, or another device added it after this cache's last read — and
+        // nothing in an old-format file distinguishes them. It holds no
+        // record of when it last read the cloud, and timestamps do not help:
+        // in the exact scenario Issue #132 is about, the other device's push
+        // is *older* than this device's local edit, so "my copy of the parent
+        // session is newer" is true for both explanations. Guessing wrong in
+        // one direction destroys another device's data permanently; guessing
+        // wrong in the other resurfaces a record the user deletes again. So
+        // the empty default stands, and this is a one-shot loss bounded to
+        // upgrades that happen mid-outbox.
+        //
+        // What Issue #148 changes is the *class*: from this version on the
+        // intent is also recorded server-side (an AFTER DELETE trigger writes
+        // `record_deletions`), so once a deletion has been pushed even once it
+        // no longer depends on this file surviving — a reinstall, a corrupt
+        // state file or a future format change cannot lose it, and every other
+        // device is told about it. The local state file has stopped being the
+        // single point of failure for deletion intent; it just cannot answer
+        // for deletions that predate it being asked.
         pendingRecordDeletions = try container.decodeIfPresent(
             RecordDeletionLog.self, forKey: .pendingRecordDeletions
         ) ?? RecordDeletionLog()
+        // Absent before Issue #148. nil is both the correct default and the
+        // safe one: it makes the next pull read the entire retained tombstone
+        // window rather than assuming this cache is already caught up.
+        recordDeletionsSyncedThrough = try container.decodeIfPresent(
+            Date.self, forKey: .recordDeletionsSyncedThrough
+        )
+        recordDeletionsPulledAt = try container.decodeIfPresent(
+            Date.self, forKey: .recordDeletionsPulledAt
+        )
     }
 }
 
@@ -1420,8 +1464,8 @@ actor LocalAppDatabase {
         state.runningRecords = runningRecords
         state.customExercises = customExercises
         state.goalSpec = goalSpec
+        applyPendingRecordDeletionsToState()
         sanitizePlanCompletionLinks()
-        reconcileRecordDeletionsWithMergedState()
         recalculateDerivedProfile()
         if (try? writeStateToDisk()) != nil {
             lastPersistedState = state
@@ -1453,13 +1497,20 @@ actor LocalAppDatabase {
     /// Like `replaceAll`, this does NOT fire `onChange`: it is the sync
     /// writing in, not the user mutating, so a pull never echoes back as a
     /// push.
+    ///
+    /// `remoteDeletions` carries the tombstones a pull read out of the
+    /// server-side `record_deletions` log. They are applied *after* the merge,
+    /// unconditionally — see `noteRemoteRecordDeletions`. nil means "this merge
+    /// did not read the log", which is not the same as "the log was empty":
+    /// only a real read may record that the cache is up to date with it.
     func mergeFromCloud(
         profile: UserProfile,
         activePlan: TrainingPlan,
         strengthSessions: [WorkoutSession],
         runningRecords: [RunningWorkoutRecord],
         customExercises: [ExerciseDefinition],
-        goalSpec: GoalSpec?
+        goalSpec: GoalSpec?,
+        remoteDeletions: RemoteRecordDeletions? = nil
     ) {
         let ownerUserId = state.ownerUserId
         state.profile = profile
@@ -1476,8 +1527,9 @@ actor LocalAppDatabase {
         )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
         state.goalSpec = goalSpec
+        if let remoteDeletions { noteRemoteRecordDeletions(remoteDeletions) }
+        applyPendingRecordDeletionsToState()
         sanitizePlanCompletionLinks()
-        reconcileRecordDeletionsWithMergedState()
         // pendingEditEvents / editEventSeq deliberately untouched (EV1).
         recalculateDerivedProfile()
         if (try? writeStateToDisk()) != nil {
@@ -1510,7 +1562,8 @@ actor LocalAppDatabase {
     func mergeCloudRecordsPreservingLocalState(
         strengthSessions: [WorkoutSession],
         runningRecords: [RunningWorkoutRecord],
-        customExercises: [ExerciseDefinition]
+        customExercises: [ExerciseDefinition],
+        remoteDeletions: RemoteRecordDeletions? = nil
     ) {
         let ownerUserId = state.ownerUserId
         state.strengthSessions = mergeRecords(
@@ -1524,8 +1577,9 @@ actor LocalAppDatabase {
             tombstoned: state.pendingRecordDeletions.runningRecords
         )
         state.customExercises = mergeCustomExercises(cloud: customExercises, local: state.customExercises)
+        if let remoteDeletions { noteRemoteRecordDeletions(remoteDeletions) }
+        applyPendingRecordDeletionsToState()
         sanitizePlanCompletionLinks()
-        reconcileRecordDeletionsWithMergedState()
         recalculateDerivedProfile()
         if (try? writeStateToDisk()) != nil {
             lastPersistedState = state
@@ -1534,21 +1588,87 @@ actor LocalAppDatabase {
         }
     }
 
+    /// Applies one pull's worth of *server* tombstones and advances the cursor.
+    ///
+    /// Called from inside the merge functions, after the merge and before the
+    /// plan-link sanitiser, so the write is atomic with the merge it belongs
+    /// to: the cursor can never move without the rows it accounts for being
+    /// gone, and a crash mid-pull re-reads the same window rather than skipping
+    /// it.
+    ///
+    /// Unconditional — no `updatedAt` comparison against the local copy. That
+    /// is delete-wins (see `RecordDeletionLog`): the tombstone means the row is
+    /// gone from the cloud, so a local edit to it has nowhere left to land, and
+    /// keeping the row would only mean re-upserting a record the user deleted
+    /// on their other device. The direction matters more than the rule: this
+    /// drops rows from the *cache*, never from the cloud, so the worst outcome
+    /// of a wrong tombstone is a re-pull, while the worst outcome of ignoring a
+    /// right one is the deletion silently undone.
+    ///
+    /// Does not touch `pendingRecordDeletions`: those are *this* device's
+    /// unpushed intents. A server tombstone needs no re-sending — the row it
+    /// names is already gone from the cloud.
+    private func noteRemoteRecordDeletions(_ remote: RemoteRecordDeletions) {
+        applyRecordDeletionsToState(remote.log)
+        // Advanced only when the read got all the way through (the loader
+        // returns nil otherwise), and only forwards: an out-of-order or
+        // clock-skewed value must never rewind a cursor past deletions this
+        // cache has already accounted for.
+        if let newest = remote.newestDeletedAt,
+           newest > (state.recordDeletionsSyncedThrough ?? .distantPast) {
+            state.recordDeletionsSyncedThrough = newest
+        }
+        state.recordDeletionsPulledAt = Date()
+    }
+
+    /// The cursor for the next incremental read of `record_deletions`, plus
+    /// when the last one completed. Read by `CloudSyncCoordinator` before a
+    /// pull.
+    func recordDeletionSyncState() -> (syncedThrough: Date?, pulledAt: Date?) {
+        (state.recordDeletionsSyncedThrough, state.recordDeletionsPulledAt)
+    }
+
     /// Restores the "never upsert and delete the same id in one push"
-    /// invariant after a write that bypassed `persist()`.
+    /// invariant after a write that bypassed `persist()` — by applying the
+    /// pending deletions to the merged state, not by abandoning them.
     ///
     /// `persist()` keeps that invariant for user mutations (see
     /// `RecordDeletionLog.advanced`), but a cloud merge writes straight to
     /// disk, and record merging resolves last-write-wins per *session*: a
-    /// session whose cloud copy is newer is adopted whole, which can carry
-    /// back an exercise or set this device deleted out of it. Once LWW has
-    /// ruled the other device's edit newer, the stale deletion intent has to
-    /// go — otherwise the next push would write those rows and then delete
-    /// them.
-    private func reconcileRecordDeletionsWithMergedState() {
+    /// session whose cloud copy is newer is adopted whole, which carries back
+    /// an exercise or set this device deleted out of it.
+    ///
+    /// This used to resolve that by dropping the tombstone — update-wins. That
+    /// was the local half of Issue #148's gap 3: the same conflict got
+    /// update-wins here and delete-wins in the database, whose `ON DELETE
+    /// CASCADE` destroys children when a parent goes. Two rules for one
+    /// conflict is not a policy, it is a coin flip whose outcome depends on
+    /// which side of the sync you ask.
+    ///
+    /// It is delete-wins now, on both sides. The tombstone stands and the
+    /// resurrected rows are stripped back out of the merged state, so the
+    /// invariant holds the other way round: the id is neither upserted nor in
+    /// conflict, because it is not in the state at all. Note that this only
+    /// ever concerns rows *this device's user* deleted — an explicit intent,
+    /// arriving after the edit it competes with was already recorded.
+    ///
+    /// A real un-delete (the user re-creating a record that still carries a
+    /// tombstoned id) is unaffected: that goes through `persist()`, where
+    /// `advanced` clears the tombstone because the id is present in the state
+    /// the user just wrote.
+    private func applyPendingRecordDeletionsToState() {
         guard !state.pendingRecordDeletions.isEmpty else { return }
-        state.pendingRecordDeletions = state.pendingRecordDeletions
-            .clearingIdsPresent(in: RecordIdentitySet(state: state))
+        applyRecordDeletionsToState(state.pendingRecordDeletions)
+    }
+
+    /// Removes every row a `RecordDeletionLog` names from the cache, cascading
+    /// parent → children exactly as the database does. Used for both the local
+    /// pending log and the tombstones a pull read out of `record_deletions`.
+    private func applyRecordDeletionsToState(_ deletions: RecordDeletionLog) {
+        guard !deletions.isEmpty else { return }
+        state.strengthSessions = deletions.applied(toSessions: state.strengthSessions)
+        state.runningRecords = deletions.applied(toRunningRecords: state.runningRecords)
+        state.customExercises = deletions.applied(toCustomExercises: state.customExercises)
     }
 
     private func sanitizePlanCompletionLinks() {

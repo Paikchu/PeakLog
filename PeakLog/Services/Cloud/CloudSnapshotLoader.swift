@@ -152,6 +152,72 @@ nonisolated struct CloudSnapshotLoader: Sendable {
         )
     }
 
+    /// Reads the server-side deletion log — the inbound half of the deletion
+    /// protocol (Issue #148). Separate from `load` because it is the one read
+    /// whose *absence* of rows is meaningful ("nothing new was deleted") and
+    /// because it is incremental, while everything in `load` is a full read.
+    ///
+    /// One paged read per table rather than one over the whole log: the primary
+    /// key is `(user_id, table_name, id)`, so `id` is unique only within a
+    /// table, and `fetchAllPages` cursors on `id`. Scoping each scan to a
+    /// single `table_name` is what makes that cursor sound; running the five
+    /// concurrently costs the same wall clock as one.
+    ///
+    /// - Parameter cursor: the newest `deleted_at` a previous pull got all the
+    ///   way through, or nil to read the whole retained window (first sync, or
+    ///   a reinstall). The scan starts `RemoteRecordDeletions.cursorOverlap`
+    ///   before it — see there for why a strict `>` would lose rows.
+    func loadRecordDeletions(since cursor: Date?) async throws -> RemoteRecordDeletions {
+        var filters: [URLQueryItem] = []
+        if let cursor {
+            let from = cursor.addingTimeInterval(-RemoteRecordDeletions.cursorOverlap)
+            filters.append(URLQueryItem(
+                name: "deleted_at",
+                value: "gte.\(CloudDate.timestampString(from: from))"
+            ))
+        }
+
+        let client = self.client
+        let pages = try await withThrowingTaskGroup(of: CloudPagedResult<RecordDeletionRow>.self) { group in
+            for table in RecordDeletionLog.syncedCloudTables {
+                group.addTask {
+                    try await client.fetchAllPages(
+                        RecordDeletionRow.self,
+                        table: "record_deletions",
+                        query: filters + [URLQueryItem(name: "table_name", value: "eq.\(table)")],
+                        key: { $0.id }
+                    )
+                }
+            }
+            var collected: [CloudPagedResult<RecordDeletionRow>] = []
+            for try await page in group { collected.append(page) }
+            return collected
+        }
+
+        var log = RecordDeletionLog()
+        var newest: Date?
+        for row in pages.flatMap(\.elements) {
+            log.insertCloudId(
+                row.id,
+                table: row.table_name,
+                customExerciseLocalId: CloudMapper.localCustomId
+            )
+            if let stamp = CloudDate.timestamp(from: row.deleted_at),
+               stamp > (newest ?? .distantPast) {
+                newest = stamp
+            }
+        }
+
+        // The cursor may only advance on a read that reached EOF everywhere.
+        // A truncated page is a prefix ordered by `id`, not by `deleted_at`, so
+        // its newest timestamp says nothing about what the unread tail holds —
+        // storing it would skip real tombstones permanently. Applying what did
+        // arrive is still correct (a tombstone is true whenever it is seen);
+        // only the "I am caught up" claim is withheld.
+        let isComplete = pages.allSatisfy(\.isComplete)
+        return RemoteRecordDeletions(log: log, newestDeletedAt: isComplete ? newest : nil)
+    }
+
     /// A no-op (empty result, no request) when there's no active plan yet —
     /// e.g. a brand-new user — rather than fetching unscoped and risking rows
     /// from some other plan. Reported complete, because "this plan has no
