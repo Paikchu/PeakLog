@@ -94,9 +94,9 @@ jobs:
     steps:
       # Clean checkout, no cache, no restored state: whatever passes here
       # passed against the committed tree and nothing else.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Pinned to an LTS major rather than following the runner default, so
           # a green build does not change runtime underneath us when GitHub
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: denoland/setup-deno@v2
         with:
@@ -363,13 +363,13 @@ jobs:
       # "NOT VERIFIED" — never as a version that happened to be blank.
       version: ${{ steps.verify.outputs.deployed_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Full history: a workflow_dispatch run may name an older commit
           # (e.g. verifying that a rollback landed on the previously-good one).
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 

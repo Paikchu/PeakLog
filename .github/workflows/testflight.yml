@@ -180,7 +180,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # checkout 默认取的就是本次 run 的 ref，和 guard/validate-* 是同一个 commit。
       # 但「默认应该是」和「确实是」之间的差别，正是这个 issue 的全部内容，所以显式断言一次。
