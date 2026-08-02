@@ -78,7 +78,7 @@ enum PlanExerciseFormItem: Identifiable, Equatable, Sendable {
     }
 }
 
-struct PlanExerciseDraft: Equatable, Sendable {
+nonisolated struct PlanExerciseDraft: Equatable, Sendable {
     struct SetDraft: Equatable, Sendable {
         var targetWeight: Double?
         var targetWeightUnit: WeightUnit

@@ -62,6 +62,7 @@
 | SDK select/filter/order/limit、13 表写入、bulk-null、ignore-duplicates、scoped prune、503/520 retry 与错误映射 | `PeakLogTests/SupabaseDataClientTests.swift` | 主路径、网络失败、权限拒绝 |
 | replan typed Functions 调用及全部 Outcome/HTTP/解码失败 | `PeakLogTests/PlanReplanServiceTests.swift` | 主路径、网络失败、权限拒绝 |
 | 欠推送冷启动保持本地编辑、合并跨端记录；网络失败不 prune | `PeakLogTests/CloudPushFirstGuardTests.swift` | 主路径、网络失败、迁移后兼容性 |
+| 账号直接切换（A→B 无登出）的会话代际边界：交接串行、迟到回调丢弃；且 coordinator 持有的状态回调对 controller 是弱捕获，controller 不被自己的同步循环续命 | `tests/cloud_session_handoff_test.swift`（编译命令见文件头注释） | 主路径、重复提交、网络失败 |
 | 快照分页读满 1001/2001 行、截断快照禁止 prune、分页中途失败零 DELETE、删除 URL 分批 | `tests/cloud_pagination_test.swift`、`PeakLogTests/SupabaseDataClientTests.swift` | 主路径、网络失败、迁移后兼容性 |
 | 分页扫描期间在 cursor 之前落地的并发插入不可被 prune 删除（未观测到的行不进删除集） | `tests/cloud_pagination_test.swift` | 主路径、网络失败 |
 | A/B 双设备交错新增·更新·删除：陈旧快照 push 不删除对端新增（workout / exercise / set / running / custom exercise） | `tests/cloud_record_deletion_sync_test.swift` | 主路径、网络失败、重复提交 |

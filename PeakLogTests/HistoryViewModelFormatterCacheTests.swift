@@ -22,8 +22,13 @@ final class HistoryViewModelFormatterCacheTests: XCTestCase {
     private var database: LocalAppDatabase!
     private var viewModel: HistoryViewModel!
 
-    override func setUp() {
-        super.setUp()
+    // `setUp()`/`tearDown()` are the `async throws` variants, not the sync ones:
+    // the sync overrides are nonisolated on `XCTestCase`, so a `@MainActor` test
+    // case cannot touch its own main-actor properties in them under the Swift 6
+    // language mode. The async variants may carry the class's isolation
+    // (issue #137).
+    override func setUp() async throws {
+        try await super.setUp()
         databaseFileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("history-formatter-cache-tests-\(UUID().uuidString).json")
         database = LocalAppDatabase(fileURL: databaseFileURL)
@@ -33,9 +38,9 @@ final class HistoryViewModelFormatterCacheTests: XCTestCase {
         )
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: databaseFileURL)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testCalendarDaysAndWeekDaysMarkTodayAsWorkedOutAfterLoadCalendar() async throws {

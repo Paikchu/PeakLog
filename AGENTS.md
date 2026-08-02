@@ -37,6 +37,11 @@
 - 保持 Agent 原生：由 prompt、工具调用与结构化输出驱动决策；不以硬编码条件或表达式匹配替代模型判断。
 - Agent 方案先调研当前最佳实践；涉及模型能力、工具调用或 Supabase AI 能力时，使用官方资料验证。
 - iOS 与 Supabase 的契约同时演进：Schema、RLS、Edge Function、客户端模型和错误状态必须一致。
+- iOS target 跑 **Swift 6 language mode**，且 `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`——App 里**没写隔离标注的声明默认是 `@MainActor`**（Issue #137）。由此有三条常踩的规则：
+  - `nonisolated` 只作用于它所在的那一个声明。给类型加了 `nonisolated` **不会**传染到它的 `extension`；DTO / 纯模型的 `init(from:)`、`Equatable`、静态工具方法写在 extension 里时，extension 自己也要写 `nonisolated`，否则会变成主线程隔离，跨 actor 解码直接编译不过。
+  - 会被后台 actor 或 `async let` 用到的类型（cloud DTO、service 协议、纯函数工具）显式写 `nonisolated`（协议再按需 `: Sendable`），不要依赖推断。
+  - 需要跨并发域共享可变状态时用锁把它包起来（仓库既有写法：`NSLock` + `@unchecked Sendable`），不要用 `nonisolated(unsafe)` 压制诊断——那只是关掉检查，不是让它安全。
+- 仓库源码保持零 Swift 告警：CI（`.github/workflows/ios.yml`）会扫 `xcodebuild` 日志，`PeakLog*/` 下出现任何 warning 即判失败。
 - 不提交密钥、Service Role Key、用户数据或本地配置；通过环境变量、Secrets 或 Keychain 注入。
 - 默认在功能分支开发。只有通过本地验收、PR 审查且获得合并授权后，才合并到 `main`。
 

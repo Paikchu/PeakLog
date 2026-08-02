@@ -78,7 +78,11 @@ struct ExerciseThumbnailView: View {
 /// Decoding a 180×180 JPEG per row on every scroll tick is wasteful when the
 /// picker revisits the same rows constantly, so decoded posters are held in an
 /// NSCache that the system can evict under pressure.
-final class ExerciseThumbnailCache: @unchecked Sendable {
+/// `nonisolated`: `NSCache` is documented as thread-safe, and the whole point of
+/// `image(for:)` is to decode off the main thread. Leaving the type on the
+/// module's default `@MainActor` isolation would make the cache main-actor state
+/// that the detached decode task cannot legally touch.
+nonisolated final class ExerciseThumbnailCache: @unchecked Sendable {
     static let shared = ExerciseThumbnailCache()
 
     private let cache = NSCache<NSString, UIImage>()
@@ -99,8 +103,7 @@ final class ExerciseThumbnailCache: @unchecked Sendable {
     func image(for mediaId: String?) async -> UIImage? {
         guard let mediaId else { return nil }
         if let hit = cache.object(forKey: mediaId as NSString) { return hit }
-        let cache = self.cache
-        return await Task.detached(priority: .utility) {
+        return await Task.detached(priority: .utility) { [self] in
             guard let url = ExerciseMedia.thumbnailURL(for: mediaId),
                   let image = UIImage(contentsOfFile: url.path)
             else {

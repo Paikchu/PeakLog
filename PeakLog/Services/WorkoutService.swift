@@ -1,6 +1,13 @@
 import Foundation
 
-protocol WorkoutServiceProtocol {
+/// `nonisolated` + `Sendable`: every implementation is a thin async facade over
+/// the `LocalAppDatabase` actor, so nothing here belongs on the main actor.
+/// Stating that explicitly is what lets the view models fan requests out with
+/// `async let` (see `HistoryViewModel.loadSessionsForSelectedDateSilently`) —
+/// under the module's default `@MainActor` isolation the service would be
+/// main-actor-isolated non-`Sendable` state that cannot leave the main actor,
+/// and the concurrent load would not compile in the Swift 6 language mode.
+nonisolated protocol WorkoutServiceProtocol: Sendable {
     func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func addSet(sessionId: String, exerciseId: String, weight: Double?, weightUnit: WeightUnit, reps: Int) async throws -> ExerciseSet
     func deleteSet(sessionId: String, exerciseId: String, setId: String) async throws
@@ -23,7 +30,7 @@ protocol WorkoutServiceProtocol {
     ) async throws -> CardioWorkoutRecord
 }
 
-extension WorkoutServiceProtocol {
+nonisolated extension WorkoutServiceProtocol {
     func createCardioRecord(
         workoutDate: Date,
         metrics: CardioMetrics,
@@ -41,7 +48,7 @@ extension WorkoutServiceProtocol {
     }
 }
 
-final class LocalWorkoutService: WorkoutServiceProtocol {
+nonisolated final class LocalWorkoutService: WorkoutServiceProtocol {
     private let database: LocalAppDatabase
 
     init(database: LocalAppDatabase) {

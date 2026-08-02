@@ -202,7 +202,13 @@ nonisolated struct TrainingPlan: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-extension TrainingPlan {
+// `nonisolated` has to be repeated here: the keyword on the `TrainingPlan`
+// declaration covers that declaration's own body, not a separate extension, so
+// under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` this `init(from:)` would
+// default to `@MainActor` and make the `Decodable` conformance cross actors
+// (an error in the Swift 6 language mode). Decoding runs on whatever thread the
+// cache read or sync pull is on, so main-actor isolation would be wrong anyway.
+nonisolated extension TrainingPlan {
     // Custom decode (in an extension, so the memberwise initializer is still
     // synthesized for the many call sites that build a plan directly) tolerates
     // a missing `revision` key in older on-disk caches. Encode stays synthesized.

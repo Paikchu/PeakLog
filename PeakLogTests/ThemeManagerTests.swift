@@ -7,18 +7,18 @@ final class ThemeManagerTests: XCTestCase {
     private var suiteName = ""
     private var defaults: UserDefaults!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         // An isolated suite per test: the real appearance choice lives in
         // `.standard` and must not be read or clobbered by tests.
         suiteName = "peaklog.theme-manager-tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - Startup resolution

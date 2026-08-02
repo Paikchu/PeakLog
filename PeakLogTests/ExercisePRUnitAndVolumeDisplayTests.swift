@@ -16,16 +16,21 @@ final class ExercisePRUnitAndVolumeDisplayTests: XCTestCase {
     private var databaseFileURL: URL!
     private var database: LocalAppDatabase!
 
-    override func setUp() {
-        super.setUp()
+    // `setUp()`/`tearDown()` are the `async throws` variants, not the sync ones:
+    // the sync overrides are nonisolated on `XCTestCase`, so a `@MainActor` test
+    // case cannot touch its own main-actor properties in them under the Swift 6
+    // language mode. The async variants may carry the class's isolation
+    // (issue #137).
+    override func setUp() async throws {
+        try await super.setUp()
         databaseFileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("exercise-pr-unit-tests-\(UUID().uuidString).json")
         database = LocalAppDatabase(fileURL: databaseFileURL)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: databaseFileURL)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - Issue #3: PR unit normalization

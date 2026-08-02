@@ -6,15 +6,20 @@ final class TodayWorkoutFocusFlowTests: XCTestCase {
     private var defaults: UserDefaults!
     private let suiteName = "TodayWorkoutFocusFlowTests"
 
-    override func setUp() {
-        super.setUp()
+    // `setUp()`/`tearDown()` are the `async throws` variants, not the sync ones:
+    // the sync overrides are nonisolated on `XCTestCase`, so a `@MainActor` test
+    // case cannot touch its own main-actor properties in them under the Swift 6
+    // language mode. The async variants may carry the class's isolation
+    // (issue #137).
+    override func setUp() async throws {
+        try await super.setUp()
         defaults = UserDefaults(suiteName: suiteName)
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func makeViewModel() -> TodayWorkoutViewModel {

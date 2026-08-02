@@ -583,6 +583,10 @@ private enum CloudSyncError: LocalizedError {
 }
 
 /// Minimal projection for the revision guard's single-column probe.
-private struct TrainingPlanRevisionRow: Decodable, Sendable {
+///
+/// `nonisolated` like every other cloud DTO: it is decoded on the sync actor,
+/// so leaving it on the file's default `@MainActor` isolation would make the
+/// `Decodable` conformance unusable there.
+private nonisolated struct TrainingPlanRevisionRow: Decodable, Sendable {
     let revision: Int
 }
