@@ -4,8 +4,10 @@ struct ProfileScreen: View {
     @StateObject private var viewModel: ProfileViewModel
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject private var localizationManager: LocalizationManager
+    @EnvironmentObject private var reminderScheduler: TrainingReminderScheduler
     @Environment(\.openURL) private var openURL
     @State private var showingWeightUnitPicker = false
+    @State private var showingReminderTimePicker = false
     @State private var showingAppearancePicker = false
     @State private var showingGoalSpecEditor = false
     @State private var showingHelp = false
@@ -57,11 +59,21 @@ struct ProfileScreen: View {
         .task {
             await viewModel.loadProfile()
             await viewModel.loadGoalSpec()
+            // The system authorization can be revoked in iOS Settings while the
+            // app is suspended, so re-read it every time this screen opens
+            // rather than trusting whatever the last schedule pass observed.
+            await reminderScheduler.refresh()
         }
+        // The switch reflects the *effective* state: the stored preference is
+        // only half of it, and a preference of `true` without system permission
+        // (the state every fresh install starts in) delivers nothing.
         .onChange(of: viewModel.profile?.preferences.notificationsEnabled, initial: true) { _, newValue in
             if let newValue {
-                notificationsOptimistic = newValue
+                notificationsOptimistic = newValue && reminderScheduler.isSystemAuthorized
             }
+        }
+        .onChange(of: reminderScheduler.isSystemAuthorized, initial: true) { _, isAuthorized in
+            notificationsOptimistic = (viewModel.profile?.preferences.notificationsEnabled ?? false) && isAuthorized
         }
         .alert("common.error_title", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
@@ -70,6 +82,12 @@ struct ProfileScreen: View {
             Button("common.ok", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .sheet(isPresented: $showingReminderTimePicker) {
+            ReminderTimePickerSheet(initial: reminderScheduler.reminderTime) { time in
+                await reminderScheduler.setReminderTime(time)
+            }
+            .appAppearance()
         }
         .sheet(isPresented: $showingGoalSpecEditor) {
             GoalSpecEditorScreen(
@@ -276,19 +294,63 @@ struct ProfileScreen: View {
                             let previous = notificationsOptimistic
                             notificationsOptimistic = newValue
                             Task {
-                                await viewModel.toggleNotifications()
-                                // If the save didn't actually land on the value we
-                                // optimistically showed (failure, or a race with
-                                // another update), roll the switch back.
+                                // Turning the switch on without system authorization
+                                // would leave it showing "on" while nothing can ever
+                                // be delivered, so the permission gate comes first
+                                // and a refusal rolls the switch straight back. The
+                                // preference is still saved as `true` in that case:
+                                // the user did ask for reminders, iOS is what's
+                                // blocking them, and the hint below says so.
+                                await viewModel.setNotificationsEnabled(newValue)
                                 if viewModel.profile?.preferences.notificationsEnabled != newValue {
+                                    // The save didn't land on the value we optimistically
+                                    // showed (failure, or a race with another update).
                                     notificationsOptimistic = previous
+                                    return
                                 }
+                                if newValue, !(await reminderScheduler.requestAuthorizationIfNeeded()) {
+                                    notificationsOptimistic = false
+                                }
+                                await reminderScheduler.refresh()
                             }
                         }
                     ),
                     isLoading: viewModel.isSaving,
                     style: .profile
                 )
+
+                // Shown when the user wants reminders but iOS is what's blocking
+                // them — not when they simply switched reminders off themselves.
+                if (viewModel.profile?.preferences.notificationsEnabled ?? false)
+                    && reminderScheduler.isSystemAuthorizationDenied {
+                    Text("profile.preferences.notifications.denied")
+                        .appFont(size: 13)
+                        .foregroundColor(.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                }
+
+                // The reminder time only means anything while reminders are on,
+                // so it stays out of the list rather than sitting there as a
+                // row that changes nothing.
+                if notificationsOptimistic {
+                    Divider()
+                        .background(Color.appSeparator)
+                        .padding(.leading, 48)
+
+                    PreferenceNavRow(
+                        icon: "clock",
+                        title: "profile.preferences.reminder_time",
+                        detail: reminderScheduler.reminderTime.localizedDisplay(
+                            locale: localizationManager.locale
+                        ),
+                        style: .profile
+                    ) {
+                        showingReminderTimePicker = true
+                    }
+                }
 
                 Divider()
                     .background(Color.appSeparator)
@@ -478,12 +540,23 @@ private struct ProfileInfoSheet: View {
     ProfileScreen()
         .environmentObject(previewThemeManager(.dark))
         .environmentObject(LocalizationManager())
+        .environmentObject(previewReminderScheduler())
 }
 
 #Preview("Light") {
     ProfileScreen()
         .environmentObject(previewThemeManager(.light))
         .environmentObject(LocalizationManager())
+        .environmentObject(previewReminderScheduler())
+}
+
+/// Previews get a scheduler wired to a throwaway defaults suite so opening
+/// one can't overwrite the real reminder time.
+@MainActor
+private func previewReminderScheduler() -> TrainingReminderScheduler {
+    TrainingReminderScheduler(
+        defaults: UserDefaults(suiteName: "peaklog.preview") ?? .standard
+    )
 }
 
 @MainActor

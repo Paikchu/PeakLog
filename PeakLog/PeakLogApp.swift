@@ -8,6 +8,7 @@ struct PeakLogApp: App {
     @StateObject private var localizationManager = LocalizationManager()
     @StateObject private var authManager: AuthStateManager
     @StateObject private var syncController: CloudSyncController
+    @StateObject private var reminderScheduler = TrainingReminderScheduler()
 
     init() {
         // No resolvable endpoint means the build is misconfigured; launch into
@@ -28,6 +29,7 @@ struct PeakLogApp: App {
                 .environmentObject(localizationManager)
                 .environmentObject(syncController)
                 .environmentObject(authManager)
+                .environmentObject(reminderScheduler)
                 .environment(\.locale, localizationManager.locale)
                 .rootAppearance(themeManager)
                 .task {
@@ -51,6 +53,27 @@ struct PeakLogApp: App {
                     // after launch is lost rather than merely deferred.
                     guard case .signedIn = authManager.state else { return }
                     syncController.onForeground()
+                }
+                // Training reminders can only be *pre*-scheduled — iOS runs no
+                // code of ours at delivery time — so every pending request is
+                // rebuilt from the current plan whenever the app crosses the
+                // foreground boundary. `.background` matters as much as
+                // `.active`: leaving the app right after a workout is exactly
+                // when today's now-pointless reminder has to be dropped.
+                // Deliberately not gated on the auth state — reminders are
+                // device-local and apply in local-only mode too.
+                .onChange(of: scenePhase, initial: true) { _, newPhase in
+                    guard newPhase == .active || newPhase == .background else { return }
+                    Task { await reminderScheduler.refresh() }
+                }
+                // A pull landing (`isPreparingSession` falling back to false)
+                // is the other moment the plan can change under us, and on cold
+                // launch it happens *after* the scene is already active — so
+                // without this the first foreground schedule would be built
+                // from the pre-pull cache and never revisited.
+                .onChange(of: syncController.isPreparingSession) { _, isPreparing in
+                    guard !isPreparing else { return }
+                    Task { await reminderScheduler.refresh() }
                 }
         }
     }
