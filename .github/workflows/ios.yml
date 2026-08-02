@@ -147,7 +147,42 @@ jobs:
             -parallel-testing-enabled NO \
             -disable-concurrent-destination-testing \
             -disableAutomaticPackageResolution \
-            -skipMacroValidation
+            -skipMacroValidation \
+            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      # Issue #137：语言模式切到 Swift 6 之后，真正的并发违规已经是编译错误，上一步
+      # 就会失败。这一步守的是剩下那一半——仍然只是 *warning* 的并发诊断（例如
+      # `nonisolated(unsafe)` 无效、`@Sendable` 闭包捕获），以及任何别的新增告警。
+      # 它们不会让 xcodebuild 返回非零，于是会一条条累积下去，直到某次依赖或 Xcode
+      # 升级把它们一起变成错误——那正是 #137 记录的处境。
+      #
+      # 刻意不用 `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`：那会连 SPM 依赖一起判死，
+      # 而依赖里的告警不是本仓库能修的。这里只看仓库自己的源码路径。
+      - name: Fail on new Swift warnings in first-party sources
+        if: always()
+        run: |
+          set -uo pipefail
+          LOG="$RUNNER_TEMP/xcodebuild.log"
+          if [ ! -f "$LOG" ]; then
+            echo "no xcodebuild log to scan (build step did not run)" >&2
+            exit 0
+          fi
+          grep -E "^${GITHUB_WORKSPACE}/(PeakLog|PeakLogShared|PeakLogTests|PeakLogLiveActivityExtension)/.*: warning: " "$LOG" \
+            | sort -u > "$RUNNER_TEMP/first-party-warnings.txt" || true
+          COUNT="$(wc -l < "$RUNNER_TEMP/first-party-warnings.txt" | tr -d ' ')"
+          if [ "$COUNT" != "0" ]; then
+            echo "::error::$COUNT Swift warning(s) in first-party sources; the tree is expected to be warning-free."
+            sed "s|^${GITHUB_WORKSPACE}/||" "$RUNNER_TEMP/first-party-warnings.txt" >&2
+            {
+              echo "### Swift warnings ($COUNT)"
+              echo
+              echo '```'
+              sed "s|^${GITHUB_WORKSPACE}/||" "$RUNNER_TEMP/first-party-warnings.txt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "no first-party Swift warnings"
 
       # xcresult 是失败后唯一能看到「哪条断言、哪一行」的东西，runner 一销毁就没了。
       - name: Upload xcresult
@@ -169,6 +204,7 @@ jobs:
             echo "- Xcode: \`${XCODE_VERSION}\`"
             echo "- Simulator: \`${{ steps.sim.outputs.destination }}\`"
             echo "- Scheme: \`PeakLog\` (Debug, PeakLogTests)"
+            echo "- Swift language mode: \`6\`（并发违规是编译错误；仓库源码另有零告警门禁）"
             echo
             echo "> \`tests/\` 下的 49 个独立 Swift 回归测试**不在**本 job 覆盖范围内，见 Issue #150。"
           } >> "$GITHUB_STEP_SUMMARY"
