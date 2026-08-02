@@ -1,6 +1,8 @@
 import Foundation
 
-enum WorkoutHistoryAggregator {
+/// `nonisolated`: pure functions over value types, with no reason to sit on
+/// the main actor just because that is the module default (issue #137).
+nonisolated enum WorkoutHistoryAggregator {
     static func mergeSessionsForHistory(_ sessions: [WorkoutSession]) -> [WorkoutSession] {
         guard !sessions.isEmpty else { return [] }
 

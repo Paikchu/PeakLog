@@ -168,14 +168,17 @@ nonisolated struct CloudSnapshotLoader: Sendable {
     ///   a reinstall). The scan starts `RemoteRecordDeletions.cursorOverlap`
     ///   before it — see there for why a strict `>` would lose rows.
     func loadRecordDeletions(since cursor: Date?) async throws -> RemoteRecordDeletions {
-        var filters: [URLQueryItem] = []
-        if let cursor {
+        // `let`, not a `var` built up in place: the child tasks below capture
+        // this, and a captured mutable local is still reachable from this task
+        // while they run — an error in the Swift 6 language mode. Nothing ever
+        // mutated it after the group started anyway.
+        let filters: [URLQueryItem] = cursor.map { cursor in
             let from = cursor.addingTimeInterval(-RemoteRecordDeletions.cursorOverlap)
-            filters.append(URLQueryItem(
+            return [URLQueryItem(
                 name: "deleted_at",
                 value: "gte.\(CloudDate.timestampString(from: from))"
-            ))
-        }
+            )]
+        } ?? []
 
         let client = self.client
         let pages = try await withThrowingTaskGroup(of: CloudPagedResult<RecordDeletionRow>.self) { group in

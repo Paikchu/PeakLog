@@ -106,6 +106,13 @@ extension UIColor {
 
 // MARK: - Gradient
 extension LinearGradient {
+    // `@MainActor` explicitly: `Color.accentValue` (and every other token in
+    // this file) is main-actor isolated under the module's default isolation,
+    // but a `static let` on an imported `Sendable` type is inferred
+    // `nonisolated`, so the initializer would be reading main-actor state from
+    // a nonisolated context — an error in the Swift 6 language mode. Every
+    // call site is a SwiftUI view body, which is already on the main actor.
+    @MainActor
     static let accentGradient = LinearGradient(
         colors: [Color.accentValue, Color(hex: "#F97316")],
         startPoint: .leading,

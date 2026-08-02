@@ -10,7 +10,10 @@ private struct AuthTokenProvider: TokenProviding {
     }
 }
 
-enum AuthGateState: Equatable {
+/// `nonisolated`: a plain value describing the auth gate. `AuthStateManager`
+/// publishes it from the main actor, but the type itself (and its `Equatable`
+/// conformance) has no reason to be main-actor-isolated.
+nonisolated enum AuthGateState: Equatable {
     case checking
     case signedOut
     case signedIn(AuthedUser)

@@ -438,7 +438,10 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
                 : Self.stubs.removeFirst()
         }
 
-        let respond = { [request, weak self] in
+        // `@Sendable`: this is handed to `DispatchQueue.asyncAfter`, which takes a
+        // `@Sendable @convention(block)`. The captures are a `URLRequest` (a value)
+        // and a weak reference to this `@unchecked Sendable` protocol object.
+        let respond = { @Sendable [request, weak self] in
             guard let self else { return }
             if let error = stub.error {
                 client?.urlProtocol(self, didFailWithError: error)

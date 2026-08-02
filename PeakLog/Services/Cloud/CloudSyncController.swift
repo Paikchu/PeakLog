@@ -265,10 +265,15 @@ final class CloudSyncController: ObservableObject {
             client: client,
             database: database,
             userId: userId,
-            onStatusChange: { [weak self] status in
+            onStatusChange: { status in
                 // Hop back to the main actor; the coordinator itself is background.
                 // 旧用户 coordinator 的迟到状态回调不得覆盖新会话的 syncStatus。
-                Task { @MainActor in
+                //
+                // `[weak self]` 必须写在**内层** Task 上：写在外层闭包上时，内层
+                // Task 捕获的是外层闭包持有的那个 `self` 变量本身（一个跨并发域
+                // 共享的可变捕获），Swift 6 语言模式下是错误。写在这里则由 Task
+                // 自己做一次弱捕获，不再共享外层的变量。
+                Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.sessionGate.runIfCurrent(generation) { self.syncStatus = status }
                 }

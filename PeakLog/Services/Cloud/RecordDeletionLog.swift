@@ -202,7 +202,11 @@ nonisolated struct RecordDeletionLog: Codable, Sendable, Equatable {
 
 // MARK: - Inbound: server tombstones → local cache
 
-extension RecordDeletionLog {
+// `nonisolated` repeated on the extension: the keyword on the
+// `RecordDeletionLog` declaration covers only that declaration's body, so
+// without it these members default to `@MainActor` and become uncallable from
+// the sync actor (`CloudSnapshotLoader`) and from `LocalAppDatabase`.
+nonisolated extension RecordDeletionLog {
     /// The five tables `record_deletions` may name. Mirrors the CHECK
     /// constraint in migration `20260731090000`; a row naming anything else is
     /// ignored rather than trusted, because the only way one can exist is a

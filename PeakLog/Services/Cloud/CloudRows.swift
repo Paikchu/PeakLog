@@ -125,7 +125,10 @@ nonisolated struct TrainingPlanRow: Codable, Sendable {
     }
 }
 
-extension TrainingPlanRow {
+// `nonisolated` repeated on the extension: the keyword on the `TrainingPlanRow`
+// declaration does not carry over to a separate extension, so this `init(from:)`
+// would otherwise default to `@MainActor` and make the conformance cross actors.
+nonisolated extension TrainingPlanRow {
     // Custom decode (extension keeps the memberwise init available) tolerates a
     // missing `revision` — real cloud rows always have it, but this makes an
     // encode(omit)→decode roundtrip of this type safe too.

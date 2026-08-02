@@ -1,6 +1,9 @@
 import Foundation
 
-protocol TrainingPlanServiceProtocol {
+/// `nonisolated` + `Sendable` for the same reason as `WorkoutServiceProtocol`:
+/// an async facade over the `LocalAppDatabase` actor, consumed concurrently by
+/// the view models.
+nonisolated protocol TrainingPlanServiceProtocol: Sendable {
     func fetchActiveWeeklyPlan() async throws -> TrainingPlan?
     func fetchTodayPlan() async throws -> TrainingPlanDay?
     func completePlannedSet(
@@ -33,7 +36,7 @@ protocol TrainingPlanServiceProtocol {
     func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws -> CardioWorkoutRecord
 }
 
-extension TrainingPlanServiceProtocol {
+nonisolated extension TrainingPlanServiceProtocol {
     // Default no-op: only the local (real) service records the signal. Mocks
     // and empty services inherit this and need no change.
     func recordDaySignal(_ signal: ReplanSignal) async throws {}
@@ -50,7 +53,7 @@ extension TrainingPlanServiceProtocol {
     }
 }
 
-final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
+nonisolated final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
     private let database: LocalAppDatabase
 
     init(database: LocalAppDatabase) {

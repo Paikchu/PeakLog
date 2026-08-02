@@ -911,7 +911,9 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
-    static func currentPlanDateString(
+    /// `nonisolated`: a pure date-to-day-key helper that happens to live on the
+    /// view model. Nothing about it touches main-actor state.
+    nonisolated static func currentPlanDateString(
         now: Date = Date(),
         formatter: WorkoutDateFormatter = WorkoutDateFormatter()
     ) -> String {

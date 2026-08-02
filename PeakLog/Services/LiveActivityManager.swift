@@ -96,14 +96,41 @@ final class LiveActivityManager: PlanLiveActivityManaging {
             completedSetIDs: Array(session.completedSetIds),
             focusedExerciseID: session.manualFocusExerciseId
         )
-        await activity.update(ActivityContent(state: state, staleDate: nil, relevanceScore: 1))
+        await Self.systemHandle(id: activity.id)?
+            .update(ActivityContent(state: state, staleDate: nil, relevanceScore: 1))
     }
 
     func end() async {
         guard let activity else { return }
         PlanLiveActivitySharedStore.storeFocusedExerciseID(nil, sessionID: activity.attributes.sessionID)
-        await activity.end(nil, dismissalPolicy: .immediate)
+        await Self.systemHandle(id: activity.id)?.end(nil, dismissalPolicy: .immediate)
         self.activity = nil
+    }
+
+    /// Re-reads the handle for an activity out of ActivityKit's own registry.
+    ///
+    /// `Activity` is not `Sendable`, and `update`/`end` are async methods that
+    /// run off the caller's actor. Passing them the instance cached in
+    /// `self.activity` therefore means sending a main-actor-isolated value into
+    /// concurrently-executing code — an error in the Swift 6 language mode, and
+    /// not a spurious one: nothing stops the main actor from touching that same
+    /// object while the call is in flight.
+    ///
+    /// `Activity.activities` is nonisolated and owned by the system, so the
+    /// handle it hands back was never part of the main actor's region and can be
+    /// sent freely. That also matches who actually owns the live activity:
+    /// ActivityKit does, and `self.activity` is only a cache of which one is
+    /// ours. A handle that is no longer in the registry (the user or the system
+    /// dismissed it) yields `nil`, which is exactly the no-op the old code got
+    /// from calling `end`/`update` on a dead activity.
+    ///
+    /// Keyed by `id` (a `String`) rather than by the cached instance on purpose:
+    /// passing the non-`Sendable` instance in would pull the result back into
+    /// the main actor's region and defeat the point.
+    private nonisolated static func systemHandle(
+        id: String
+    ) -> Activity<PlanLiveActivityAttributes>? {
+        Activity<PlanLiveActivityAttributes>.activities.first { $0.id == id }
     }
 
     func consumeCompletedSetIds(sessionId: String) -> Set<String> {

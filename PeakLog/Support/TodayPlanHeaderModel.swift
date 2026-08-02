@@ -2,7 +2,7 @@ import Foundation
 
 /// Plan 页头部标题解析：兜底标题（手动建计划的“自定义训练”）没有信息量，
 /// 降级链为 计划标题 → focus → 默认“今日训练”。
-struct TodayPlanHeader: Equatable {
+nonisolated struct TodayPlanHeader: Equatable {
     let title: String
     let subtitle: String?
 
@@ -29,7 +29,7 @@ struct TodayPlanHeader: Equatable {
 /// 汇总要 locale 和记录明细，不适合塞进纯函数）。
 ///
 /// 抽成纯函数是为了可测：视图里的计算属性直接读 `@ObservedObject`，测不到分支。
-enum TrainingHeaderSubtitle: Equatable {
+nonisolated enum TrainingHeaderSubtitle: Equatable {
     /// 头部只留日期，不显示副标题。
     case dateOnly
     case freeRecordDay

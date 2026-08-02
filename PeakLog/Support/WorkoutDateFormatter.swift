@@ -12,10 +12,10 @@ import Foundation
 /// perf issue in `HistoryViewModel.calendarDays()` (issue #55). Here the
 /// `DateFormatter` itself is what's cached, lazily, on first use.
 ///
-/// `@unchecked Sendable`: the cached formatter is built once and never
-/// mutated afterward, so it's safe under the existing usage pattern — every
-/// call site constructs its own local instance (`WorkoutDateFormatter()` /
-/// `WorkoutDateFormatter(timeZone:)`) rather than sharing one globally.
+/// `@unchecked Sendable`: the only mutable state is the lazily built
+/// `DateFormatter` cache, and it is guarded by `formatterLock` (see below), so
+/// the claim is backed by a lock rather than by an assumption about how call
+/// sites happen to use the type today.
 /// Deliberately not a `static`/global singleton: issue #29 (open) means
 /// this will need to start honoring the user's timezone preference instead
 /// of always `TimeZone.current`; a per-instance cache stays trivial to
@@ -31,32 +31,62 @@ nonisolated final class WorkoutDateFormatter: @unchecked Sendable {
     /// this can't be gated behind `#if TESTING` — it's always compiled in.
     /// The increment is a single `Int` add on a cache-miss path that fires
     /// once per instance, so the always-on cost is negligible.
-    nonisolated(unsafe) static var formatterConstructionCount = 0
+    ///
+    /// Held in a lock-owning box rather than a `nonisolated(unsafe) static var`:
+    /// a shared mutable static reachable from any thread is exactly the case
+    /// `nonisolated(unsafe)` would only be silencing (issue #137). The box is a
+    /// `let` of a genuinely `Sendable` type, so nothing here needs an isolation
+    /// exemption at all — the mutable state lives behind the box's lock.
+    private static let constructionCounter = ConstructionCounter()
+
+    static var formatterConstructionCount: Int { constructionCounter.value }
+
+    /// Lock-guarded `Int`. `@unchecked Sendable` is confined to this box, whose
+    /// entire surface is the two synchronized accessors below.
+    private final class ConstructionCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+
+        var value: Int { lock.withLock { count } }
+
+        func increment() { lock.withLock { count += 1 } }
+    }
 
     let calendar: Calendar
 
     private let timeZone: TimeZone
-    // `nonisolated(unsafe)`: plain `nonisolated` (implicit or explicit) on a
-    // mutable stored property is flagged as an error under the Swift 6
-    // language mode; `nonisolated(unsafe)` is the supported way to opt a
-    // specific mutable property out of isolation checking. Safe here for
-    // the same reason the type is `@unchecked Sendable` overall — built
-    // once, lazily, on first use, and never mutated afterward.
-    nonisolated(unsafe) private lazy var formatter: DateFormatter = {
-        Self.formatterConstructionCount += 1
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
+
+    // The cache the whole type exists for. `lazy var` would be the obvious
+    // spelling, but it is unsynchronized: two threads formatting through the
+    // same instance would race on the initialization. `@unchecked Sendable`
+    // silences the compiler about that, it does not make it true — so the
+    // cache is an explicit lock-guarded optional instead. The lock is only
+    // held while reading/publishing the reference; `DateFormatter` itself is
+    // documented as safe to use concurrently once fully configured, so the
+    // actual formatting happens outside the critical section.
+    private let formatterLock = NSLock()
+    private var cachedFormatter: DateFormatter?
 
     init(timeZone: TimeZone = .current) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         self.calendar = calendar
         self.timeZone = timeZone
+    }
+
+    private var formatter: DateFormatter {
+        formatterLock.lock()
+        defer { formatterLock.unlock() }
+        if let cachedFormatter { return cachedFormatter }
+
+        Self.constructionCounter.increment()
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        cachedFormatter = formatter
+        return formatter
     }
 
     func string(from date: Date) -> String {

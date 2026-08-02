@@ -78,8 +78,15 @@ private final class LiveSessionActivityManager: PlanLiveActivityManaging {
     }
 }
 
-private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol {
-    private(set) var completedPlanSetIds: [String] = []
+// `@unchecked Sendable` + `NSLock`, matching `StubTokenProvider` in
+// `SupabaseSDKTestSupport.swift`: the service protocols are `Sendable` (they are
+// consumed concurrently via `async let`), so a recording double has to
+// synchronize the state it records instead of storing a bare `var`.
+private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _completedPlanSetIds: [String] = []
+
+    var completedPlanSetIds: [String] { lock.withLock { _completedPlanSetIds } }
 
     func fetchActiveWeeklyPlan() async throws -> TrainingPlan? { nil }
 
@@ -132,10 +139,13 @@ private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol 
         actualWeightUnit: WeightUnit,
         actualReps: Int
     ) async throws -> TrainingPlanSet {
-        completedPlanSetIds.append(planSetId)
+        let setIndex = lock.withLock {
+            _completedPlanSetIds.append(planSetId)
+            return _completedPlanSetIds.count
+        }
         return TrainingPlanSet(
             id: planSetId,
-            setIndex: completedPlanSetIds.count,
+            setIndex: setIndex,
             targetWeight: actualWeight,
             targetWeightUnit: actualWeightUnit,
             targetReps: actualReps,
@@ -191,8 +201,14 @@ private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol 
     }
 }
 
-private final class LiveSessionWorkoutService: WorkoutServiceProtocol {
-    private var persistedSetCount = 0
+private final class LiveSessionWorkoutService: WorkoutServiceProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _persistedSetCount = 0
+
+    private var persistedSetCount: Int {
+        get { lock.withLock { _persistedSetCount } }
+        set { lock.withLock { _persistedSetCount = newValue } }
+    }
     func updateSet(
         sessionId: String,
         exerciseId: String,
