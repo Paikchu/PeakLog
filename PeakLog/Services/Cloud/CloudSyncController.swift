@@ -265,14 +265,20 @@ final class CloudSyncController: ObservableObject {
             client: client,
             database: database,
             userId: userId,
-            onStatusChange: { status in
+            onStatusChange: { [weak self] status in
                 // Hop back to the main actor; the coordinator itself is background.
                 // 旧用户 coordinator 的迟到状态回调不得覆盖新会话的 syncStatus。
                 //
-                // `[weak self]` 必须写在**内层** Task 上：写在外层闭包上时，内层
-                // Task 捕获的是外层闭包持有的那个 `self` 变量本身（一个跨并发域
-                // 共享的可变捕获），Swift 6 语言模式下是错误。写在这里则由 Task
-                // 自己做一次弱捕获，不再共享外层的变量。
+                // 两层都必须是弱捕获，原因不同：
+                //   - 外层：这个闭包被 coordinator 强持有，而 controller 又强持有
+                //     coordinator。强捕获会形成 controller → coordinator →
+                //     onStatusChange → controller 的循环，让 controller 和它的
+                //     同步循环在持有者（scene / preview / 测试）消失后继续存活。
+                //   - 内层：`[weak self]` 的捕获本身是**可变**的（随时可能变 nil）。
+                //     若内层 Task 直接引用外层那个变量，就是并发执行的代码在读一个
+                //     共享可变捕获 —— Swift 6 语言模式下是错误。写成自己的捕获列表
+                //     后，弱引用在 Task 创建时（同步、在外层闭包内）读取一次并存进
+                //     Task 自己的盒子，不再共享外层的变量。
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.sessionGate.runIfCurrent(generation) { self.syncStatus = status }

@@ -42,6 +42,9 @@ import Combine
 //   6. replan 往返期间换账号：结果丢弃，且不得用旧 coordinator 去 pull。
 //   7. `bind(to:)` 的同步性：sink 返回时 `isPreparingSession` 已经翻转 ——
 //      这是「登录后第一个 mutation 不会绕过尚未装好的 push hook」的前提。
+//   8. 所有权：controller 强持有 coordinator，coordinator 强持有状态回调，所以
+//      那个回调对 controller 必须是弱捕获，否则成环、controller 和它的同步循环
+//      在持有者消失后继续存活。
 
 // MARK: - 替身：Supabase / Auth 边界
 
@@ -450,6 +453,7 @@ struct CloudSessionHandoffTest {
         await foregroundTickCannotLandOnNextUser()
         await replanOutcomeDiscardedAfterAccountSwitch()
         await bindDeliversSignInSynchronously()
+        await controllerIsNotRetainedByItsOwnStatusCallback()
         print("cloud_session_handoff_test passed")
     }
 
@@ -673,5 +677,42 @@ struct CloudSessionHandoffTest {
         precondition(controller.isPreparingSession == false, "登出后不应挂在 splash 上")
         await quiesce(database)
         precondition(database.armedUserId == nil, "登出后 hook 必须摘掉：\(database.log)")
+    }
+
+    // 8. controller 不得被自己交给 coordinator 的状态回调续命。
+    //
+    // 所有权是 controller → `coordinator` → `onStatusChange` → ？。最后一环若强
+    // 引用 controller 就成环：scene / preview / 测试把 controller 放掉之后，它和
+    // 它的同步循环仍然活着。回调里那个 hop 回主线程的 `Task` 有自己的
+    // `[weak self]` 捕获列表，但那只解决并发安全，不解决所有权 —— **外层**闭包
+    // 也必须是弱捕获，本用例钉的就是外层这一层。
+    @MainActor
+    static func controllerIsNotRetainedByItsOwnStatusCallback() async {
+        weak var leaked: CloudSyncController?
+        var database: LocalAppDatabase!
+
+        do {
+            let (controller, db, auth) = makeSubject()
+            database = db
+            leaked = controller
+
+            signIn(controller, auth, "A")
+            await quiesce(db)
+            // 前置条件：确实走完了一次完整交接，coordinator 建好了、回调也真的
+            // 发过 —— 否则「没泄漏」可能只是因为压根没建立那条引用。
+            precondition(db.armedUserId == "A", "A 的 hook 应该装好了：\(db.log)")
+            precondition(
+                acceptedStatusTag(controller) == "started:A",
+                "状态回调应已把 A 的 started 送达 controller：\(String(describing: controller.syncStatus))"
+            )
+        }
+
+        // 交接链上的 Task 都是弱捕获 controller 的，放它们跑完再看。
+        await pump(32)
+        precondition(
+            leaked == nil,
+            "controller 已无外部强引用却没有释放：coordinator 持有的状态回调强捕获了它，形成 controller → coordinator → onStatusChange → controller"
+        )
+        _ = database
     }
 }
