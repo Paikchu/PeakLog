@@ -104,7 +104,6 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
         }
     }
 
-    #if DEBUG
     func signIn(email: String, password: String) async throws -> AuthedUser {
         do {
             return try await operationGate.withLock {
@@ -114,7 +113,6 @@ nonisolated struct SupabaseAuthProvider: AuthProviding {
             throw Self.map(error)
         }
     }
-    #endif
 
     func signOut() async {
         await operationGate.withLock {

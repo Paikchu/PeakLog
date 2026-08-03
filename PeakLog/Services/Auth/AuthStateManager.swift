@@ -100,7 +100,6 @@ final class AuthStateManager: ObservableObject {
         }
     }
 
-    #if DEBUG
     func signIn(email: String, password: String) async {
         guard !isBusy else { return }
 
@@ -132,7 +131,6 @@ final class AuthStateManager: ObservableObject {
             report(.network)
         }
     }
-    #endif
 
     func clearSignInError() {
         displayError = nil
