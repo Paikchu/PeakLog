@@ -46,10 +46,15 @@ final class ProfileViewModel: ObservableObject {
 
     // MARK: - Preferences
 
-    func toggleNotifications() async {
-        guard let current = profile?.preferences.notificationsEnabled else { return }
+    /// Sets the preference to an explicit value rather than flipping the stored
+    /// one: the switch in Profile shows the *effective* state (preference AND
+    /// system authorization), so what the user just tapped is not necessarily
+    /// the negation of what is stored — a fresh install has the preference
+    /// already `true` while the switch reads off for want of permission.
+    func setNotificationsEnabled(_ enabled: Bool) async {
+        guard profile?.preferences.notificationsEnabled != enabled else { return }
         await updatePreferences(UpdatePreferencesRequest(
-            notificationsEnabled: !current,
+            notificationsEnabled: enabled,
             weightUnit: nil,
             timezone: nil,
             language: nil
