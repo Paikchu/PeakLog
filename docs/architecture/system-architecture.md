@@ -121,7 +121,7 @@ flowchart TB
 | `ProfileServiceProtocol` | `LocalProfileService` | 资料 / 偏好 / 目标 |
 | `ExerciseLibraryServiceProtocol` | `LocalExerciseLibraryService` | 动作库（含自定义动作） |
 | `SetDefaultsProviding` | `RuleBasedSetDefaultsProvider` | 默认重量/次数建议 |
-| `AuthProviding`/`TokenProviding` | `SupabaseAuthProvider` | Apple ID Token 登录、会话恢复与 token 刷新；DEBUG 邮箱检查 |
+| `AuthProviding`/`TokenProviding` | `SupabaseAuthProvider` | Apple ID Token 登录、邮箱密码登录、会话恢复与 token 刷新 |
 | `PlanLiveActivityManaging` | `LiveActivityManager` | Live Activity 生命周期 |
 
 **智能化引擎（现状）**：`ExerciseRecommendationEngine` 是唯一的确定性“行为”引擎 —— 一个纯函数 `recommend(_:)`，基于肌群恢复窗口（`bigGroupRecoveryDays = 2`、`smallGroupRecoveryDays = 1`）、共现与热度给动作选择器打分。其头部注释明确：**可被模型实现替换而不影响调用方**。这是当前最接近“Agent”的组件，且是规则驱动而非 LLM。
