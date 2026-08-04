@@ -29,7 +29,7 @@ PeakLog 是一个**本地优先（local-first）的 iOS 健身助手**，采用 
 | 状态管理 | `ObservableObject`（ViewModel）+ `@StateObject` 环境对象 |
 | 本地存储 | 单一 JSON 文件（`Application Support/PeakLog/peaklog-local-state.json`），由 `actor LocalAppDatabase` 独占访问 |
 | 云端存储 | Supabase Postgres + Supabase Swift SDK（PostgREST），RLS |
-| 认证 | AuthenticationServices + Supabase Swift SDK 原生 Apple 登录；DEBUG 保留程序化邮箱检查 |
+| 认证 | AuthenticationServices + Supabase Swift SDK 原生 Apple 登录；Release 同时提供邮箱密码登录（PR #159 恢复） |
 | 跨进程共享 | App Group `group.com.max.PeakForm`（UserDefaults）+ App Intents |
 | 实时能力 | Live Activity / Dynamic Island（Widget Extension） |
 | 测试 | `PeakLogTests`（XCTest）+ `tests/`（纯逻辑回归脚本）+ `backend/tests/` |
@@ -98,7 +98,7 @@ flowchart TB
 | Today（今日计划） | `Views/Today/TodayWorkoutScreen.swift` 及 `DailyRecordSheet` / `WorkoutRecordCard` / `ExerciseCardView` / `TrainingFocusComponents` | 展示当天计划、手动记录、Live Activity 训练专注模式、动作编辑 |
 | History（历史回顾） | `Views/History/HistoryScreen.swift`、`CalendarGridView` | 月历 + 每日已完成训练卡片 |
 | Profile（个人） | `Views/Profile/ProfileScreen.swift`、`StatCardView` | 资料、统计、偏好 |
-| Auth | `Views/Auth/AuthView.swift` | Release 原生 Apple 登录；DEBUG 本地模式入口 |
+| Auth | `Views/Auth/AuthView.swift` | Release 原生 Apple 登录 + 邮箱密码表单（无注册/找回入口）；DEBUG 本地模式入口 |
 
 根导航使用原生 `TabView(selection:)` + `HomeTab` 枚举，日历、计划、设置由系统 Tab Bar 承载；页面内流程仍主要使用 sheet（`DailyRecordSheet`、`AddPlanExerciseSheet`、`ExercisePickerScreen`、`WheelValueEditSheet`），不依赖 `NavigationStack`。
 

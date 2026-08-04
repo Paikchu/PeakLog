@@ -457,6 +457,23 @@
         }
       }
     },
+    "auth.error.missing_fields": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your email and password."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入邮箱和密码。"
+          }
+        }
+      }
+    },
     "auth.error.sign_in_failed": {
       "extractionState": "manual",
       "localizations": {

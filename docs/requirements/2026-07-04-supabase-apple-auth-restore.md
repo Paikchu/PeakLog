@@ -19,3 +19,9 @@
 - iOS 模拟器显示 Apple 登录按钮，不再出现邮箱/密码表单。
 - Apple 登录成功后进入首页，`profiles`、`user_preferences`、`user_stats`、默认 `conversations` 自动创建。
 - 发送一条训练聊天消息后，消息落库、assistant 回复、训练记录或计划内容能在 App 内显示。
+
+## 2026-08-04 修订
+
+「只保留 Apple ID 登录」（正文第 3 条）与「不再出现邮箱/密码表单」（验收第 6 条）已被 PR #159 推翻：邮箱密码表单重新出现在 Release 登录页，与 Apple 按钮并存，`AuthProviding.signIn(email:password:)` 不再是 `#if DEBUG`。原文保留，作为 2026-07-04 当时验收口径的记录；当前形状以 `docs/architecture/system-architecture.md` 与 `tests/apple_login_ui_contract_test.swift` 为准。
+
+注意：本文档「Supabase Auth 关闭 email signup」一条**未**随之推翻。若该配置仍然生效，新用户无法通过这个表单注册，登录页也没有注册/找回密码入口。
