@@ -21,11 +21,9 @@ nonisolated struct UnconfiguredAuthProvider: AuthProviding {
         throw AppAuthError.notConfigured
     }
 
-    #if DEBUG
     func signIn(email: String, password: String) async throws -> AuthedUser {
         throw AppAuthError.notConfigured
     }
-    #endif
 
     func signOut() async {}
 

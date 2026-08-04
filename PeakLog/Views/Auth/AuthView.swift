@@ -5,8 +5,13 @@ struct AuthView: View {
     @ObservedObject var auth: AuthStateManager
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var email = ""
+    @State private var password = ""
     @State private var currentNonce: AppleSignInNonce?
     @State private var isAuthorizingApple = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case email, password }
 
     var body: some View {
         VStack(spacing: 24) {
@@ -21,6 +26,25 @@ struct AuthView: View {
                     .foregroundStyle(Color.textSecondary)
             }
 
+            VStack(spacing: 12) {
+                TextField("auth.email.placeholder", text: $email)
+                    .textContentType(.emailAddress)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.next)
+                    .focused($focusedField, equals: .email)
+                    .onSubmit { focusedField = .password }
+                    .fieldStyle()
+
+                SecureField("auth.password.placeholder", text: $password)
+                    .textContentType(.password)
+                    .submitLabel(.go)
+                    .focused($focusedField, equals: .password)
+                    .onSubmit { Task { await submit() } }
+                    .fieldStyle()
+            }
+
             // Consumes an already-classified case, not a free-form string —
             // the redaction lives in `AuthDisplayError`, not in this view.
             if let displayError = auth.displayError {
@@ -30,6 +54,24 @@ struct AuthView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.opacity)
             }
+
+            Button {
+                Task { await submit() }
+            } label: {
+                Group {
+                    if auth.isBusy {
+                        Text("auth.signing_in")
+                    } else {
+                        Text("auth.sign_in")
+                    }
+                }
+                .font(.headline)
+                .foregroundStyle(Color.appBackground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.accentPrimary, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .disabled(auth.isBusy)
 
             SignInWithAppleButton(.signIn) { request in
                 prepare(request)
@@ -62,6 +104,11 @@ struct AuthView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBackground.ignoresSafeArea())
         .animation(.easeInOut(duration: 0.2), value: auth.displayError)
+    }
+
+    private func submit() async {
+        focusedField = nil
+        await auth.signIn(email: email, password: password)
     }
 
     private func prepare(_ request: ASAuthorizationAppleIDRequest) {
@@ -126,6 +173,19 @@ struct AuthView: View {
     private func nonEmpty(_ value: String?) -> String? {
         let value = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return value?.isEmpty == false ? value : nil
+    }
+}
+
+private extension View {
+    func fieldStyle() -> some View {
+        font(.body)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(Color.appCard, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.appSeparator, lineWidth: 1)
+            )
     }
 }
 

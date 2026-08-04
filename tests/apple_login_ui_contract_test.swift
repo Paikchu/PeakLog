@@ -22,17 +22,17 @@ precondition(
     "Release login must use the native Apple button and redraw it when appearance changes"
 )
 precondition(
-    !authView.contains("TextField(")
-        && !authView.contains("SecureField(")
-        && !authView.contains("auth.email")
-        && !authView.contains("auth.password"),
-    "Release login must not expose email and password controls"
+    authView.contains("TextField(\"auth.email.placeholder\"")
+        && authView.contains("SecureField(\"auth.password.placeholder\"")
+        && authView.contains("auth.signIn(email: email, password: password)"),
+    "Release login must expose the email/password sign-in form"
 )
 precondition(
-    authProtocol.contains("#if DEBUG\n    func signIn(email:")
+    authProtocol.contains("func signIn(email: String, password: String) async throws -> AuthedUser")
+        && !authProtocol.contains("#if DEBUG\n    func signIn(email:")
         && cloudE2E.contains("#if DEBUG")
         && cloudE2E.contains("auth.signIn(email: email, password: password)"),
-    "Email sign-in must remain available only to DEBUG cloud checks"
+    "Email sign-in must be available to the production auth provider"
 )
 precondition(
     entitlements.contains("<key>com.apple.developer.applesignin</key>")
@@ -42,11 +42,11 @@ precondition(
 precondition(
     localizable.contains("\"auth.error.apple_authorization_failed\"")
         && localizable.contains("\"auth.error.sign_in_failed\"")
-        && !localizable.contains("\"auth.email")
-        && !localizable.contains("\"auth.password")
-        && !localizable.contains("\"auth.error.invalid_credentials\"")
-        && !localizable.contains("\"auth.error.missing_fields\""),
-    "Release localization must contain Apple errors and no obsolete email form copy"
+        && localizable.contains("\"auth.email.placeholder\"")
+        && localizable.contains("\"auth.password.placeholder\"")
+        && localizable.contains("\"auth.sign_in\"")
+        && localizable.contains("\"auth.signing_in\""),
+    "Release localization must contain both Apple and email sign-in copy"
 )
 
 print("apple_login_ui_contract_test passed")
