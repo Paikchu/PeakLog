@@ -95,6 +95,15 @@ final class TodayWorkoutViewModel: ObservableObject {
     /// flashing the whole page back to a spinner.
     private(set) var hasLoadedOnce = false
 
+    /// 训练记录写入（或删除）成功后调用；宿主用它刷新自己那份派生状态。
+    /// 与 `FutureDayPlanEditorViewModel.onPlanChanged` 同一套路：写路径在
+    /// 这边，刷新交给持有 `HistoryViewModel` 的视图层接线（见
+    /// `TrainingScreen`），今日页因此不必知道日历的存在。
+    ///
+    /// 只在能改变"某天有没有记录"的写路径上触发——即会影响周条/月网格
+    /// 实心圆点的那些。改重量/次数一类不改变这个事实的编辑不触发。
+    var onWorkoutDataChanged: (() async -> Void)?
+
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let workoutService: WorkoutServiceProtocol
     private let liveActivityManager: PlanLiveActivityManaging
@@ -408,6 +417,10 @@ final class TodayWorkoutViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             await refresh()
         }
+
+        // 成功与失败都通知：失败时也可能已经落库了一部分组（循环在中途
+        // 抛错），日历圆点该跟着库里的真实状态走。
+        await onWorkoutDataChanged?()
     }
 
     func completePlannedSet(planSetId: String, rpe: Double? = nil) async {
@@ -436,6 +449,10 @@ final class TodayWorkoutViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             await refresh()
         }
+
+        // 失败路径同样通知：completePlannedSet 可能已经成功、只是随后的
+        // RPE 写入抛错，那一组记录已经存在了。
+        await onWorkoutDataChanged?()
     }
 
     func updatePlannedSet(
@@ -549,6 +566,9 @@ final class TodayWorkoutViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             await refresh()
         }
+
+        // 级联删除可能把当天清空，圆点要跟着消失。
+        await onWorkoutDataChanged?()
     }
 
     /// 删除计划动作时同步从进行中的训练 session 移除；动作删空则整个训练取消。
@@ -623,6 +643,9 @@ final class TodayWorkoutViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             await refreshTodayRecordOnly()
         }
+
+        // 删掉最后一组可能把当天清空。
+        await onWorkoutDataChanged?()
     }
 
     func deleteLoggedExercise(exerciseId: String) async {
@@ -637,6 +660,9 @@ final class TodayWorkoutViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             await refreshTodayRecordOnly()
         }
+
+        // 删掉最后一个动作可能把当天清空。
+        await onWorkoutDataChanged?()
     }
 
     private func refreshTodayRecordOnly() async {
@@ -661,6 +687,7 @@ final class TodayWorkoutViewModel: ObservableObject {
         )
         runningRecords.append(record)
         runningRecords.sort { $0.createdAt < $1.createdAt }
+        await onWorkoutDataChanged?()
         return record
     }
 
@@ -670,6 +697,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             metrics: metrics
         )
         await refresh()
+        await onWorkoutDataChanged?()
     }
 
     func addDailyRecord(_ draft: DailyRecordDraft) async throws {
@@ -685,6 +713,7 @@ final class TodayWorkoutViewModel: ObservableObject {
             runningRecords.append(record)
         }
         await refreshTodayRecordOnly()
+        await onWorkoutDataChanged?()
     }
 
     private func addStrengthRecord(_ draft: StrengthSessionDraft) async throws {

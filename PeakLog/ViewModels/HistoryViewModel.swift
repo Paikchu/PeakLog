@@ -88,6 +88,18 @@ final class HistoryViewModel: ObservableObject {
         }
     }
 
+    /// 训练数据落库后重拉当前显示月的实心圆点。写入方（`TodayWorkoutViewModel`）
+    /// 通过 `onWorkoutDataChanged` 触发，视图层负责接线——见
+    /// `TrainingScreen`。没有它，`activeDates` 只在初次加载和翻周/翻月时
+    /// 更新，刚练完的那天在日历上要等用户导航离开再回来才会出现。
+    ///
+    /// 与 `loadCalendar()` 的差别只在错误处理：这是保存流程的收尾副作用，
+    /// 拉取失败既不该清掉、也不该盖掉页面上正在显示的错误——圆点会在下次
+    /// 翻月/重进页面时自然补上。
+    func refreshCalendarMarkers() async {
+        _ = await loadCalendarSilently()
+    }
+
     func loadPlan() async {
         if let error = await loadPlanSilently() {
             errorMessage = error.localizedDescription
