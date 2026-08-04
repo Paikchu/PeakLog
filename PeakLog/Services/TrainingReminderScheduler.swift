@@ -151,12 +151,12 @@ final class TrainingReminderScheduler: ObservableObject {
 
         let content = UNMutableNotificationContent()
         content.title = String(localized: "notification.training_reminder.title")
-        // `String.localizedStringWithFormat`, not the app's usual
-        // `LocalizedPlanText.formatted`: the body carries a plural substitution
-        // ("1 exercise" vs "2 exercises") and plain `String(format:)` leaves the
-        // `%#@count@` template unresolved.
-        content.body = String.localizedStringWithFormat(
-            String(localized: "notification.training_reminder.body"),
+        // 正文带复数变体（"1 exercise" vs "2 exercises"）。这里用 `.current` 而不是
+        // App 语言：调度器在服务层，拿不到 `\.locale` 环境值；两者在实践中同源
+        // （App 语言由系统偏好推导），差异只在系统语言与 App 语言被单独改开时出现。
+        content.body = LocalizedPlanText.formatted(
+            "notification.training_reminder.body",
+            locale: .current,
             header.title,
             Int64(request.exerciseCount)
         )

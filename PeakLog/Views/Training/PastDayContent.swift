@@ -23,7 +23,6 @@ struct PastDayContent: View {
                 } else {
                     completedSummaryRow
                     HistoryCompletedTrainingSection(
-                        summary: viewModel.completedDaySummary,
                         strengthExercises: viewModel.completedStrengthExercises,
                         cardioRecords: viewModel.completedCardioRecords
                     )
