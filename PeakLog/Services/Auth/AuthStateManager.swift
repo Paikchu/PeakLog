@@ -105,7 +105,9 @@ final class AuthStateManager: ObservableObject {
 
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEmail.isEmpty, !password.isEmpty else {
-            displayError = .signInFailed
+            // Nothing was sent, so nothing was rejected. Not routed through
+            // `report` on purpose: an empty form is not a failure worth logging.
+            displayError = .missingFields
             return
         }
 

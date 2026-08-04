@@ -24,8 +24,27 @@ precondition(
 precondition(
     authView.contains("TextField(\"auth.email.placeholder\"")
         && authView.contains("SecureField(\"auth.password.placeholder\"")
-        && authView.contains("auth.signIn(email: email, password: password)"),
-    "Release login must expose the email/password sign-in form"
+        && authView.contains("auth.signIn(email: email, password: password)")
+        && authView.contains(".accessibilityIdentifier(\"email-field\")")
+        && authView.contains(".accessibilityIdentifier(\"password-field\")")
+        && authView.contains(".accessibilityIdentifier(\"email-sign-in-button\")"),
+    "Release login must expose the email/password sign-in form, addressable by automation"
+)
+// Password AutoFill only pairs a username field with a password field when the
+// former is `.username`. `.emailAddress` looks equivalent and silently isn't:
+// the keychain stops filling the pair and stops offering to save it.
+precondition(
+    authView.contains(".textContentType(.username)")
+        && authView.contains(".textContentType(.password)")
+        && !authView.contains(".textContentType(.emailAddress)"),
+    "The login form's username field must use .username so Password AutoFill pairs it"
+)
+// Both sign-in paths share one busy condition. If the email button were gated
+// on `isBusy` alone it would stay tappable while an Apple authorization is in
+// flight, and starting one there discards the Apple result.
+precondition(
+    authView.components(separatedBy: ".disabled(auth.isBusy || isAuthorizingApple)").count == 3,
+    "Both the email and Apple sign-in buttons must be disabled while either path is in flight"
 )
 precondition(
     authProtocol.contains("func signIn(email: String, password: String) async throws -> AuthedUser")
@@ -45,7 +64,10 @@ precondition(
         && localizable.contains("\"auth.email.placeholder\"")
         && localizable.contains("\"auth.password.placeholder\"")
         && localizable.contains("\"auth.sign_in\"")
-        && localizable.contains("\"auth.signing_in\""),
+        && localizable.contains("\"auth.signing_in\"")
+        // An empty form never reached the network, so it must not be reported
+        // with the same copy as a credential rejection.
+        && localizable.contains("\"auth.error.missing_fields\""),
     "Release localization must contain both Apple and email sign-in copy"
 )
 

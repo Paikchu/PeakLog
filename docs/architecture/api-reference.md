@@ -3,7 +3,7 @@
 ## 1. 通用说明
 
 - iOS 通过 Supabase Swift SDK 2.53.0 访问 Auth、PostgREST 和 `generate-weekly-plan` 的 replan 模式；周生成仍只由 `pg_cron`/运维触发。
-- `SupabaseAuthProvider` 包装 SDK Auth；Release 使用 Apple ID Token + raw nonce 登录，DEBUG 额外保留程序化邮箱登录。
+- `SupabaseAuthProvider` 包装 SDK Auth；Release 提供 Apple ID Token + raw nonce 登录与邮箱密码登录两条路径（后者由 PR #159 从 `#if DEBUG` 恢复）。`CloudSyncE2ECheck` 的程序化邮箱登录仍是 DEBUG-only。
 - Apple 首次授权姓名以 best-effort 写入 Auth user metadata，不参与 RLS 授权，也不直接修改 `profiles`。
 - SDK 管理 publishable key 与用户 JWT；业务适配器在每个 Database/Function 调用前执行 `validToken()`，token 不可用时零网络请求。RLS 仍是服务端唯一授权真相源。
 - Today、History、Profile 的 UI 读写路径经由 `LocalAppDatabase`（本地优先），`CloudSyncCoordinator` 负责登录后的全量拉取与本地变更的后台推送；接口契约的关键点是**表级 RLS 策略**，不是传统意义上的 REST 端点契约。

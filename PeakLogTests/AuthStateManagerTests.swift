@@ -34,6 +34,28 @@ final class AuthStateManagerTests: XCTestCase {
         XCTAssertEqual(state, .signedOut)
     }
 
+    /// An empty form is not a rejected credential. Reporting `.signInFailed`
+    /// here told the user their email and password were refused by a request
+    /// that was never sent.
+    func testEmptyFieldsAreReportedAsMissingRatherThanRejected() async {
+        let provider = TestAuthProvider(restoredUser: nil, signIn: { _, _ in
+            XCTFail("An incomplete form must not reach the provider")
+            return .fixture
+        })
+        let manager = await AuthStateManager(provider: provider)
+
+        await manager.signIn(email: "   ", password: "hunter2")
+        var displayError = await manager.displayError
+        XCTAssertEqual(displayError, .missingFields)
+
+        await manager.signIn(email: "user@example.com", password: "")
+        displayError = await manager.displayError
+        XCTAssertEqual(displayError, .missingFields)
+
+        let state = await manager.state
+        XCTAssertEqual(state, .checking, "A rejected form must not move the auth gate")
+    }
+
     func testValidTokenNetworkFailureKeepsSignedInState() async {
         let provider = TestAuthProvider(restoredUser: .fixture, tokenError: .network)
         let manager = await AuthStateManager(provider: provider)

@@ -38,6 +38,7 @@ nonisolated struct AppleSignInCredential: Equatable, Sendable {
 /// makes the redaction a property of the type rather than a convention someone
 /// can quietly break later (Issue #46).
 nonisolated enum AuthDisplayError: Equatable, Sendable, CaseIterable {
+    case missingFields
     case signInFailed
     case network
     case notConfigured
@@ -45,6 +46,10 @@ nonisolated enum AuthDisplayError: Equatable, Sendable, CaseIterable {
 
     var localizedMessage: String {
         switch self {
+        // Not a rejection: the form never left the device. Saying "sign-in
+        // failed" here would tell the user their credentials were refused.
+        case .missingFields:
+            return String(localized: "auth.error.missing_fields")
         case .signInFailed:
             return String(localized: "auth.error.sign_in_failed")
         case .network:

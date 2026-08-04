@@ -27,8 +27,12 @@ struct AuthView: View {
             }
 
             VStack(spacing: 12) {
+                // `.username`, not `.emailAddress`: only the former pairs with
+                // `.password` for Password AutoFill, which is what lets the
+                // keychain fill both fields and offer to save the credential.
+                // `.emailAddress` is the address-book type and gets no pairing.
                 TextField("auth.email.placeholder", text: $email)
-                    .textContentType(.emailAddress)
+                    .textContentType(.username)
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -36,6 +40,7 @@ struct AuthView: View {
                     .focused($focusedField, equals: .email)
                     .onSubmit { focusedField = .password }
                     .fieldStyle()
+                    .accessibilityIdentifier("email-field")
 
                 SecureField("auth.password.placeholder", text: $password)
                     .textContentType(.password)
@@ -43,6 +48,7 @@ struct AuthView: View {
                     .focused($focusedField, equals: .password)
                     .onSubmit { Task { await submit() } }
                     .fieldStyle()
+                    .accessibilityIdentifier("password-field")
             }
 
             // Consumes an already-classified case, not a free-form string —
@@ -71,7 +77,12 @@ struct AuthView: View {
                 .padding(.vertical, 14)
                 .background(Color.accentPrimary, in: RoundedRectangle(cornerRadius: 14))
             }
-            .disabled(auth.isBusy)
+            // Same condition as the Apple button below: while an Apple
+            // authorization is in flight `isBusy` is still false, and starting
+            // an email sign-in there would bump the generation and silently
+            // discard the Apple result.
+            .disabled(auth.isBusy || isAuthorizingApple)
+            .accessibilityIdentifier("email-sign-in-button")
 
             SignInWithAppleButton(.signIn) { request in
                 prepare(request)
