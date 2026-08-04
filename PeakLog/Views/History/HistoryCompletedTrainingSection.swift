@@ -1,22 +1,15 @@
 import SwiftUI
 
+/// 章节标题下曾经再挂一行 "N exercises · M sets" 的副标题，但那与页面顶部的
+/// 统计 pill 是同一组数字，同屏读两遍没有新信息。计数只在 pill 里说一次。
 struct HistoryCompletedTrainingSection: View {
-    let summary: CompletedDaySummary
     let strengthExercises: [CompletedStrengthExerciseViewData]
     let cardioRecords: [CompletedCardioRecordViewData]
-    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(spacing: 12) {
             if !strengthExercises.isEmpty {
-                sectionHeader(
-                    String(localized: "history.completed.strength.title"),
-                    subtitle: LocalizedPlanText.historyStrengthSectionSubtitle(
-                        exerciseCount: strengthExercises.count,
-                        setCount: summary.strengthSetCount,
-                        locale: locale
-                    )
-                )
+                sectionHeader(String(localized: "history.completed.strength.title"))
 
                 ForEach(strengthExercises) { exercise in
                     HistoryCompletedStrengthExerciseCard(exercise: exercise)
@@ -24,13 +17,7 @@ struct HistoryCompletedTrainingSection: View {
             }
 
             if !cardioRecords.isEmpty {
-                sectionHeader(
-                    String(localized: "history.completed.cardio.title"),
-                    subtitle: LocalizedPlanText.historyCardioSectionSubtitle(
-                        recordCount: cardioRecords.count,
-                        locale: locale
-                    )
-                )
+                sectionHeader(String(localized: "history.completed.cardio.title"))
 
                 ForEach(cardioRecords) { record in
                     HistoryCompletedCardioRecordCard(record: record)
@@ -39,17 +26,12 @@ struct HistoryCompletedTrainingSection: View {
         }
     }
 
-    private func sectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .appFont(size: 17, weight: .bold)
-                .foregroundColor(.textPrimary)
-            Text(subtitle)
-                .appFont(size: 12, weight: .medium)
-                .foregroundColor(.textMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .appFont(size: 17, weight: .bold)
+            .foregroundColor(.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
     }
 }
 

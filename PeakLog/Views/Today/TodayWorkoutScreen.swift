@@ -295,7 +295,11 @@ struct TodayWorkoutScreen: View {
                 Task { await viewModel.confirmPlanLiveWorkout() }
             }
         } message: {
-            Text("training_session.finish_incomplete.message")
+            Text(LocalizedPlanText.formatted(
+                "training_session.finish_incomplete.message",
+                locale: locale,
+                Int64(remainingSetsCount)
+            ))
         }
         .confirmationDialog(
             "training_session.cancel_confirm.title",

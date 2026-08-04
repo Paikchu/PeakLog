@@ -5,6 +5,11 @@ enum LocalizedPlanText {
         String(localized: String.LocalizationValue(key))
     }
 
+    /// 带计数的文案一律走这里。`locale` 不是可选装饰：字符串目录里的复数变体
+    /// （`%#@count@`）只有在传入 locale 时才会展开，且展开时按**这个** locale 的
+    /// 复数规则选 one/other——必须是 App 语言（`LocalizationManager.locale`，
+    /// 由 `\.locale` 环境值下发），而不是设备的 `Locale.current`，否则系统语言
+    /// 与 App 语言不一致时会选错分支（例如中文设备上英文界面显示 "1 sets"）。
     static func formatted(_ key: String, locale: Locale, _ arguments: CVarArg...) -> String {
         String(format: localized(key), locale: locale, arguments: arguments)
     }
@@ -33,14 +38,6 @@ enum LocalizedPlanText {
 
     static func todayRunningRecordsSummary(distance: String, durationMinutes: Int, count: Int, locale: Locale) -> String {
         formatted("today.running.records_summary", locale: locale, distance, Int64(durationMinutes), Int64(count))
-    }
-
-    static func historyStrengthSectionSubtitle(exerciseCount: Int, setCount: Int, locale: Locale) -> String {
-        formatted("history.completed.strength.subtitle", locale: locale, Int64(exerciseCount), Int64(setCount))
-    }
-
-    static func historyCardioSectionSubtitle(recordCount: Int, locale: Locale) -> String {
-        formatted("history.completed.cardio.subtitle", locale: locale, Int64(recordCount))
     }
 
     static func completedStrengthValue(_ count: Int, locale: Locale) -> String {

@@ -8,6 +8,7 @@ import SwiftUI
 struct ExercisePickerScreen: View {
     @EnvironmentObject private var localizationManager: LocalizationManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
 
     /// Items already turned into form cards; shown as added and not re-selectable.
     var alreadyAddedItemIDs: Set<String> = []
@@ -452,7 +453,11 @@ struct ExercisePickerScreen: View {
                     withAnimation(pickerSpring) { selection.removeAll() }
                     onConfirm(picked)
                 } label: {
-                    Text(String(format: String(localized: "exercise_picker.add_count"), selection.count))
+                    Text(LocalizedPlanText.formatted(
+                        "exercise_picker.add_count",
+                        locale: locale,
+                        Int64(selection.count)
+                    ))
                         .appFont(size: 15, weight: .semibold)
                         .foregroundColor(.white)
                         .contentTransition(.numericText())
