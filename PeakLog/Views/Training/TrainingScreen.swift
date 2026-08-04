@@ -41,6 +41,14 @@ struct TrainingScreen: View {
                 .presentationDragIndicator(.visible)
         }
         .task {
+            // 今日页写完记录后把日历圆点拉回真实状态：`activeDates` 原本
+            // 只在初次加载和翻周/翻月时更新，刚练完的那天要等用户导航
+            // 离开再回来才会亮点。接线放在这里而不是今日页里，是为了让
+            // 写路径（todayViewModel）不必知道日历的存在——与
+            // `FutureDayContent` 接 `onPlanChanged` 同一套路。
+            todayViewModel.onWorkoutDataChanged = { [weak historyViewModel] in
+                await historyViewModel?.refreshCalendarMarkers()
+            }
             await historyViewModel.loadInitialScreenData()
         }
     }
