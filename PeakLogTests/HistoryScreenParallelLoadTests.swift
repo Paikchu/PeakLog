@@ -219,4 +219,5 @@ private struct DelayedParallelExerciseLibraryService: ExerciseLibraryServiceProt
         fatalError("unused")
     }
     func fetchLastPerformedSets(exerciseId: String?, exerciseName: String) async -> [ExerciseSet]? { nil }
+    func fetchLastPerformedSets(exerciseId: String?, exerciseName: String, before date: Date) async -> [ExerciseSet]? { nil }
 }

@@ -190,7 +190,9 @@ nonisolated enum ExerciseLibraryEngine {
         exerciseId: String?,
         exerciseName: String,
         sessions: [WorkoutSession],
-        library: [ExerciseDefinition]
+        library: [ExerciseDefinition],
+        before: Date? = nil,
+        calendar: Calendar = .current
     ) -> [ExerciseSet]? {
         guard let definition = resolveDefinition(name: exerciseName, exerciseId: exerciseId, in: library) else {
             return nil
@@ -200,7 +202,17 @@ nonisolated enum ExerciseLibraryEngine {
             resolveDefinition(name: exercise.name, exerciseId: exercise.exerciseId, in: library)?.id == definition.id
         }
 
-        guard let latestSession = sessions
+        // `before` 传入时按「自然日」裁剪：训练中要看的是**上一次**的数字，
+        // 今天自己刚落库的组不能算，否则一边练一边把参照物覆盖掉。
+        let candidates: [WorkoutSession]
+        if let before {
+            let startOfDay = calendar.startOfDay(for: before)
+            candidates = sessions.filter { $0.date < startOfDay }
+        } else {
+            candidates = sessions
+        }
+
+        guard let latestSession = candidates
             .filter({ $0.exercises.contains(where: matches) })
             .max(by: { $0.date < $1.date }),
             let exercise = latestSession.exercises.first(where: matches)
@@ -249,6 +261,13 @@ protocol ExerciseLibraryServiceProtocol {
         loadType: ExerciseLoadType
     ) async throws -> ExerciseDefinition
     func fetchLastPerformedSets(exerciseId: String?, exerciseName: String) async -> [ExerciseSet]?
+    /// 同上，但只看 `date` 所在自然日**之前**的记录。训练中展示「上次成绩」用这个：
+    /// 今天已落库的组不能当成参照物。
+    func fetchLastPerformedSets(
+        exerciseId: String?,
+        exerciseName: String,
+        before date: Date
+    ) async -> [ExerciseSet]?
 }
 
 final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
@@ -278,6 +297,20 @@ final class LocalExerciseLibraryService: ExerciseLibraryServiceProtocol {
             exerciseName: exerciseName,
             sessions: await database.allStrengthSessions(),
             library: await fetchLibrary()
+        )
+    }
+
+    func fetchLastPerformedSets(
+        exerciseId: String?,
+        exerciseName: String,
+        before date: Date
+    ) async -> [ExerciseSet]? {
+        ExerciseLibraryEngine.lastPerformedSets(
+            exerciseId: exerciseId,
+            exerciseName: exerciseName,
+            sessions: await database.allStrengthSessions(),
+            library: await fetchLibrary(),
+            before: date
         )
     }
 

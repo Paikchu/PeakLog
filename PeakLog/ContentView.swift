@@ -48,17 +48,20 @@ struct ContentView: View {
     }
 
     // 底部训练动作层状态：有最小化的活跃 session 时，无论正在看哪一天都
-    // 显示「训练进行中」；否则仅当正在看今天、且今日有可训练计划时显示
-    // 「开始训练」——过去/未来日期没有可开始的训练。
+    // 显示「训练进行中」；正在看今天且还有未完成的力量组时显示「开始训练」；
+    // 今日力量组全部完成且本会话留有训练小结时显示「查看小结」入口——
+    // 已经 ✓ 完成的一天不再出现无处可去的主 CTA。
     private var trainingActionState: TrainingActionLayer.State? {
-        guard !isTrainingFocusVisible else { return nil }
-        if let session = todayViewModel.activeLiveWorkout {
-            return .resume(completed: session.completedSetsCount, total: session.totalSetsCount)
-        }
-        guard historyViewModel.isSelectedDateToday,
-              let plan = todayViewModel.todayPlan,
-              plan.totalSetsCount > 0 else { return nil }
-        return .start
+        TrainingActionLayer.State.resolve(
+            isTrainingFocusVisible: isTrainingFocusVisible,
+            activeSessionProgress: todayViewModel.activeLiveWorkout.map {
+                (completed: $0.completedSetsCount, total: $0.totalSetsCount)
+            },
+            isSelectedDateToday: historyViewModel.isSelectedDateToday,
+            hasPlanSets: (todayViewModel.todayPlan?.totalSetsCount ?? 0) > 0,
+            hasPendingStrengthSets: todayViewModel.todayPlan?.hasPendingStrengthSets == true,
+            hasSessionSummary: todayViewModel.sessionSummary != nil
+        )
     }
 
     private func handleTrainingAction() {
@@ -69,6 +72,8 @@ struct ContentView: View {
                     Task { await historyViewModel.selectTodayAndRefresh() }
                 }
                 todayViewModel.resumeTrainingFocus()
+            } else if trainingActionState == .summary {
+                todayViewModel.isPresentingSessionSummary = true
             } else {
                 todayViewModel.startPlanLiveWorkout()
             }
