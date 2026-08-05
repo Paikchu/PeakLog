@@ -246,7 +246,8 @@ struct TrainingFocusBar: View {
                 }
             }
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, BottomActionBarMetrics.horizontalPadding)
+        .padding(.bottom, BottomActionBarMetrics.bottomPadding)
     }
 
     private func completeSetButton(_ session: PlanLiveWorkoutSession) -> some View {

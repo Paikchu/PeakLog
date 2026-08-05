@@ -9,6 +9,8 @@ struct ExerciseRecommendationTestRunner {
         saturatedGroupYieldsToSynergists()
         todaysTrainingIsNotExcluded()
         coldStartFallsBackToPopularityAndHonorsLimit()
+        stableMergeKeepsPinnedRowsInPlace()
+        stableMergeFillsOnlyFreeSlots()
         print("exercise_recommendation_test passed")
     }
 
@@ -162,5 +164,45 @@ struct ExerciseRecommendationTestRunner {
 
         let zero = recommend(sessions: [], limit: 0)
         precondition(zero.isEmpty)
+    }
+
+    // MARK: - Suggested Section Stability
+    // The picker pins the suggested rows for one picking pass so a re-ranked
+    // list can never slide a different exercise under the user's finger.
+
+    private static func stableMergeKeepsPinnedRowsInPlace() {
+        let pinned = [bench, squat, row]
+        // A completely inverted ranking that also drops `squat` — exactly what
+        // re-scoring after a selection produces.
+        let incoming = [plank, lateralRaise, row, bench]
+        let merged = ExerciseRecommendationEngine.stableMerge(pinned: pinned, incoming: incoming, limit: 8)
+
+        precondition(
+            Array(merged.prefix(3)).map(\.id) == pinned.map(\.id),
+            "Pinned rows must keep their slots, got \(merged.map(\.id))"
+        )
+        precondition(
+            merged.map(\.id) == [bench, squat, row, plank, lateralRaise].map(\.id),
+            "New rows append into free slots without duplicating pins, got \(merged.map(\.id))"
+        )
+    }
+
+    private static func stableMergeFillsOnlyFreeSlots() {
+        let full = [bench, fly, inclinePress]
+        let merged = ExerciseRecommendationEngine.stableMerge(pinned: full, incoming: [plank, row], limit: 3)
+        precondition(merged.map(\.id) == full.map(\.id), "A full section takes nothing new, got \(merged.map(\.id))")
+
+        let overflowing = ExerciseRecommendationEngine.stableMerge(pinned: full, incoming: [], limit: 2)
+        precondition(overflowing.map(\.id) == [bench, fly].map(\.id), "Pins are capped by the limit")
+
+        precondition(
+            ExerciseRecommendationEngine.stableMerge(pinned: full, incoming: [plank], limit: 0).isEmpty,
+            "A zero limit yields nothing"
+        )
+        precondition(
+            ExerciseRecommendationEngine.stableMerge(pinned: [], incoming: [plank, row], limit: 8).map(\.id)
+                == [plank, row].map(\.id),
+            "A fresh pass takes the incoming ranking verbatim"
+        )
     }
 }
