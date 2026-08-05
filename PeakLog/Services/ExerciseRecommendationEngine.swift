@@ -124,6 +124,30 @@ nonisolated enum ExerciseRecommendationEngine {
             .map(\.definition)
     }
 
+    /// Folds a freshly computed ranking into the one already on screen without
+    /// moving anything: rows in `pinned` keep the slot they were first drawn
+    /// in, and `incoming` may only fill slots that are still free.
+    ///
+    /// The suggested section is a live ranking, so re-scoring it mid-multi-select
+    /// used to reshuffle every row (and drop the one just picked) while the
+    /// user's finger was already on the way down — reliably turning a tap on
+    /// one exercise into a tap on whatever slid into its place. Callers pin for
+    /// the length of one picking pass and re-rank from scratch between passes.
+    static func stableMerge(
+        pinned: [ExerciseDefinition],
+        incoming: [ExerciseDefinition],
+        limit: Int
+    ) -> [ExerciseDefinition] {
+        guard limit > 0 else { return [] }
+        var merged = Array(pinned.prefix(limit))
+        var seenIds = Set(merged.map(\.id))
+        for definition in incoming where merged.count < limit {
+            guard seenIds.insert(definition.id).inserted else { continue }
+            merged.append(definition)
+        }
+        return merged
+    }
+
     // MARK: - Signals
 
     /// Calendar days since each muscle group was last trained (0 = today).

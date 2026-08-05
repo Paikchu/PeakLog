@@ -24,6 +24,27 @@ require(
     "training action layer and focus bar must live in a bottom safe-area inset"
 )
 require(!theme.contains("enum HomeDockMetrics"), "custom dock geometry tokens must be removed")
-require(actionLayer.contains("private static let horizontalPadding: CGFloat = 22"), "training actions must retain their local horizontal inset")
+require(
+    actionLayer.contains("static let horizontalPadding: CGFloat = 22"),
+    "training actions must retain their horizontal inset"
+)
+// safeAreaInset 把底部安全区让给 inset 内容后不再多留空隙，按钮下沿会正好压在
+// 安全区边界（Home Indicator 手势区）上。底部 CTA 必须自带这段呼吸位。
+require(
+    actionLayer.contains("static let bottomPadding: CGFloat = 12"),
+    "bottom CTAs must keep clearance below the safe-area boundary"
+)
+require(
+    actionLayer.contains(".padding(.bottom, BottomActionBarMetrics.bottomPadding)"),
+    "training action layer must apply the shared bottom clearance"
+)
+let focusComponents = try String(
+    contentsOf: root.appendingPathComponent("PeakLog/Views/Today/TrainingFocusComponents.swift"),
+    encoding: .utf8
+)
+require(
+    focusComponents.contains(".padding(.bottom, BottomActionBarMetrics.bottomPadding)"),
+    "focus bar must apply the same bottom clearance as the action layer"
+)
 
 print("home_dockless_bottom_layer_layout_test passed")

@@ -1,11 +1,20 @@
 import SwiftUI
 
+/// 挂在 `safeAreaInset(edge: .bottom)` 上的底部操作栏共用度量。
+///
+/// `safeAreaInset` 会把底部安全区让给 inset 内容，但**不会**再多留一丝空隙：
+/// 不写 `bottomPadding` 时按钮下沿正好压在安全区边界上（实测 iPhone 17 Pro Max
+/// 上距屏幕底 34pt），紧贴 Home Indicator 的手势区，看着挤、点着也容易被系统
+/// 的上滑识别器抢走。所有底部 CTA 统一用这里的值留出呼吸位。
+enum BottomActionBarMetrics {
+    static let horizontalPadding: CGFloat = 22
+    static let bottomPadding: CGFloat = 12
+}
+
 /// Dock 上方的训练动作层，两种状态共用同一个位置：
 /// - `.start`：计划页专属的「开始训练」CTA（今日有计划且无活跃 session）。
 /// - `.resume`：有最小化的活跃 session 时全局显示的「训练进行中」卡片。
 struct TrainingActionLayer: View {
-    private static let horizontalPadding: CGFloat = 22
-
     enum State: Equatable {
         case start
         case resume(completed: Int, total: Int)
@@ -24,7 +33,8 @@ struct TrainingActionLayer: View {
                 resumeCard(completed: completed, total: total)
             }
         }
-        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.horizontal, BottomActionBarMetrics.horizontalPadding)
+        .padding(.bottom, BottomActionBarMetrics.bottomPadding)
     }
 
     private var startButton: some View {

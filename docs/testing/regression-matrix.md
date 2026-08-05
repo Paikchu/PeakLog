@@ -48,6 +48,7 @@
 | 场景 | 验证方式 | 固定验收维度 |
 |---|---|---|
 | 无底部 dock/tab 容器；训练动作层与专注确认栏挂在底部 safe-area inset | `tests/home_dock_fixed_rail_test.swift` | 主路径 |
+| 底部 CTA（开始训练/训练进行中/完成当前组/添加 N 个动作）下沿与安全区边界之间保留 12pt 呼吸位，不紧贴 Home Indicator 手势区 | `tests/home_dock_fixed_rail_test.swift`、iPhone 17 Pro Max 模拟器手测（实测下沿距屏底 46pt） | 主路径 |
 | 根壳托管统一 TrainingScreen；时态路由与专注模式下钉顶区显隐正确；开始训练仅在查看今天时出现 | `tests/home_dock_navigation_test.swift` | 主路径 |
 
 ## Auth · Sync
@@ -90,6 +91,8 @@
 | 动作库搜索匹配与排序 | `tests/exercise_library_search_test.swift` | 主路径、空态 |
 | 最近使用动作的选取器展示 | `tests/exercise_picker_recent_test.swift` | 主路径、空态 |
 | 动作推荐逻辑 | `tests/exercise_recommendation_test.swift` | 主路径 |
+| SUGGESTED 分区在一次挑选过程中顺序固定：多选时已显示的行不重排、不消失（选中只变勾选态），重新排序只发生在进出配置页之间 | `tests/exercise_recommendation_test.swift`（`stableMerge`）、iPhone 17 Pro Max 模拟器手测 | 主路径、重复提交 |
+| 底部确认栏不透明且带上沿分隔线，列表行不透栏；滚到底时最后一行（含「创建自定义动作」）能完全露出栏外 | iPhone 17 Pro Max 模拟器手测 | 主路径 |
 | 添加训练计划直接进入统一选择器，有氧分类提供四种活动 | `tests/cardio_plan_ui_contract_test.swift` | 主路径、空态 |
 | 全部、搜索与有氧筛选中的有氧项和力量项使用相同行与选择状态 | `tests/cardio_plan_ui_contract_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径 |
 | 混合选择按顺序进入配置页；返回选择器保留参数且已配置项不可重复添加 | `tests/plan_exercise_draft_builder_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径、重复提交 |

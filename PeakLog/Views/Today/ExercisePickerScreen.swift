@@ -21,8 +21,12 @@ struct ExercisePickerScreen: View {
         case cardio
     }
 
+    private static let suggestionLimit = 8
+
     @State private var library: [ExerciseDefinition] = []
     @State private var recommendations: [ExerciseDefinition] = []
+    /// Which picking pass `recommendations` was ranked for; see `pickingPassKey`.
+    @State private var rankedPassKey: String?
     @State private var summariesById: [String: RecentExerciseEntry] = [:]
     @State private var query = ""
     @State private var equipmentFilter: Equipment?
@@ -67,9 +71,13 @@ struct ExercisePickerScreen: View {
         category == .all && trimmedQuery.isEmpty && equipmentFilter == nil && !recommendations.isEmpty
     }
 
-    /// Selection and form-card changes re-key the recommendation task.
-    private var recommendationKey: String {
-        (selection.map(\.id) + alreadyAddedItemIDs.sorted()).joined(separator: "|")
+    /// One "picking pass" is everything between two trips to the form: the
+    /// suggested section is ranked once per pass and then holds still, so rows
+    /// never move under a finger mid-multi-select. Deliberately keyed on the
+    /// form cards only — folding `selection` in here is what used to re-rank
+    /// (and re-order) the section on every single tap.
+    private var pickingPassKey: String {
+        alreadyAddedItemIDs.sorted().joined(separator: "|")
     }
 
     private var navigationTitle: LocalizedStringKey {
@@ -138,7 +146,7 @@ struct ExercisePickerScreen: View {
         .safeAreaInset(edge: .bottom) { confirmBar }
         .sensoryFeedback(.selection, trigger: selection.count)
         .task { await loadLibrary() }
-        .task(id: recommendationKey) { await refreshRecommendations() }
+        .task(id: pickingPassKey) { await refreshRecommendations() }
         .sheet(isPresented: $showsCreateSheet) {
             CreateCustomExerciseSheet(initialName: trimmedQuery) { name, muscleGroup, loadType in
                 await createCustomExercise(name: name, muscleGroup: muscleGroup, loadType: loadType)
@@ -471,12 +479,20 @@ struct ExercisePickerScreen: View {
                 .accessibilityIdentifier("exercisePicker.confirm")
             }
             .padding(.top, 10)
-            .padding(.bottom, 4)
-            .background(
+            .padding(.bottom, BottomActionBarMetrics.bottomPadding)
+            .background(alignment: .top) {
+                // Opaque, not a 0.94 wash: the rows scrolling underneath used
+                // to ghost through the bar and read as a rendering glitch. The
+                // hairline gives the bar an edge so it reads as chrome rather
+                // than as content floating over the last rows.
                 Color.appBackground
-                    .opacity(0.94)
                     .ignoresSafeArea(edges: .bottom)
-            )
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(Color.appSeparator)
+                            .frame(height: 0.5)
+                    }
+            }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
@@ -553,10 +569,9 @@ struct ExercisePickerScreen: View {
     }
 
     private func refreshRecommendations() async {
-        // Reuse the cached library instead of re-fetching the whole catalog
-        // on every selection change (this task reruns per `recommendationKey`
-        // edit). `loadLibrary()` populates `library` on first appear; only
-        // fall back to a fetch here if it hasn't landed yet.
+        // Reuse the cached library instead of re-fetching the whole catalog.
+        // `loadLibrary()` populates `library` on first appear; only fall back
+        // to a fetch here if it hasn't landed yet.
         if library.isEmpty {
             library = await AppServices.exerciseLibraryService.fetchLibrary()
         }
@@ -569,9 +584,22 @@ struct ExercisePickerScreen: View {
         }
         let result = await AppServices.exerciseLibraryService.fetchRecommendations(
             todaysSelections: selectedDefinitions + addedDefinitions,
-            limit: 8
+            limit: Self.suggestionLimit
         )
-        withAnimation(pickerSpring) { recommendations = result }
+
+        // Within a pass the rows already on screen keep their slots; a re-run
+        // (a late library load, say) may only top up slots that are still
+        // empty. Crossing into a new pass drops the pins and re-ranks.
+        let passKey = pickingPassKey
+        let pinned = rankedPassKey == passKey ? recommendations : []
+        rankedPassKey = passKey
+        let merged = ExerciseRecommendationEngine.stableMerge(
+            pinned: pinned,
+            incoming: result,
+            limit: Self.suggestionLimit
+        )
+        guard merged.map(\.id) != recommendations.map(\.id) else { return }
+        withAnimation(pickerSpring) { recommendations = merged }
     }
 
     private func createCustomExercise(
