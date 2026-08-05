@@ -210,6 +210,21 @@ struct TodayWorkoutScreen: View {
         }
         .animation(flowAnimation, value: isFocusMode)
         .task { await viewModel.onAppear() }
+        .onAppear {
+            // 本视图可能是在专注模式**已经**激活之后才被创建的：`TrainingScreen`
+            // 的 `if isFocusMode { ... } else { switch tense { ... } }` 是两个不同的
+            // 分支，切换时 SwiftUI 视为不同身份、重建视图，@State 全部归零，
+            // 而 `onChange(of: isFocusMode)` 只对"出现之后的变化"生效、不会补发。
+            // 于是 displayedExerciseId 停在 nil，没有任何动作卡片展开——整屏只剩
+            // 几条折叠行加大片留白。这里补一次初始化兜住那条路径。
+            guard isFocusMode, displayedExerciseId == nil else { return }
+            let currentId = viewModel.activeLiveWorkout?.currentExercise?.id
+            displayedExerciseId = currentId
+            scrolledExerciseId = currentId
+#if canImport(UIKit)
+            UIApplication.shared.isIdleTimerDisabled = true
+#endif
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             viewModel.syncLiveActivityCompletions()
         }
@@ -284,6 +299,13 @@ struct TodayWorkoutScreen: View {
                     planExerciseId: exercise.id,
                     metrics: metrics
                 )
+            }
+        }
+        .sheet(isPresented: $viewModel.isPresentingSessionSummary) {
+            if let summary = viewModel.sessionSummary {
+                TrainingSummaryView(summary: summary)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
         }
         .confirmationDialog(
@@ -769,7 +791,11 @@ private struct TodayPlanExercisesSection: View {
                     targetReps: set.targetReps,
                     isAlreadyCompleted: set.isCompleted
                 )
-            }
+            },
+            exerciseId: exercise.exerciseId,
+            previousPerformanceSummary: exercise.previousPerformanceSummary,
+            aiSuggestion: exercise.aiSuggestion,
+            notes: exercise.notes
         )
     }
 }

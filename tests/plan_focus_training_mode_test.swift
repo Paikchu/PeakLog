@@ -13,6 +13,14 @@ let viewModelSource = try String(
     contentsOf: rootURL.appendingPathComponent("PeakLog/ViewModels/TodayWorkoutViewModel.swift"),
     encoding: .utf8
 )
+// `PlanLiveWorkout*` 的值类型已从 view model 拆到 Models/ 下（它们是被小结计算与
+// Live Activity 共用的纯数据）。session 形状相关的断言查这两个文件的并集，
+// 断言的是「特性存在」，不是「代码住在哪个文件」。
+let liveWorkoutModelsSource = try String(
+    contentsOf: rootURL.appendingPathComponent("PeakLog/Models/PlanLiveWorkoutModels.swift"),
+    encoding: .utf8
+)
+let sessionSource = viewModelSource + liveWorkoutModelsSource
 let contentViewSource = try String(
     contentsOf: rootURL.appendingPathComponent("PeakLog/ContentView.swift"),
     encoding: .utf8
@@ -31,7 +39,7 @@ precondition(
     "Expected the standalone TrainingSessionScreen to be deleted"
 )
 precondition(
-    viewModelSource.contains("var manualFocusExerciseId") && viewModelSource.contains("var skippedExerciseIds"),
+    sessionSource.contains("var manualFocusExerciseId") && sessionSource.contains("var skippedExerciseIds"),
     "Expected the live session to track the manually focused exercise and skipped exercises"
 )
 precondition(

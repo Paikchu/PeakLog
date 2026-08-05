@@ -1,77 +1,8 @@
 import Foundation
 import Combine
 
-struct PlanLiveWorkoutSet: Identifiable, Equatable, Codable {
-    let id: String
-    let setIndex: Int
-    let targetWeight: Double?
-    let targetWeightUnit: WeightUnit
-    let targetReps: Int
-    let isAlreadyCompleted: Bool
-}
-
-struct PlanLiveWorkoutExercise: Identifiable, Equatable, Codable {
-    let id: String
-    let name: String
-    let loadType: ExerciseLoadType
-    let sets: [PlanLiveWorkoutSet]
-}
-
-struct PlanLiveWorkoutSession: Identifiable, Equatable, Codable {
-    let id: String
-    let title: String
-    let focus: String?
-    var exercises: [PlanLiveWorkoutExercise]
-    var currentExerciseIndex: Int
-    var currentSetIndex: Int
-    var completedSetIds: Set<String>
-    // 用户滑动锁定优先完成的动作；做完后清除，指针回到最早未完成动作。
-    var manualFocusExerciseId: String?
-    var skippedExerciseIds: Set<String> = []
-
-    var currentExercise: PlanLiveWorkoutExercise? {
-        guard exercises.indices.contains(currentExerciseIndex) else { return nil }
-        return exercises[currentExerciseIndex]
-    }
-
-    var currentSet: PlanLiveWorkoutSet? {
-        guard let currentExercise, currentExercise.sets.indices.contains(currentSetIndex) else { return nil }
-        return currentExercise.sets[currentSetIndex]
-    }
-
-    var completedSetsCount: Int {
-        completedSetIds.count
-    }
-
-    var totalSetsCount: Int {
-        exercises.reduce(0) { $0 + $1.sets.count }
-    }
-
-    var progress: Double {
-        guard totalSetsCount > 0 else { return 0 }
-        return Double(completedSetsCount) / Double(totalSetsCount)
-    }
-
-    var isComplete: Bool {
-        completedSetsCount >= totalSetsCount
-    }
-
-    func exercise(withId id: String) -> PlanLiveWorkoutExercise? {
-        exercises.first { $0.id == id }
-    }
-
-    func firstIncompleteSetIndex(in exercise: PlanLiveWorkoutExercise) -> Int? {
-        exercise.sets.firstIndex { !completedSetIds.contains($0.id) }
-    }
-
-    func completedSetsCount(in exercise: PlanLiveWorkoutExercise) -> Int {
-        exercise.sets.count { completedSetIds.contains($0.id) }
-    }
-
-    func isExerciseComplete(_ exercise: PlanLiveWorkoutExercise) -> Bool {
-        firstIncompleteSetIndex(in: exercise) == nil
-    }
-}
+// `PlanLiveWorkoutSet` / `PlanLiveWorkoutExercise` / `PlanLiveWorkoutSession`
+// 见 `Models/PlanLiveWorkoutModels.swift`。
 
 @MainActor
 final class TodayWorkoutViewModel: ObservableObject {
@@ -85,6 +16,12 @@ final class TodayWorkoutViewModel: ObservableObject {
     @Published var isTrainingFocusActive = false
     // 组间休息倒计时结束时间；nil 表示不在休息。
     @Published var restEndDate: Date?
+    // 本次休息的起点，与 restEndDate 一起构成休息面板进度条的区间。
+    @Published var restStartDate: Date?
+    /// 最近一次「结束并保存」生成的训练小结；同一天内保留，供 dock 入口重新打开。
+    @Published var sessionSummary: TrainingSessionSummary?
+    /// 小结弹层的显隐；confirm 成功后自动置 true，用户也可从 dock 重新打开。
+    @Published var isPresentingSessionSummary = false
     @Published var isLoading = false
     @Published var errorMessage: String?
     /// Flips true after the first successful `refresh()`. Gates the
@@ -107,6 +44,12 @@ final class TodayWorkoutViewModel: ObservableObject {
     private let trainingPlanService: TrainingPlanServiceProtocol
     private let workoutService: WorkoutServiceProtocol
     private let liveActivityManager: PlanLiveActivityManaging
+    /// 只用于结束训练时取 PR 基线与单位偏好；为 nil（测试默认）时小结仍会生成，
+    /// 只是不做 PR 判定、单位回落到 kg。
+    private let profileService: ProfileServiceProtocol?
+    /// 只用于给专注卡片补「上次成绩」；为 nil 时卡片少一行上下文，不影响训练流程。
+    private let exerciseLibraryService: ExerciseLibraryServiceProtocol?
+    private var previousPerformanceTask: Task<Void, Never>?
 
     private var liveActivityObservationTask: Task<Void, Never>?
     private var restCountdownTask: Task<Void, Never>?
@@ -123,12 +66,16 @@ final class TodayWorkoutViewModel: ObservableObject {
         trainingPlanService: TrainingPlanServiceProtocol,
         workoutService: WorkoutServiceProtocol,
         liveActivityManager: PlanLiveActivityManaging = NoOpPlanLiveActivityManager(),
-        sessionDefaults: UserDefaults = .standard
+        sessionDefaults: UserDefaults = .standard,
+        profileService: ProfileServiceProtocol? = nil,
+        exerciseLibraryService: ExerciseLibraryServiceProtocol? = nil
     ) {
         self.trainingPlanService = trainingPlanService
         self.workoutService = workoutService
         self.liveActivityManager = liveActivityManager
         self.sessionDefaults = sessionDefaults
+        self.profileService = profileService
+        self.exerciseLibraryService = exerciseLibraryService
     }
 
     #if !TESTING
@@ -136,7 +83,9 @@ final class TodayWorkoutViewModel: ObservableObject {
         self.init(
             trainingPlanService: AppServices.trainingPlanService,
             workoutService: AppServices.workoutService,
-            liveActivityManager: PlanLiveActivityManagerFactory.make()
+            liveActivityManager: PlanLiveActivityManagerFactory.make(),
+            profileService: AppServices.profileService,
+            exerciseLibraryService: AppServices.exerciseLibraryService
         )
     }
     #endif
@@ -220,7 +169,11 @@ final class TodayWorkoutViewModel: ObservableObject {
                             targetReps: set.targetReps,
                             isAlreadyCompleted: set.isCompleted
                         )
-                    }
+                    },
+                    exerciseId: exercise.exerciseId,
+                    previousPerformanceSummary: exercise.previousPerformanceSummary,
+                    aiSuggestion: exercise.aiSuggestion,
+                    notes: exercise.notes
                 )
             }
 
@@ -234,7 +187,8 @@ final class TodayWorkoutViewModel: ObservableObject {
             currentSetIndex: 0,
             completedSetIds: Set(exercises.flatMap(\.sets).filter(\.isAlreadyCompleted).map(\.id)),
             manualFocusExerciseId: nil,
-            skippedExerciseIds: []
+            skippedExerciseIds: [],
+            startedAt: Date()
         )
         moveLiveWorkoutCursor(toNextIncompleteSetIn: &session)
         activeLiveWorkout = session
@@ -243,6 +197,41 @@ final class TodayWorkoutViewModel: ObservableObject {
         isTrainingFocusActive = true
         Task { await liveActivityManager.start(session: session) }
         observeLiveActivityCompletions(sessionId: session.id)
+        fillPreviousPerformanceSummaries(sessionId: session.id)
+    }
+
+    /// 开练后异步补「上次成绩」。放在 session 建立之后而不是阻塞开始训练：
+    /// 查历史要读全部力量记录，不该让用户等；补不到就少一行上下文。
+    private func fillPreviousPerformanceSummaries(sessionId: String) {
+        guard let exerciseLibraryService else { return }
+        previousPerformanceTask?.cancel()
+
+        let lookups = (activeLiveWorkout?.exercises ?? [])
+            .filter { $0.previousPerformanceSummary?.isEmpty ?? true }
+            .map { (id: $0.id, exerciseId: $0.exerciseId, name: $0.name) }
+        guard !lookups.isEmpty else { return }
+
+        previousPerformanceTask = Task { @MainActor [weak self] in
+            let today = Date()
+            for lookup in lookups {
+                guard !Task.isCancelled else { return }
+                let sets = await exerciseLibraryService.fetchLastPerformedSets(
+                    exerciseId: lookup.exerciseId,
+                    exerciseName: lookup.name,
+                    before: today
+                )
+                guard !Task.isCancelled,
+                      let self,
+                      let summary = sets.flatMap(PreviousPerformanceText.summary(from:)),
+                      var session = self.activeLiveWorkout,
+                      session.id == sessionId,
+                      let index = session.exercises.firstIndex(where: { $0.id == lookup.id })
+                else { continue }
+
+                session.exercises[index].previousPerformanceSummary = summary
+                self.activeLiveWorkout = session
+            }
+        }
     }
 
     /// 用户滑动停稳在另一个动作上：锁定该动作为当前动作，优先完成。
@@ -285,6 +274,15 @@ final class TodayWorkoutViewModel: ObservableObject {
         restCountdownTask?.cancel()
         restCountdownTask = nil
         restEndDate = nil
+        restStartDate = nil
+    }
+
+    /// 休息中追加时长（默认 +30s）；不在休息时无操作。
+    func extendRest(by seconds: TimeInterval = 30) {
+        guard let endDate = restEndDate, endDate > Date() else { return }
+        let newEndDate = endDate.addingTimeInterval(seconds)
+        restEndDate = newEndDate
+        scheduleRestExpiry(at: newEndDate)
     }
 
     private func startRestCountdownIfNeeded() {
@@ -293,14 +291,23 @@ final class TodayWorkoutViewModel: ObservableObject {
             return
         }
 
-        restCountdownTask?.cancel()
         let endDate = Date().addingTimeInterval(Self.restDurationSeconds)
+        restStartDate = Date()
         restEndDate = endDate
+        scheduleRestExpiry(at: endDate)
+    }
+
+    private func scheduleRestExpiry(at endDate: Date) {
+        restCountdownTask?.cancel()
         restCountdownTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.restDurationSeconds * 1_000_000_000))
+            let interval = endDate.timeIntervalSinceNow
+            if interval > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            }
             guard !Task.isCancelled else { return }
             guard let self, self.restEndDate == endDate else { return }
             self.restEndDate = nil
+            self.restStartDate = nil
         }
     }
 
@@ -355,6 +362,8 @@ final class TodayWorkoutViewModel: ObservableObject {
     func cancelPlanLiveWorkout() {
         liveActivityObservationTask?.cancel()
         liveActivityObservationTask = nil
+        previousPerformanceTask?.cancel()
+        previousPerformanceTask = nil
         activeLiveWorkout = nil
         // 关键节点：立即落盘，不经过去抖延迟。
         persistActiveLiveWorkoutImmediately()
@@ -386,6 +395,18 @@ final class TodayWorkoutViewModel: ObservableObject {
                     && !isPlanSetCompletedInTodayPlan($0.1.id)
             }
 
+        // PR 基线必须在本次训练落库之前取——落库后历史里已包含今天的组，
+        // 「是否刷新纪录」就永远判不出来了。取不到（离线/未注入）则跳过 PR 判定。
+        var priorPRs: [String: ExercisePR]?
+        var preferredUnit = WeightUnit.kg
+        if let profileService, let profile = try? await profileService.fetchProfile() {
+            priorPRs = Dictionary(
+                profile.exercisePRs.map { ($0.normalizedName, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            preferredUnit = profile.preferences.weightUnit
+        }
+
         do {
             for (_, set) in pendingSets {
                 let updated = try await trainingPlanService.completePlannedSet(
@@ -403,11 +424,22 @@ final class TodayWorkoutViewModel: ObservableObject {
             todayRecord = optimisticWorkoutRecord(from: session)
             liveActivityObservationTask?.cancel()
             liveActivityObservationTask = nil
+            previousPerformanceTask?.cancel()
+            previousPerformanceTask = nil
             activeLiveWorkout = nil
             // 关键节点：立即落盘，不经过去抖延迟。
             persistActiveLiveWorkoutImmediately()
             isTrainingFocusActive = false
             skipRest()
+            if let summary = TrainingSessionSummary.make(
+                session: session,
+                priorPRs: priorPRs,
+                preferredUnit: preferredUnit,
+                endedAt: Date()
+            ) {
+                sessionSummary = summary
+                isPresentingSessionSummary = true
+            }
             await liveActivityManager.end()
             await refreshTodayRecordOnly()
             if todayRecord == nil {
@@ -830,6 +862,8 @@ final class TodayWorkoutViewModel: ObservableObject {
         isTrainingFocusActive = false
         Task { await liveActivityManager.start(session: session) }
         observeLiveActivityCompletions(sessionId: session.id)
+        // 旧版本落盘的 session 没有上下文字段，恢复后同样补一次。
+        fillPreviousPerformanceSummaries(sessionId: session.id)
     }
 
     private func markLiveSetCompleted(planSetId: String) {

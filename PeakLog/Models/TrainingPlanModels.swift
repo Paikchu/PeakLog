@@ -153,6 +153,14 @@ nonisolated struct TrainingPlanDay: Identifiable, Codable, Equatable, Sendable {
         totalSetsCount + exercises.filter { $0.itemType == .cardio }.count
     }
 
+    /// 今天是否还有可以「开始训练」的力量组。专注模式只承载力量动作，
+    /// 所以 dock 的开始 CTA 以此为准——有氧未完成不构成可开始的训练。
+    var hasPendingStrengthSets: Bool {
+        exercises.contains { exercise in
+            exercise.itemType == .strength && exercise.sets.contains { !$0.isCompleted }
+        }
+    }
+
     /// 按 orderedExerciseIds 重排 exercises 并重写 orderIndex(0..<count)。
     /// orderedExerciseIds 必须是当前 exercises id 集合的一个排列，否则返回 nil。
     func reordered(byExerciseIds orderedExerciseIds: [String]) -> TrainingPlanDay? {
