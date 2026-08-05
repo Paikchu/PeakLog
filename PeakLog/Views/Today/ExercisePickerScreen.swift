@@ -569,6 +569,12 @@ struct ExercisePickerScreen: View {
     }
 
     private func refreshRecommendations() async {
+        // The pass this run belongs to, read before any await. A superseded
+        // `.task(id:)` is cancelled but still resumes — the library service is
+        // non-throwing and doesn't check cancellation — so a late result must
+        // never be stamped with a pass it wasn't ranked for.
+        let passKey = pickingPassKey
+
         // Reuse the cached library instead of re-fetching the whole catalog.
         // `loadLibrary()` populates `library` on first appear; only fall back
         // to a fetch here if it hasn't landed yet.
@@ -587,10 +593,17 @@ struct ExercisePickerScreen: View {
             limit: Self.suggestionLimit
         )
 
+        // Drop a superseded run outright rather than let it publish last
+        // pass's ranking: confirming a selection while the first fetch is
+        // still in flight would otherwise pin rows that have since become
+        // form cards, leaving disabled "already added" rows in SUGGESTED for
+        // the rest of the pass. Checked on the task rather than by re-reading
+        // `pickingPassKey`, which resolves against this run's captured view.
+        guard !Task.isCancelled else { return }
+
         // Within a pass the rows already on screen keep their slots; a re-run
         // (a late library load, say) may only top up slots that are still
         // empty. Crossing into a new pass drops the pins and re-ranks.
-        let passKey = pickingPassKey
         let pinned = rankedPassKey == passKey ? recommendations : []
         rankedPassKey = passKey
         let merged = ExerciseRecommendationEngine.stableMerge(

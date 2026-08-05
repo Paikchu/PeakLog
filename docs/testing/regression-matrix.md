@@ -91,7 +91,8 @@
 | 动作库搜索匹配与排序 | `tests/exercise_library_search_test.swift` | 主路径、空态 |
 | 最近使用动作的选取器展示 | `tests/exercise_picker_recent_test.swift` | 主路径、空态 |
 | 动作推荐逻辑 | `tests/exercise_recommendation_test.swift` | 主路径 |
-| SUGGESTED 分区在一次挑选过程中顺序固定：多选时已显示的行不重排、不消失（选中只变勾选态），重新排序只发生在进出配置页之间 | `tests/exercise_recommendation_test.swift`（`stableMerge`）、iPhone 17 Pro Max 模拟器手测 | 主路径、重复提交 |
+| SUGGESTED 分区在一次挑选过程中顺序固定：多选时已显示的行不重排、不消失（选中只变勾选态），重新排序只发生在进出配置页之间 | `tests/exercise_recommendation_test.swift`（`stableMerge`）、`tests/exercise_picker_suggestion_stability_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径、重复提交 |
+| 首次推荐还在请求中就确认选择时，被取消的旧任务不得把上一个 pass 的排名写回去（否则已变成配置卡片的动作会以禁用态钉在 SUGGESTED 里） | `tests/exercise_picker_suggestion_stability_test.swift`、iPhone 17 Pro Max 模拟器手测 | 重复提交、竞态 |
 | 底部确认栏不透明且带上沿分隔线，列表行不透栏；滚到底时最后一行（含「创建自定义动作」）能完全露出栏外 | iPhone 17 Pro Max 模拟器手测 | 主路径 |
 | 添加训练计划直接进入统一选择器，有氧分类提供四种活动 | `tests/cardio_plan_ui_contract_test.swift` | 主路径、空态 |
 | 全部、搜索与有氧筛选中的有氧项和力量项使用相同行与选择状态 | `tests/cardio_plan_ui_contract_test.swift`、iPhone 17 Pro Max 模拟器手测 | 主路径 |
