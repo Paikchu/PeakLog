@@ -25,6 +25,7 @@ nonisolated enum CardioMetricsError: Error, Equatable, Sendable {
     case invalidDistance
     case unsupportedDistance
     case invalidRPE
+    case missingPlanTarget
 }
 
 nonisolated struct CardioMetrics: Codable, Equatable, Sendable {
@@ -51,6 +52,36 @@ nonisolated struct CardioMetrics: Codable, Equatable, Sendable {
         self.durationMinutes = durationMinutes
         self.distanceKm = distanceKm
         self.rpe = rpe
+    }
+}
+
+// A planned cardio target and a logged cardio record are validated by
+// different rules. A record always has a duration (running_workouts.
+// duration_minutes is NOT NULL), but a target only needs one of the two
+// numbers: "run 5 km" and "run for 30 min" are both complete goals.
+nonisolated struct CardioPlanTarget: Equatable, Sendable {
+    let activityType: CardioActivityType
+    let durationMinutes: Int?
+    let distanceKm: Double?
+
+    init(
+        activityType: CardioActivityType,
+        durationMinutes: Int?,
+        distanceKm: Double?
+    ) throws {
+        if let durationMinutes {
+            guard durationMinutes > 0 else { throw CardioMetricsError.invalidDuration }
+        }
+        if let distanceKm {
+            guard distanceKm > 0 else { throw CardioMetricsError.invalidDistance }
+            guard activityType.supportsDistance else { throw CardioMetricsError.unsupportedDistance }
+        }
+        guard durationMinutes != nil || distanceKm != nil else {
+            throw CardioMetricsError.missingPlanTarget
+        }
+        self.activityType = activityType
+        self.durationMinutes = durationMinutes
+        self.distanceKm = distanceKm
     }
 }
 

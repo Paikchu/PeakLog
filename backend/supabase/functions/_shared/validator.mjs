@@ -50,15 +50,26 @@ function clampDayExercises(day, dayIndex, context, structuralViolations, verdict
           `day ${dayIndex} exercise "${exercise.exerciseName}": unknown cardioActivityType "${activityType}"`
         );
       }
-      if (!Number.isInteger(exercise.targetDurationMinutes) || exercise.targetDurationMinutes <= 0) {
+      // Duration and distance are alternative targets, not a required field
+      // plus an optional one: "run 5 km" is as complete a prescription as
+      // "run 30 min". Both missing is still a defect — that item tells the
+      // person nothing to do. Mirrors the training_plan_exercises CHECK
+      // relaxed in 20260811093000_relax_cardio_plan_target.sql.
+      if (exercise.targetDurationMinutes != null &&
+          (!Number.isInteger(exercise.targetDurationMinutes) || exercise.targetDurationMinutes <= 0)) {
         structuralViolations.push(
-          `day ${dayIndex} exercise "${exercise.exerciseName}": duration must be a positive integer`
+          `day ${dayIndex} exercise "${exercise.exerciseName}": duration must be a positive integer when present`
         );
       }
       if (exercise.targetDistanceKm != null &&
           (typeof exercise.targetDistanceKm !== 'number' || exercise.targetDistanceKm <= 0)) {
         structuralViolations.push(
           `day ${dayIndex} exercise "${exercise.exerciseName}": distance must be positive when present`
+        );
+      }
+      if (exercise.targetDurationMinutes == null && exercise.targetDistanceKm == null) {
+        structuralViolations.push(
+          `day ${dayIndex} exercise "${exercise.exerciseName}": cardio item needs a duration or a distance target`
         );
       }
       if ((activityType === 'elliptical' || activityType === 'stair_climber') &&

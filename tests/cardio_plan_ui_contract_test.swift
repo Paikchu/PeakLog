@@ -51,6 +51,11 @@ precondition(addPlan.contains("Text(\"daily_record.type.cardio\")"), "Cardio for
 precondition(addPlan.contains(".fill(Color.accentPrimary)"), "Cardio form header must use the same accent marker as a strength form header")
 precondition(addPlan.contains("VStack(spacing: 6)"), "Cardio metrics must use the same content spacing as strength sets")
 precondition(addPlan.contains(".padding(.horizontal, 6)"), "Cardio metrics must align with strength form content")
+// 时长/距离是互补目标，填其一即可；两者都空时提示语点亮，说明保存为什么不可用。
+precondition(addPlan.contains("cardio.plan.target_hint"), "The add-plan cardio card must explain the at-least-one-target rule")
+precondition(addPlan.contains("input.hasTarget"), "The hint must react to whether a target is filled in")
+precondition(addPlan.contains("cardio.metric.optional"), "Both cardio targets must read as optional on a distance-capable activity")
+precondition(localizations.contains("\"cardio.plan.target_hint\""))
 precondition(!addPlan.contains("selectedCardioActivity"))
 precondition(!addPlan.contains("cardioDuration"))
 precondition(!addPlan.contains("cardioDistance"))

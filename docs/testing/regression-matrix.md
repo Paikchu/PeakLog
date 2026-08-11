@@ -42,6 +42,7 @@
 | 计划文案的多语言本地化 | `tests/localized_plan_text_test.swift` | 主路径、迁移后兼容性 |
 | 新增有氧计划只保存时长/距离，编辑事件和生成器输出不含 RPE | `tests/plan_exercise_draft_builder_test.swift`、`tests/plan_edit_event_recording_test.swift`、`backend/tests/` | 主路径、迁移后兼容性 |
 | 已配置力量动作后追加有氧时合并提交，未完成力量草稿阻止保存 | `tests/plan_exercise_draft_builder_test.swift`、`tests/cardio_plan_ui_contract_test.swift` | 主路径、重复提交 |
+| 有氧计划目标时长与距离填其一即可（只填距离也能保存），两者都空才阻止保存；椭圆机/爬楼机仍只能用时长；填了的值必须为正 | `tests/plan_exercise_draft_builder_test.swift`、`tests/cardio_model_test.swift`、`tests/cardio_plan_ui_contract_test.swift`、`backend/tests/validator.test.mjs`、`backend/tests/cardioPlanTargetMigration.test.mjs` | 主路径、空态、迁移后兼容性 |
 
 ## Home
 

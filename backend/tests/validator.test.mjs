@@ -165,6 +165,32 @@ test('running and cycling accept duration with optional distance', () => {
   assert.equal(result.ok, true, result.structuralViolations.join('\n'));
 });
 
+test('a distance-only cardio target is a complete prescription', () => {
+  const plan = validSevenDayPlan();
+  plan.days[0].exercises = [validCardio({ targetDurationMinutes: null })];
+  plan.days[2].exercises = [validCardio({
+    exerciseName: 'Cycling',
+    cardioActivityType: 'cycling',
+    targetDurationMinutes: null,
+    targetDistanceKm: 20,
+  })];
+  const result = validateWeeklyPlan(plan, baseContext());
+  assert.equal(result.ok, true, result.structuralViolations.join('\n'));
+  assert.equal(result.clampedPlan.days[0].exercises[0].targetDurationMinutes, null);
+  assert.equal(result.clampedPlan.days[0].exercises[0].targetDistanceKm, 5);
+});
+
+test('a cardio item with neither duration nor distance is rejected', () => {
+  const plan = validSevenDayPlan();
+  plan.days[0].exercises = [validCardio({ targetDurationMinutes: null, targetDistanceKm: null })];
+  const result = validateWeeklyPlan(plan, baseContext());
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.structuralViolations.some((v) => v.includes('needs a duration or a distance target')),
+    result.structuralViolations.join('\n')
+  );
+});
+
 test('elliptical and stair climber reject distance but accept duration', () => {
   const validPlan = validSevenDayPlan();
   validPlan.days[0].exercises = [validCardio({
