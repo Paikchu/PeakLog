@@ -134,6 +134,14 @@ struct FutureDayContent: View {
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                                     isReordering = true
                                 }
+                            },
+                            onBatchUpdateSets: { adjustment in
+                                Task {
+                                    await editor.batchUpdateSets(
+                                        planExerciseId: exercise.id,
+                                        adjustment: adjustment
+                                    )
+                                }
                             }
                         )
                     }

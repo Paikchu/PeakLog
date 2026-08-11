@@ -5143,6 +5143,24 @@
         }
       }
     },
+    "today.plan.batch.apply_to_all": {
+      "comment": "Switch inside the weight/reps wheel sheet. When on, tapping Done writes the picked value to every not-yet-completed set of the current plan exercise instead of only the edited set.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply to all unfinished sets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用到所有未完成组"
+          }
+        }
+      }
+    },
     "today.plan.complete_with_rpe": {
       "extractionState": "manual",
       "localizations": {

@@ -18,6 +18,17 @@ struct TodayPlannedExerciseCard: View {
     let onAddSet: () -> Void
     let onDeleteLastSet: () -> Void
     let onLongPressHeader: () -> Void
+    /// 批量改本动作所有未完成组的目标。nil 表示宿主不提供批量入口，
+    /// 组行的编辑面板就不出现那个开关。
+    var onBatchUpdateSets: ((PlannedSetBatchAdjustment) -> Void)? = nil
+
+    /// 只有还剩 2 组以上未完成时才值得出现批量开关——只剩一组时批量和单组
+    /// 是同一件事。这里只数未完成组，因为批量写入本身也只改这些组：
+    /// 开关的承诺要和实际写入的范围一致。
+    private var batchHandlerForRows: ((PlannedSetBatchAdjustment) -> Void)? {
+        guard exercise.sets.count(where: { !$0.isCompleted }) > 1 else { return nil }
+        return onBatchUpdateSets
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -79,7 +90,8 @@ struct TodayPlannedExerciseCard: View {
                         },
                         onToggleComplete: { rpe in
                             onCompleteSet(set.id, rpe)
-                        }
+                        },
+                        onBatchCommit: batchHandlerForRows
                     )
 
                     if set.id != exercise.sets.last?.id {
@@ -104,6 +116,9 @@ struct TodayPlannedSetRow: View {
     var showsCompletionControl: Bool = true
     let onCommit: (Double?, WeightUnit, Int) -> Void
     let onToggleComplete: (Double?) -> Void
+    /// 非 nil 时编辑面板出现「应用到所有未完成组」开关；勾选后「完成」提交的是
+    /// 一次批量调节，而不是这一组的单独修改。
+    var onBatchCommit: ((PlannedSetBatchAdjustment) -> Void)? = nil
     @Environment(\.locale) private var locale
 
     @State private var editingWeight = false
@@ -117,6 +132,12 @@ struct TodayPlannedSetRow: View {
 
     private var allowsBodyweightToggle: Bool {
         exerciseLoadType == .bodyweight
+    }
+
+    /// 已完成组的面板不给批量开关：批量写入本身跳过已完成组，勾了却连当前这组
+    /// 都不变，只会让人以为功能没生效。
+    private var batchCommitHandler: ((PlannedSetBatchAdjustment) -> Void)? {
+        self.set.isCompleted ? nil : onBatchCommit
     }
 
     var body: some View {
@@ -193,28 +214,61 @@ struct TodayPlannedSetRow: View {
         }
         .padding(.vertical, 8)
         .sheet(isPresented: $editingWeight) {
+            // 显式标注类型，让 map 出来的这层闭包不依赖推断；同时批量分支只在
+            // onBatchCommit 存在时才构造，面板据此决定要不要显示开关。
+            let batchHandler: ((Double?) -> Void)? = batchCommitHandler.map { commit in
+                { weight in
+                    commit(PlannedSetBatchAdjustment(weight: .uniform(weight, unit: set.targetWeightUnit)))
+                    editingWeight = false
+                }
+            }
             WeightWheelEditSheet(
                 allowsBodyweightToggle: allowsBodyweightToggle,
                 weightUnit: set.targetWeightUnit,
                 initialWeight: set.targetWeight,
-                lastTime: weightSuggestion
-            ) { weight in
-                onCommit(weight, set.targetWeightUnit, set.targetReps)
-                editingWeight = false
-            } onCancel: {
-                editingWeight = false
-            }
-            .presentationDetents([.height(allowsBodyweightToggle ? 420 : 380)])
+                lastTime: weightSuggestion,
+                onDone: { weight in
+                    onCommit(weight, set.targetWeightUnit, set.targetReps)
+                    editingWeight = false
+                },
+                onCancel: {
+                    editingWeight = false
+                },
+                onDoneApplyingToAllSets: batchHandler
+            )
+            .presentationDetents([.height(weightSheetHeight)])
         }
         .sheet(isPresented: $editingReps) {
-            RepsWheelEditSheet(initialReps: set.targetReps, lastTime: repsSuggestion) { reps in
-                onCommit(set.targetWeight, set.targetWeightUnit, reps)
-                editingReps = false
-            } onCancel: {
-                editingReps = false
+            let batchHandler: ((Int) -> Void)? = batchCommitHandler.map { commit in
+                { reps in
+                    commit(PlannedSetBatchAdjustment(reps: .uniform(reps)))
+                    editingReps = false
+                }
             }
-            .presentationDetents([.height(360)])
+            RepsWheelEditSheet(
+                initialReps: set.targetReps,
+                lastTime: repsSuggestion,
+                onDone: { reps in
+                    onCommit(set.targetWeight, set.targetWeightUnit, reps)
+                    editingReps = false
+                },
+                onCancel: {
+                    editingReps = false
+                },
+                onDoneApplyingToAllSets: batchHandler
+            )
+            .presentationDetents([.height(repsSheetHeight)])
         }
+    }
+
+    /// 多出来的一行开关要占高度，否则轮盘或按钮会被挤出可见区。
+    private var weightSheetHeight: CGFloat {
+        let base: CGFloat = allowsBodyweightToggle ? 420 : 380
+        return batchCommitHandler == nil ? base : base + 52
+    }
+
+    private var repsSheetHeight: CGFloat {
+        batchCommitHandler == nil ? 360 : 412
     }
 
     private func precedingSuggestion() -> SetDefaultsSuggestion? {

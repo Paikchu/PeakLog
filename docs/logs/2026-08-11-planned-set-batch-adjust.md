@@ -1,7 +1,7 @@
-# 计划组目标批量调节接口实现记录
+# 计划组目标批量调节实现记录
 
 需求：截图中的「编辑重量 / 编辑次数」轮盘一次只改一组，一个动作 4 组要点 4 次。
-本次只补**接口**（写路径打通到 ViewModel），不接 UI 入口。
+先补**接口**（写路径打通到 ViewModel），再按用户要求接上 **UI 入口**（见文末「UI 入口」一节）。
 
 ## 接口形状
 
@@ -34,9 +34,21 @@ func batchUpdatePlannedSets(planExerciseId:adjustment:) async throws -> Training
 8. **协议默认实现抛错**（与 `completePlannedCardio` 同一套处理）：既有 8 个 mock / 测试替身不感知这个方法也能满足协议，不必逐个补空实现；默认抛错而非返回编造的动作，调用方能区分「没改成」和「改成了」。
 9. **乐观更新与落库共用 `applied(to:)`**：`TodayWorkoutViewModel` 先按同一份规则改本地状态，再以返回的动作为准；界面先显示的值不会和最终落库的值算成两样。失败沿用既有处理：`errorMessage` + `refresh()`。
 
+## UI 入口
+
+沿用用户已经熟悉的那条路径（点 40kg → 轮盘 → 完成），只加一个 opt-in 开关，不新增第二套入口：
+
+- `WheelSheetChrome` 在轮盘与「取消/完成」之间多一行 `Toggle`，文案 `today.plan.batch.apply_to_all`（en `Apply to all unfinished sets` / zh-Hans `应用到所有未完成组`）。整行只在调用方提供批量回调时出现。
+- `WeightWheelEditSheet` / `RepsWheelEditSheet` 各加一个可选回调 `onDoneApplyingToAllSets`：勾选后「完成」走它，没勾还是原来的单组 `onDone`。**它必须声明在 `onCancel` 之后**——既有三个调用点用尾随闭包传 `onDone`/`onCancel`，按 SE-0279 的匹配规则，把新参数插到前面会让尾随闭包静默绑错参数（编译得过、行为全错）。记录动作卡与手动记录表单那两个调用点因此一行未改。
+- 开关的出现条件收得比"有多组"更紧：本动作**还剩 2 组以上未完成**（只剩一组时批量等于单组），**且当前编辑的这一组自己未完成**（批量写入跳过已完成组，勾了却连当前这组都不变会让人以为没生效）。两个条件都对齐"批量实际会改哪些组"，affordance 不承诺它做不到的事。
+- 重量面板提交 `weight: .uniform(...)`、次数面板提交 `reps: .uniform(...)`——只动被编辑的那一维，正好对上需求里的「重量**或者**数量」。
+- 面板高度按是否显示开关加 52pt，否则轮盘或按钮会被挤出可见区。
+- 两个宿主都接上：今日页 → `TodayWorkoutViewModel.batchUpdatePlannedSets`；未来日 → `FutureDayPlanEditorViewModel.batchUpdateSets`。
+
+`delta`（整组一起 +2.5kg）仍然只有接口、没有 UI——轮盘天然表达的是绝对值，相对调节需要另一种控件，留到有明确需求时再加。
+
 ## 未做（明确的边界）
 
-- **没有 UI 入口**：`WeightWheelEditSheet` / `RepsWheelEditSheet` 与 `TodayPlannedExerciseCard` 均未改动。需求要的是接口；加按钮属于另一次改动。
 - **没有覆盖训练记录（`WorkoutServiceProtocol`）侧的批量改**：截图是计划卡片。记录侧若要同样能力，照本次形状加一份即可。
 - **不改写进行中训练的组快照**：`activeLiveWorkout` 里的 `PlanLiveWorkoutSet` 是开练时的快照，单组编辑今天也不会改写它——本次保持一致，没有顺手改既有行为。
 - 无 Supabase 迁移 / Edge Function 改动：计划组目标随现有全量快照推送，Schema 与 RLS 都不受影响。
@@ -51,5 +63,7 @@ func batchUpdatePlannedSets(planExerciseId:adjustment:) async throws -> Training
 写盘次数用 `armCloudSync` 的 `onChange` 计数（`mutationSeq` 只在 `ownerUserId != nil` 时推进，测试里没走登录路径，拿它断言会恒真）。
 
 `PeakLogTests` 由 `PBXFileSystemSynchronizedRootGroup` 同步，新文件无需改 `project.pbxproj`。
+
+UI 接线另加 `tests/plan_set_batch_ui_contract_test.swift`（源码契约，仓库既有形式，不在 CI 覆盖内）：锁死「批量回调排在 onCancel 之后」这条尾随闭包陷阱、开关的两个出现条件、两个面板各自只提交一维、两个宿主都接到了 ViewModel、以及 en/zh-Hans 文案齐全。这些断言已用等价的脚本逐条比对过当前源码，全部命中。
 
 **验证状态**：本次在 Linux 容器内完成，没有 Swift 工具链，`xcodebuild` 与 `tests/` 下的 swiftc 脚本都未能本地运行；编译与测试结论以 PR 上的 iOS workflow 为准。
