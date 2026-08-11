@@ -233,6 +233,173 @@ final class TodayWorkoutLiveSessionTests: XCTestCase {
         )
     }
 
+    // MARK: - 训练中快速改重量 / 次数
+
+    /// 这条是整个特性的核心断言：落库的必须是训练中改过的那份，不是计划的原值。
+    /// `confirmPlanLiveWorkout` 读的是 session 快照，所以改 session 就等于改了会被
+    /// 记进训练里的数——反过来说，如果只改计划不改 session，用户的修改会被静默丢掉。
+    func testQuickEditedTargetsAreWhatGetsLogged() async throws {
+        let trainingPlanService = LiveSessionTrainingPlanService()
+        let viewModel = TodayWorkoutViewModel(
+            trainingPlanService: trainingPlanService,
+            workoutService: LiveSessionWorkoutService(),
+            liveActivityManager: LiveSessionActivityManager()
+        )
+
+        await viewModel.refresh()
+        viewModel.startPlanLiveWorkout()
+        await Task.yield()
+
+        let setId = try XCTUnwrap(viewModel.activeLiveWorkout?.currentSet?.id)
+        viewModel.updateLiveWorkoutSet(setId: setId, targetWeight: 65, targetReps: 5)
+
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.targetWeight, 65)
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.targetReps, 5)
+
+        viewModel.completeCurrentLiveSet()
+        await viewModel.confirmPlanLiveWorkout()
+
+        XCTAssertEqual(
+            trainingPlanService.completedSetValues,
+            [.init(planSetId: "plan-set-1", weight: 65, reps: 5)]
+        )
+        XCTAssertEqual(viewModel.todayRecord?.exercises.first?.sets.first?.weight, 65)
+        XCTAssertEqual(viewModel.todayRecord?.exercises.first?.sets.first?.reps, 5)
+    }
+
+    /// 改完的目标也要回到今天的计划里，否则退出专注模式后计划还写着旧数字。
+    /// 本地立刻可见（乐观更新），写库延后到 flush。
+    func testQuickEditUpdatesTodaysPlanLocallyThenWritesThrough() async throws {
+        let trainingPlanService = LiveSessionTrainingPlanService()
+        let viewModel = TodayWorkoutViewModel(
+            trainingPlanService: trainingPlanService,
+            workoutService: LiveSessionWorkoutService(),
+            liveActivityManager: LiveSessionActivityManager()
+        )
+
+        await viewModel.refresh()
+        viewModel.startPlanLiveWorkout()
+        await Task.yield()
+
+        let setId = try XCTUnwrap(viewModel.activeLiveWorkout?.currentSet?.id)
+        viewModel.updateLiveWorkoutSet(setId: setId, targetWeight: 65, targetReps: 5)
+
+        let plannedSet = viewModel.todayPlan?.exercises.first?.sets.first { $0.id == setId }
+        XCTAssertEqual(plannedSet?.targetWeight, 65, "计划侧要立刻跟上，不等写库")
+        XCTAssertEqual(plannedSet?.targetReps, 5)
+
+        await viewModel.flushPendingPlanSetTargets()
+
+        XCTAssertEqual(
+            trainingPlanService.updatedSetTargets,
+            [.init(planSetId: setId, weight: 65, reps: 5)]
+        )
+    }
+
+    /// 加 10kg 是连点 4 下 `+`。若每一下都发一次写请求，不但白写 3 次，
+    /// 它们的完成顺序还不受控——最后落库的可能是中间那一档。
+    func testRapidQuickEditsCollapseIntoASingleWrite() async throws {
+        let trainingPlanService = LiveSessionTrainingPlanService()
+        let viewModel = TodayWorkoutViewModel(
+            trainingPlanService: trainingPlanService,
+            workoutService: LiveSessionWorkoutService(),
+            liveActivityManager: LiveSessionActivityManager()
+        )
+
+        await viewModel.refresh()
+        viewModel.startPlanLiveWorkout()
+        await Task.yield()
+
+        let setId = try XCTUnwrap(viewModel.activeLiveWorkout?.currentSet?.id)
+        for weight in [62.5, 65, 67.5, 70] {
+            viewModel.updateLiveWorkoutSet(setId: setId, targetWeight: weight, targetReps: 8)
+        }
+        await viewModel.flushPendingPlanSetTargets()
+
+        XCTAssertEqual(
+            trainingPlanService.updatedSetTargets,
+            [.init(planSetId: setId, weight: 70, reps: 8)],
+            "只有用户停手时的那一档该写进去"
+        )
+    }
+
+    /// 开练前就已落库的组：真实成绩已经在训练记录里，再改它的目标只会让两边对不上。
+    /// 和"已落库的组不允许在 session 内撤销"是同一条边界。
+    func testSetsLoggedBeforeTheSessionRejectQuickEdits() async {
+        let trainingPlanService = LiveSessionTrainingPlanService(preCompletedSetIds: ["plan-set-1"])
+        let viewModel = TodayWorkoutViewModel(
+            trainingPlanService: trainingPlanService,
+            workoutService: LiveSessionWorkoutService(),
+            liveActivityManager: LiveSessionActivityManager()
+        )
+
+        await viewModel.refresh()
+        viewModel.startPlanLiveWorkout()
+        await Task.yield()
+
+        viewModel.updateLiveWorkoutSet(setId: "plan-set-1", targetWeight: 100, targetReps: 3)
+        await viewModel.flushPendingPlanSetTargets()
+
+        let lockedSet = viewModel.activeLiveWorkout?.exercises.first?.sets.first { $0.id == "plan-set-1" }
+        XCTAssertEqual(lockedSet?.targetWeight, 60)
+        XCTAssertEqual(lockedSet?.targetReps, 8)
+        XCTAssertTrue(trainingPlanService.updatedSetTargets.isEmpty)
+    }
+
+    /// 训练最小化时，用户看到的是普通计划卡、走的是 `updatePlannedSet`。confirm 落库读的
+    /// 是 session 快照，所以那条路径也必须打进快照——否则这次编辑会在结束训练时被静默丢掉。
+    func testEditingFromTheMinimizedPlanCardAlsoReachesTheSessionSnapshot() async throws {
+        let trainingPlanService = LiveSessionTrainingPlanService()
+        let viewModel = TodayWorkoutViewModel(
+            trainingPlanService: trainingPlanService,
+            workoutService: LiveSessionWorkoutService(),
+            liveActivityManager: LiveSessionActivityManager()
+        )
+
+        await viewModel.refresh()
+        viewModel.startPlanLiveWorkout()
+        await Task.yield()
+        viewModel.minimizeTrainingFocus()
+
+        let setId = try XCTUnwrap(viewModel.activeLiveWorkout?.currentSet?.id)
+        await viewModel.updatePlannedSet(
+            planSetId: setId,
+            targetWeight: 72.5,
+            targetWeightUnit: .kg,
+            targetReps: 4
+        )
+
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.targetWeight, 72.5)
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.targetReps, 4)
+
+        viewModel.completeCurrentLiveSet()
+        await viewModel.confirmPlanLiveWorkout()
+
+        XCTAssertEqual(
+            trainingPlanService.completedSetValues,
+            [.init(planSetId: setId, weight: 72.5, reps: 4)]
+        )
+    }
+
+    /// view model 的入口是 public 的，不能假设调用方守规矩：0 次的"组"没有意义。
+    func testQuickEditClampsOutOfRangeValues() async throws {
+        let viewModel = TodayWorkoutViewModel(
+            trainingPlanService: LiveSessionTrainingPlanService(),
+            workoutService: LiveSessionWorkoutService(),
+            liveActivityManager: LiveSessionActivityManager()
+        )
+
+        await viewModel.refresh()
+        viewModel.startPlanLiveWorkout()
+        await Task.yield()
+
+        let setId = try XCTUnwrap(viewModel.activeLiveWorkout?.currentSet?.id)
+        viewModel.updateLiveWorkoutSet(setId: setId, targetWeight: -20, targetReps: 0)
+
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.targetWeight, 0)
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.targetReps, 1)
+    }
+
     func testLiveActivityCompletionSyncsBeforeConfirmingSession() async {
         let trainingPlanService = LiveSessionTrainingPlanService()
         let workoutService = LiveSessionWorkoutService()
@@ -360,17 +527,31 @@ private final class LiveSessionActivityManager: PlanLiveActivityManaging {
 // consumed concurrently via `async let`), so a recording double has to
 // synchronize the state it records instead of storing a bare `var`.
 private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol, @unchecked Sendable {
+    /// 一次写入调用记下的目标值，用来断言"落库的是训练中改过的那份，不是计划原值"。
+    struct RecordedSetValues: Equatable {
+        let planSetId: String
+        let weight: Double?
+        let reps: Int
+    }
+
     private let lock = NSLock()
     private var _completedPlanSetIds: [String] = []
+    private var _completedSetValues: [RecordedSetValues] = []
+    private var _updatedSetTargets: [RecordedSetValues] = []
     private let notes: String?
     private let aiSuggestion: String?
+    /// 这些组在开练前就已经落库（`isAlreadyCompleted`），训练中不得再被改目标。
+    private let preCompletedSetIds: Set<String>
 
-    init(notes: String? = nil, aiSuggestion: String? = nil) {
+    init(notes: String? = nil, aiSuggestion: String? = nil, preCompletedSetIds: Set<String> = []) {
         self.notes = notes
         self.aiSuggestion = aiSuggestion
+        self.preCompletedSetIds = preCompletedSetIds
     }
 
     var completedPlanSetIds: [String] { lock.withLock { _completedPlanSetIds } }
+    var completedSetValues: [RecordedSetValues] { lock.withLock { _completedSetValues } }
+    var updatedSetTargets: [RecordedSetValues] { lock.withLock { _updatedSetTargets } }
 
     func fetchActiveWeeklyPlan() async throws -> TrainingPlan? { nil }
 
@@ -393,27 +574,24 @@ private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol,
                     previousPerformanceSummary: nil,
                     aiSuggestion: aiSuggestion,
                     sets: [
-                        TrainingPlanSet(
-                            id: "plan-set-1",
-                            setIndex: 1,
-                            targetWeight: 60,
-                            targetWeightUnit: .kg,
-                            targetReps: 8,
-                            completedAt: nil,
-                            linkedExerciseSetId: nil
-                        ),
-                        TrainingPlanSet(
-                            id: "plan-set-2",
-                            setIndex: 2,
-                            targetWeight: 60,
-                            targetWeightUnit: .kg,
-                            targetReps: 8,
-                            completedAt: nil,
-                            linkedExerciseSetId: nil
-                        )
+                        planSet(id: "plan-set-1", index: 1),
+                        planSet(id: "plan-set-2", index: 2)
                     ]
                 )
             ]
+        )
+    }
+
+    private func planSet(id: String, index: Int) -> TrainingPlanSet {
+        let isPreCompleted = preCompletedSetIds.contains(id)
+        return TrainingPlanSet(
+            id: id,
+            setIndex: index,
+            targetWeight: 60,
+            targetWeightUnit: .kg,
+            targetReps: 8,
+            completedAt: isPreCompleted ? Date(timeIntervalSince1970: 0) : nil,
+            linkedExerciseSetId: isPreCompleted ? "linked-\(id)" : nil
         )
     }
 
@@ -425,6 +603,9 @@ private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol,
     ) async throws -> TrainingPlanSet {
         let setIndex = lock.withLock {
             _completedPlanSetIds.append(planSetId)
+            _completedSetValues.append(
+                RecordedSetValues(planSetId: planSetId, weight: actualWeight, reps: actualReps)
+            )
             return _completedPlanSetIds.count
         }
         return TrainingPlanSet(
@@ -444,7 +625,12 @@ private final class LiveSessionTrainingPlanService: TrainingPlanServiceProtocol,
         targetWeightUnit: WeightUnit,
         targetReps: Int
     ) async throws -> TrainingPlanSet {
-        TrainingPlanSet(
+        lock.withLock {
+            _updatedSetTargets.append(
+                RecordedSetValues(planSetId: planSetId, weight: targetWeight, reps: targetReps)
+            )
+        }
+        return TrainingPlanSet(
             id: planSetId,
             setIndex: 1,
             targetWeight: targetWeight,

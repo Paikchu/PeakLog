@@ -10,6 +10,8 @@ struct FocusExerciseCard: View {
     let session: PlanLiveWorkoutSession
     let isCurrent: Bool
     let onToggleSet: (String) -> Void
+    /// 快速修改某一组的目标：(setId, 重量, 次数)。
+    let onUpdateSet: (String, Double?, Int) -> Void
     let onSkip: () -> Void
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -37,7 +39,8 @@ struct FocusExerciseCard: View {
                         isCompleted: session.completedSetIds.contains(set.id),
                         isLocked: set.isAlreadyCompleted,
                         isCurrent: set.id == currentSetId,
-                        onToggle: { onToggleSet(set.id) }
+                        onToggle: { onToggleSet(set.id) },
+                        onUpdate: { weight, reps in onUpdateSet(set.id, weight, reps) }
                     )
                 }
             }
@@ -152,68 +155,77 @@ private struct FocusSetRow: View {
     let set: PlanLiveWorkoutSet
     let loadType: ExerciseLoadType
     let isCompleted: Bool
-    /// 进入 session 前就已落库的组，不允许撤销。
+    /// 进入 session 前就已落库的组，不允许撤销，也不允许改目标——它的真实成绩
+    /// 已经在训练记录里了。
     let isLocked: Bool
     let isCurrent: Bool
     let onToggle: () -> Void
+    let onUpdate: (Double?, Int) -> Void
+
+    @State private var editingWeight = false
+    @State private var editingReps = false
+
+    private var isEditable: Bool { !isLocked }
+
+    private var allowsBodyweight: Bool { loadType == .bodyweight }
+
+    /// ± 只给当前组：训练时真正要改的永远是手上这一组，其余行保持紧凑；
+    /// 要修早先那一组（比如刚勾掉的第 2 组做少了一次），点数字进轮盘同样可以改。
+    private var showsSteppers: Bool { isCurrent && isEditable }
 
     var body: some View {
-        HStack(spacing: 12) {
-            if isCurrent {
-                RoundedRectangle(cornerRadius: AppRadius.full)
-                    .fill(Color.accentPrimary)
-                    .frame(width: 4, height: 30)
-                    .transition(.opacity)
-            }
-
-            Text("\(set.setIndex)")
-                .appFont(.setIndex)
-                .foregroundColor(isCurrent ? .textPrimary : .textSecondary)
-                .frame(width: isCurrent ? 34 : 28, height: isCurrent ? 34 : 28)
-                .background(Circle().fill(Color.workoutIndexFill))
-
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                if let weight = set.targetWeight {
-                    Text(formatWeightValue(weight))
-                        .appFont(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded)
-                        .foregroundColor(isCompleted ? .textMuted : .accentValue)
-                    Text(set.targetWeightUnit.display)
-                        .appFont(.exerciseUnit)
-                        .foregroundColor(.textSecondary)
-                } else {
-                    Text(loadType.displayLabel)
-                        .appFont(size: isCurrent ? 20 : 15, weight: .bold, design: .rounded)
-                        .foregroundColor(isCompleted ? .textMuted : .accentValue)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: AppRadius.full)
+                        .fill(Color.accentPrimary)
+                        .frame(width: 4, height: 30)
+                        .transition(.opacity)
                 }
 
-                Text("×")
+                Text("\(set.setIndex)")
                     .appFont(.setIndex)
-                    .foregroundColor(Color.accentBorder.opacity(0.55))
+                    .foregroundColor(isCurrent ? .textPrimary : .textSecondary)
+                    .frame(width: isCurrent ? 34 : 28, height: isCurrent ? 34 : 28)
+                    .background(Circle().fill(Color.workoutIndexFill))
 
-                Text("\(set.targetReps)")
-                    .appFont(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded)
-                    .foregroundColor(isCompleted ? .textMuted : .accentValue)
-                Text("chat.exercise.reps")
-                    .appFont(.exerciseUnit)
-                    .foregroundColor(.textSecondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    tappableValue(isEnabled: isEditable, action: { editingWeight = true }) {
+                        weightValue
+                    }
+                    .accessibilityIdentifier("training_focus.editWeight.\(set.id)")
 
-            Button {
-                onToggle()
-#if canImport(UIKit)
-                if !isCompleted {
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    Text("×")
+                        .appFont(.setIndex)
+                        .foregroundColor(Color.accentBorder.opacity(0.55))
+
+                    tappableValue(isEnabled: isEditable, action: { editingReps = true }) {
+                        repsValue
+                    }
+                    .accessibilityIdentifier("training_focus.editReps.\(set.id)")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    onToggle()
+#if canImport(UIKit)
+                    if !isCompleted {
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    }
 #endif
-            } label: {
-                Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-                    .appFont(size: isCurrent ? 24 : 20, weight: .semibold)
-                    .foregroundColor(isCompleted ? .green : .textMuted)
-                    .contentTransition(.symbolEffect(.replace))
+                } label: {
+                    Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+                        .appFont(size: isCurrent ? 24 : 20, weight: .semibold)
+                        .foregroundColor(isCompleted ? .green : .textMuted)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .disabled(isLocked)
+                .accessibilityIdentifier("training_focus.toggleSet.\(set.id)")
             }
-            .disabled(isLocked)
-            .accessibilityIdentifier("training_focus.toggleSet.\(set.id)")
+
+            if showsSteppers {
+                quickAdjustStrip
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, isCurrent ? 10 : 5)
@@ -222,6 +234,171 @@ private struct FocusSetRow: View {
                 .fill(isCurrent ? Color.workoutPanel : Color.workoutShell)
         )
         .opacity(isCompleted && !isCurrent ? 0.55 : 1)
+        .sheet(isPresented: $editingWeight) {
+            // 轮盘是"精确"那条路：改成 82.5 不该按 9 下 +。`lastTime` 传 nil——
+            // 上次成绩已经在卡片顶部的上下文块里，弹层里再挂一遍是重复信息。
+            WeightWheelEditSheet(
+                allowsBodyweightToggle: allowsBodyweight,
+                weightUnit: set.targetWeightUnit,
+                initialWeight: set.targetWeight,
+                lastTime: nil
+            ) { weight in
+                onUpdate(weight, set.targetReps)
+                editingWeight = false
+            } onCancel: {
+                editingWeight = false
+            }
+            .presentationDetents([.height(allowsBodyweight ? 420 : 380)])
+        }
+        .sheet(isPresented: $editingReps) {
+            RepsWheelEditSheet(initialReps: set.targetReps, lastTime: nil) { reps in
+                onUpdate(set.targetWeight, reps)
+                editingReps = false
+            } onCancel: {
+                editingReps = false
+            }
+            .presentationDetents([.height(360)])
+        }
+    }
+
+    @ViewBuilder
+    private var weightValue: some View {
+        if let weight = set.targetWeight {
+            Text(formatWeightValue(weight))
+                .appFont(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded)
+                .foregroundColor(isCompleted ? .textMuted : .accentValue)
+            Text(set.targetWeightUnit.display)
+                .appFont(.exerciseUnit)
+                .foregroundColor(.textSecondary)
+        } else {
+            Text(loadType.displayLabel)
+                .appFont(size: isCurrent ? 20 : 15, weight: .bold, design: .rounded)
+                .foregroundColor(isCompleted ? .textMuted : .accentValue)
+        }
+    }
+
+    @ViewBuilder
+    private var repsValue: some View {
+        Text("\(set.targetReps)")
+            .appFont(size: isCurrent ? 24 : 16, weight: .bold, design: .rounded)
+            .foregroundColor(isCompleted ? .textMuted : .accentValue)
+        Text("chat.exercise.reps")
+            .appFont(.exerciseUnit)
+            .foregroundColor(.textSecondary)
+    }
+
+    /// 已落库的组数值不可点，直接铺文本，避免出现一个按下去没反应的按钮。
+    @ViewBuilder
+    private func tappableValue<Content: View>(
+        isEnabled: Bool,
+        action: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if isEnabled {
+            Button(action: action) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    content()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                content()
+            }
+        }
+    }
+
+    // 快速档：练到一半发现 60 太轻，一下 `+` 就是 62.5，不用离开专注模式、
+    // 不用等弹层。步长写在按钮之间，用户按之前就知道这一下会加多少。
+    private var quickAdjustStrip: some View {
+        HStack(spacing: 10) {
+            stepperGroup(
+                label: "\(formatWeightValue(QuickSetAdjustment.weightStep(for: set.targetWeightUnit))) \(set.targetWeightUnit.display)",
+                decreaseLabel: "training_session.quick_edit.weight_down",
+                increaseLabel: "training_session.quick_edit.weight_up",
+                decreaseIdentifier: "training_focus.weightDown.\(set.id)",
+                increaseIdentifier: "training_focus.weightUp.\(set.id)",
+                onDecrease: { adjustWeight(steps: -1) },
+                onIncrease: { adjustWeight(steps: 1) }
+            )
+
+            stepperGroup(
+                label: "\(QuickSetAdjustment.repsStep) \(String(localized: "chat.exercise.reps"))",
+                decreaseLabel: "training_session.quick_edit.reps_down",
+                increaseLabel: "training_session.quick_edit.reps_up",
+                decreaseIdentifier: "training_focus.repsDown.\(set.id)",
+                increaseIdentifier: "training_focus.repsUp.\(set.id)",
+                onDecrease: { adjustReps(steps: -1) },
+                onIncrease: { adjustReps(steps: 1) }
+            )
+
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 2)
+        .accessibilityIdentifier("training_focus.quickAdjust.\(set.id)")
+    }
+
+    private func stepperGroup(
+        label: String,
+        decreaseLabel: LocalizedStringKey,
+        increaseLabel: LocalizedStringKey,
+        decreaseIdentifier: String,
+        increaseIdentifier: String,
+        onDecrease: @escaping () -> Void,
+        onIncrease: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 0) {
+            stepperButton(systemName: "minus", action: onDecrease)
+                .accessibilityLabel(Text(decreaseLabel))
+                .accessibilityIdentifier(decreaseIdentifier)
+
+            Text(label)
+                .appFont(size: 12.5, weight: .bold, design: .rounded)
+                .foregroundColor(.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(minWidth: 44)
+                .accessibilityHidden(true)
+
+            stepperButton(systemName: "plus", action: onIncrease)
+                .accessibilityLabel(Text(increaseLabel))
+                .accessibilityIdentifier(increaseIdentifier)
+        }
+        .background(Capsule().fill(Color.workoutShell.opacity(0.9)))
+        .overlay(Capsule().strokeBorder(Color.accentBorder.opacity(0.25), lineWidth: 1))
+    }
+
+    private func stepperButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+#if canImport(UIKit)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+#endif
+        } label: {
+            Image(systemName: systemName)
+                .appFont(size: 13, weight: .bold)
+                .foregroundColor(.accentPrimary)
+                .frame(width: 38, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func adjustWeight(steps: Int) {
+        onUpdate(
+            QuickSetAdjustment.adjustedWeight(
+                set.targetWeight,
+                steps: steps,
+                unit: set.targetWeightUnit,
+                allowsUnset: allowsBodyweight
+            ),
+            set.targetReps
+        )
+    }
+
+    private func adjustReps(steps: Int) {
+        onUpdate(set.targetWeight, QuickSetAdjustment.adjustedReps(set.targetReps, steps: steps))
     }
 }
 

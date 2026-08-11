@@ -10,9 +10,11 @@ import Foundation
 nonisolated struct PlanLiveWorkoutSet: Identifiable, Equatable, Codable, Sendable {
     let id: String
     let setIndex: Int
-    let targetWeight: Double?
-    let targetWeightUnit: WeightUnit
-    let targetReps: Int
+    // 目标负重与次数在训练中可改（见 `TodayWorkoutViewModel.updateLiveWorkoutSet`）：
+    // 计划是开练前的估计，实际做的才是要落库的那一份，而 confirm 时读的正是这份快照。
+    var targetWeight: Double?
+    var targetWeightUnit: WeightUnit
+    var targetReps: Int
     let isAlreadyCompleted: Bool
 }
 

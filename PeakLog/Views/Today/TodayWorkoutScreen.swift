@@ -110,6 +110,13 @@ struct TodayWorkoutScreen: View {
                                     Task { await viewModel.deleteLastPlannedSet(planExerciseId: exerciseId) }
                                 },
                                 onToggleLiveSet: viewModel.toggleLiveSet,
+                                onUpdateLiveSet: { setId, weight, reps in
+                                    viewModel.updateLiveWorkoutSet(
+                                        setId: setId,
+                                        targetWeight: weight,
+                                        targetReps: reps
+                                    )
+                                },
                                 onSkipCurrentLiveExercise: {
                                     withAnimation(flowAnimation) {
                                         viewModel.skipCurrentLiveExercise()
@@ -645,6 +652,7 @@ private struct TodayPlanExercisesSection: View {
     let onAddSet: (String) -> Void
     let onDeleteLastSet: (String) -> Void
     let onToggleLiveSet: (String) -> Void
+    let onUpdateLiveSet: (String, Double?, Int) -> Void
     let onSkipCurrentLiveExercise: () -> Void
     let onReorderExercises: ([String]) -> Void
     let onDeleteExercise: (String) -> Void
@@ -740,6 +748,7 @@ private struct TodayPlanExercisesSection: View {
                     session: session,
                     isCurrent: session.currentExercise?.id == exercise.id,
                     onToggleSet: onToggleLiveSet,
+                    onUpdateSet: onUpdateLiveSet,
                     onSkip: onSkipCurrentLiveExercise
                 )
                 .transition(.opacity)
