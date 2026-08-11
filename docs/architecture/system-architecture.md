@@ -247,8 +247,9 @@ struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
 
 ### 5.2 修改计划 / 页面内容
 
-- **显式编辑**：`TodayWorkoutViewModel.updatePlannedSet / addPlannedExercises / deletePlannedExercise / reorderTodayPlanExercises / addLoggedSet / updateLoggedSet / deleteExercise` → 对应 `TrainingPlanServiceProtocol` / `WorkoutServiceProtocol` 方法 → `LocalAppDatabase` 变更 → 同 §5.1 的持久化 + 云推送路径。`AddPlanExerciseSheet` 直接打开统一运动选择器；力量动作进入多组表单，有氧分类进入时长/距离表单。
+- **显式编辑**：`TodayWorkoutViewModel.updatePlannedSet / batchUpdatePlannedSets / addPlannedExercises / deletePlannedExercise / reorderTodayPlanExercises / addLoggedSet / updateLoggedSet / deleteExercise` → 对应 `TrainingPlanServiceProtocol` / `WorkoutServiceProtocol` 方法 → `LocalAppDatabase` 变更 → 同 §5.1 的持久化 + 云推送路径。`AddPlanExerciseSheet` 直接打开统一运动选择器；力量动作进入多组表单，有氧分类进入时长/距离表单。
 - **Agent 重排**：Today 页记录结构化 signal 后由 `PlanReplanService` 调用 `generate-weekly-plan` 的 replan 模式；服务端应用 revision guard，成功后客户端 pull 最新计划。
+- **批量调节计划组**：`TrainingPlanServiceProtocol.batchUpdatePlannedSets(planExerciseId:adjustment:)` 以 `PlannedSetBatchAdjustment`（重量 / 次数各自可选；`uniform` 统一值或 `delta` 相对增减）一次改写该动作**所有未完成组**——单次 `persist()`、单次云推送，不存在改到一半的中间态。已完成组因已关联落库记录而跳过；每个真正变化的组记一条 `set_target_updated`，复用单组编辑的 before/after 载荷。
 - 计划组完成会把 `TrainingPlanSet.linkedExerciseSetId` 关联到真实 `ExerciseSet`，并反向清理孤儿记录。
 
 ### 5.3 生成 7 日计划

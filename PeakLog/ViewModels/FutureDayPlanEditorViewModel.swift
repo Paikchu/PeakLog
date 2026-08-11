@@ -46,6 +46,21 @@ final class FutureDayPlanEditorViewModel: ObservableObject {
         }
     }
 
+    /// 批量调节某个计划动作下所有未完成组的目标。未来日没有 live session 要
+    /// 保护，写成功后照例整页重拉，不做乐观补丁。
+    func batchUpdateSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) async {
+        guard !adjustment.isEmpty else { return }
+        await perform {
+            _ = try await self.trainingPlanService.batchUpdatePlannedSets(
+                planExerciseId: planExerciseId,
+                adjustment: adjustment
+            )
+        }
+    }
+
     /// 与今日页一致：以最后一组为模板，无组时退回 10 次的空目标。
     func addSet(to exercise: TrainingPlanExercise) async {
         let template = exercise.sets.last

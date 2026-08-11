@@ -519,6 +519,38 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
+    /// 批量调节本动作所有未完成组的目标（只改重量 / 只改次数 / 两者都改）。
+    /// 乐观更新与落库共用 `PlannedSetBatchAdjustment.applied(to:)`，界面先变的
+    /// 值就是库里最终写下的值；失败沿用单组编辑的处理：报错 + `refresh()`
+    /// 拉回真实状态。已完成组不参与，与本地库的写入规则一致。
+    ///
+    /// 注意：与单组编辑一样，这里不改写进行中训练（`activeLiveWorkout`）里那份
+    /// 组快照——专注模式的卡片仍显示开练时的目标，直到下一次开始训练才重新取值。
+    func batchUpdatePlannedSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) async {
+        guard !adjustment.isEmpty else { return }
+        updatePlanExerciseInPlace(planExerciseId: planExerciseId) { exercise in
+            for index in exercise.sets.indices where !exercise.sets[index].isCompleted {
+                exercise.sets[index] = adjustment.applied(to: exercise.sets[index])
+            }
+        }
+
+        do {
+            let updated = try await trainingPlanService.batchUpdatePlannedSets(
+                planExerciseId: planExerciseId,
+                adjustment: adjustment
+            )
+            updatePlanExerciseInPlace(planExerciseId: planExerciseId) { exercise in
+                exercise.sets = updated.sets
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            await refresh()
+        }
+    }
+
     func addPlannedSet(planExerciseId: String) async {
         guard let exercise = findPlanExercise(planExerciseId: planExerciseId) else { return }
         let template = exercise.sets.last ?? TrainingPlanSet(
@@ -922,6 +954,17 @@ final class TodayWorkoutViewModel: ObservableObject {
             todayPlan = plan
             return
         }
+    }
+
+    private func updatePlanExerciseInPlace(
+        planExerciseId: String,
+        update: (inout TrainingPlanExercise) -> Void
+    ) {
+        guard var plan = todayPlan,
+              let exerciseIndex = plan.exercises.firstIndex(where: { $0.id == planExerciseId })
+        else { return }
+        update(&plan.exercises[exerciseIndex])
+        todayPlan = plan
     }
 
     private func appendPlannedSet(_ set: TrainingPlanSet, to planExerciseId: String) {

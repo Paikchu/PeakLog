@@ -36,6 +36,64 @@ nonisolated struct TrainingPlanSet: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// 一次性调节某个计划动作下多组的目标。重量与次数互相独立：某一维是 `nil`
+/// 就表示「这一维不动」，所以同一个类型既能表达「只改重量」也能表达「只改次数」。
+///
+/// 为什么不逐组调 `updatePlannedSet`：那组参数描述的是「某一组的最终值」，
+/// 循环 N 次等于 N 次落库、N 次云推送，中途失败还会留下改了一半的动作。
+/// 批量语义要的正是一次写入、要么全改要么不改。
+nonisolated struct PlannedSetBatchAdjustment: Equatable, Sendable {
+    /// 重量怎么改。单独建模而不是直接传 `Double?`：`nil` 在 `targetWeight` 里
+    /// 已经表示「自重 / 未设定」，没法再兼职表示「不改」。
+    enum WeightChange: Equatable, Sendable {
+        /// 所有组统一写成同一个目标；`nil` 表示自重（清空重量）。单位一并写入。
+        case uniform(Double?, unit: WeightUnit)
+        /// 在每组各自的当前重量上加减，保留 45/52/55 这类递增结构。增量按每组
+        /// 自己的 `targetWeightUnit` 计（同一动作内不会混单位：单位在建组时由
+        /// 用户偏好统一写入）；自重组（`targetWeight == nil`）不受影响。
+        case delta(Double)
+    }
+
+    /// 次数怎么改，两个 case 与 `WeightChange` 一一对应。
+    enum RepsChange: Equatable, Sendable {
+        case uniform(Int)
+        case delta(Int)
+    }
+
+    var weight: WeightChange? = nil
+    var reps: RepsChange? = nil
+
+    /// 两维都不改。调用方与本地库都据此短路成 no-op，不写盘也不记编辑事件。
+    var isEmpty: Bool { weight == nil && reps == nil }
+
+    /// 把本次调节应用到一组目标上。刻意做成纯函数：写库路径和 ViewModel 的
+    /// 乐观更新共用同一份规则，界面先显示的值不会和最终落库的值算成两样。
+    /// 重量下界 0、次数下界 1，避免相对调节把目标推成负数或 0 次。
+    func applied(to set: TrainingPlanSet) -> TrainingPlanSet {
+        var result = set
+        if let weight {
+            switch weight {
+            case .uniform(let value, let unit):
+                result.targetWeight = value.map { max(0, $0) }
+                result.targetWeightUnit = unit
+            case .delta(let amount):
+                if let current = set.targetWeight {
+                    result.targetWeight = max(0, current + amount)
+                }
+            }
+        }
+        if let reps {
+            switch reps {
+            case .uniform(let value):
+                result.targetReps = max(1, value)
+            case .delta(let amount):
+                result.targetReps = max(1, set.targetReps + amount)
+            }
+        }
+        return result
+    }
+}
+
 nonisolated struct TrainingPlanExercise: Identifiable, Codable, Equatable, Sendable {
     let id: String
     var orderIndex: Int
