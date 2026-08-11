@@ -735,6 +735,22 @@
         }
       }
     },
+    "cardio.plan.target_hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set at least one of duration or distance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时长、距离至少填一项"
+          }
+        }
+      }
+    },
     "chat.exercise.bodyweight": {
       "extractionState": "manual",
       "localizations": {
