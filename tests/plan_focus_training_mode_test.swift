@@ -59,8 +59,18 @@ precondition(
     "Expected a between-set rest countdown"
 )
 precondition(
-    screenSource.contains("focusLiveExercise") && screenSource.contains("displayedExerciseId"),
-    "Expected scroll-settle to focus the centered exercise"
+    screenSource.contains("onFocusExercise")
+        && screenSource.contains("focusLiveExercise")
+        && screenSource.contains("displayedExerciseId"),
+    "Expected tapping a collapsed row to expand and focus that exercise"
+)
+// 回归护栏：`scrollPosition(id:)` 的回写不只来自用户滑动——布局一变（底部休息面板
+// 顶掉「完成本组」胶囊、当前组行放大、异步补上的上下文块）SwiftUI 就会重新解析中心
+// 卡片并回写。曾经把这个回写当成"用户滑到这里了"去调 `focusLiveExercise`，于是点一次
+// 「完成本组」就把粘性的 `manualFocusExerciseId` 钉到后面的动作上，用户被拖着跳走。
+precondition(
+    !screenSource.contains("onChange(of: scrolledExerciseId)"),
+    "Expected focus to never be inferred from scroll-position write-backs"
 )
 precondition(
     screenSource.contains("isIdleTimerDisabled"),
