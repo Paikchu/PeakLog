@@ -22,7 +22,9 @@ nonisolated struct PlanLiveWorkoutExercise: Identifiable, Equatable, Codable, Se
     let id: String
     let name: String
     let loadType: ExerciseLoadType
-    let sets: [PlanLiveWorkoutSet]
+    // `var`：组的目标值训练中可改，而改一个元素要经由数组的下标赋值，
+    // 数组本身是 `let` 就写不进去（组数量仍然只在建 session 时确定）。
+    var sets: [PlanLiveWorkoutSet]
     /// 动作库 slug（可能为空，此时按名字匹配）；用于回查上次成绩。
     var exerciseId: String?
     // 训练中最需要的上下文：上次表现、教练建议与备注。来自计划动作，
