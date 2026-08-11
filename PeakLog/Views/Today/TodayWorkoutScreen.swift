@@ -13,10 +13,11 @@ struct TodayWorkoutScreen: View {
     @State private var pendingPlanExerciseDeletion: PendingPlanExerciseDeletion?
     @State private var cardioCompletionTarget: TrainingPlanExercise?
     @State private var replanToast: ReplanToast?
-    // 专注模式滚动编排：scrolledExerciseId 追踪屏幕中心的卡片，displayedExerciseId 决定哪张卡展开。
+    // 专注模式滚动编排：scrolledExerciseId 只用来"把某张卡送到屏幕中间"（写入方向），
+    // displayedExerciseId 决定哪张卡展开。滚动位置**不**反过来决定专注哪个动作，原因见
+    // 下方 `onChange(of: activeLiveWorkout?.currentExercise?.id)` 上的注释。
     @State private var scrolledExerciseId: String?
     @State private var displayedExerciseId: String?
-    @State private var focusSettleTask: Task<Void, Never>?
     @State private var flowAdvanceTask: Task<Void, Never>?
     @State private var isReorderingPlan = false
     @Environment(\.locale) private var locale
@@ -86,9 +87,15 @@ struct TodayWorkoutScreen: View {
                                 state: planState,
                                 isReordering: $isReorderingPlan,
                                 flowAnimation: flowAnimation,
-                                onSetScrolled: { id in
-                                    scrolledExerciseId = id
+                                onFocusExercise: { id in
+                                    // 点击折叠行是唯一的"换动作"入口：展开它、把它送到屏幕中间，
+                                    // 并让 session 游标跟着走，底部「完成本组」永远作用在眼前展开的卡上。
                                     displayedExerciseId = id
+                                    scrolledExerciseId = id
+                                    viewModel.focusLiveExercise(id: id)
+#if canImport(UIKit)
+                                    UISelectionFeedbackGenerator().selectionChanged()
+#endif
                                 },
                                 onUpdateSet: { setId, weight, unit, reps in
                                     Task {
@@ -246,12 +253,27 @@ struct TodayWorkoutScreen: View {
                     }
                 }
             } else {
-                focusSettleTask?.cancel()
                 flowAdvanceTask?.cancel()
                 displayedExerciseId = nil
                 scrolledExerciseId = nil
             }
         }
+        // 专注的动作只跟着 session 游标走（完成一个动作后自动流转），或由用户点击折叠行
+        // 显式切换。**不要**再从 `scrolledExerciseId` 反推用户意图：
+        //
+        // `scrollPosition(id:)` 是双向绑定，SwiftUI 不只在用户滑动时回写，布局一变就会
+        // 按 anchor 重新解析"现在中心是谁"并回写。而训练中布局无时无刻不在变：点「完成
+        // 本组」会让底部 `safeAreaInset` 从 56pt 胶囊换成约 190pt 的休息面板（可视区骤缩）、
+        // 当前组行放大/上一组行缩小、`fillPreviousPerformanceSummaries` 异步补上的上下文块
+        // 也会改卡片高度。任何一次回写都被当成"用户滑到这里了"，于是 `focusLiveExercise`
+        // 把 `manualFocusExerciseId` 钉在了别的动作上——这个锁是粘性的，要等那个动作做完
+        // 才释放，用户就被强行拖到后面的动作上（issue：做第一个动作时点完成后跳到第四个）。
+        //
+        // 更糟的是 anchor 为 `.center` 时这个信号系统性地错：列表只有底部 320pt 留白、没有
+        // 对称的顶部留白，排在最前面的卡片**永远滚不到屏幕中心**（offset 已经是 0），所以
+        // 用户在做前几个动作时，回写解析出的中心卡片必然是后面某个动作。
+        //
+        // 换动作的显式入口（点击折叠行）本来就存在，滑动就还原成"只是看看"。
         .onChange(of: viewModel.activeLiveWorkout?.currentExercise?.id) { _, newId in
             guard isFocusMode, let newId, newId != displayedExerciseId else { return }
             // 动作完成后停留一拍展示完成态，再流转到下一个动作。
@@ -262,24 +284,6 @@ struct TodayWorkoutScreen: View {
                 withAnimation(flowAnimation) {
                     displayedExerciseId = newId
                     scrolledExerciseId = newId
-                }
-            }
-        }
-        .onChange(of: scrolledExerciseId) { _, newId in
-            guard isFocusMode, let newId else { return }
-            // 滑动停稳（250ms 防抖）即展开并锁定该动作。
-            focusSettleTask?.cancel()
-            focusSettleTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                guard !Task.isCancelled else { return }
-                withAnimation(flowAnimation) {
-                    displayedExerciseId = newId
-                }
-                if newId != viewModel.activeLiveWorkout?.currentExercise?.id {
-                    viewModel.focusLiveExercise(id: newId)
-#if canImport(UIKit)
-                    UISelectionFeedbackGenerator().selectionChanged()
-#endif
                 }
             }
         }
@@ -639,7 +643,8 @@ private struct TodayPlanExercisesSection: View {
     let state: State
     @Binding var isReordering: Bool
     let flowAnimation: Animation?
-    let onSetScrolled: (String) -> Void
+    /// 专注模式下点击折叠行：展开该动作并把 session 游标切过去。
+    let onFocusExercise: (String) -> Void
     let onUpdateSet: (String, Double?, WeightUnit, Int) -> Void
     let onCompleteSet: (String, Double?) -> Void
     let onAddSet: (String) -> Void
@@ -682,12 +687,15 @@ private struct TodayPlanExercisesSection: View {
                             }
                         }
                         .id(exercise.id)
-                        .visualEffect { content, proxy in
+                        .visualEffect { [isDisplayed = exercise.id == state.displayedExerciseId] content, proxy in
                             let containerHeight = proxy.bounds(of: .scrollView(axis: .vertical))?.height ?? 800
                             let midY = proxy.frame(in: .scrollView(axis: .vertical)).midY
                             let distance = min(abs(midY - containerHeight / 2) / max(containerHeight / 2, 1), 1)
-                            let scale = state.isFocusMode && !state.reduceMotion ? 1 - 0.04 * distance : 1
-                            let opacity = state.isFocusMode ? 1 - 0.35 * distance : 1
+                            // 展开中的卡片永远满强度：列表没有顶部留白，排在最前面的动作
+                            // 滚不到屏幕中心，只按"离中心多远"打分会把正在做的动作调暗。
+                            let isPeripheral = state.isFocusMode && !isDisplayed
+                            let scale = isPeripheral && !state.reduceMotion ? 1 - 0.04 * distance : 1
+                            let opacity = isPeripheral ? 1 - 0.35 * distance : 1
                             return content
                                 .scaleEffect(scale)
                                 .opacity(opacity)
@@ -749,7 +757,7 @@ private struct TodayPlanExercisesSection: View {
                     session: session,
                     onTap: {
                         withAnimation(flowAnimation) {
-                            onSetScrolled(exercise.id)
+                            onFocusExercise(exercise.id)
                         }
                     }
                 )
