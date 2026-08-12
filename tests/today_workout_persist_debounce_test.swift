@@ -45,12 +45,37 @@ precondition(
     "Expected an immediate-flush path that bypasses the debounce for critical checkpoints"
 )
 
+/// 取出 `name` 这个函数的函数体(第一个 `{` 到与之配对的 `}`)。
+///
+/// 这里刻意做真正的花括号配对,而不是"签名之后取 N 个字符"。原先的版本取 2000
+/// 字符窗口,#168 往 `confirmPlanLiveWorkout()` 里加了一次 `await
+/// flushPendingPlanSetTargets()` 和几行注释,就把 flush 调用挤到了 2037 字符处 ——
+/// 断言变红,但被断言的那行代码一直好好地待在函数里。窗口式扫描的红/绿取决于
+/// 函数有多长,那不是这个测试想守的东西。
+func body(ofFunctionNamed name: String) -> Substring? {
+    guard let signature = viewModelSource.range(of: "func \(name)") else { return nil }
+    guard let open = viewModelSource[signature.upperBound...].firstIndex(of: "{") else { return nil }
+
+    var depth = 0
+    var index = open
+    while index < viewModelSource.endIndex {
+        switch viewModelSource[index] {
+        case "{": depth += 1
+        case "}":
+            depth -= 1
+            if depth == 0 {
+                return viewModelSource[viewModelSource.index(after: open)..<index]
+            }
+        default: break
+        }
+        index = viewModelSource.index(after: index)
+    }
+    return nil
+}
+
 func immediateFlushIsCalled(inFunctionNamed name: String) -> Bool {
-    guard let funcRange = viewModelSource.range(of: "func \(name)") else { return false }
-    let afterFunc = viewModelSource[funcRange.upperBound...]
-    // Look within a reasonable window (this function's body) for the immediate-flush call.
-    let window = afterFunc.prefix(2_000)
-    return window.contains("persistActiveLiveWorkoutImmediately()")
+    guard let body = body(ofFunctionNamed: name) else { return false }
+    return body.contains("persistActiveLiveWorkoutImmediately()")
 }
 
 precondition(

@@ -4,10 +4,10 @@ import Foundation
 // 主机 swiftc 直接编译执行——灵动岛紧凑态左槽的可读性完全取决于这条缩写规则，只做
 // 文本断言（本目录里其他 ActivityKit 相邻测试的做法）盯不住它。
 //
-// 运行：
-//   swiftc -O -o /tmp/live_activity_short_name_test \
-//     tests/live_activity_short_name_test.swift \
-//     PeakLogShared/PlanLiveActivityShortName.swift && /tmp/live_activity_short_name_test
+// 运行：本文件是顶层代码,一旦和别的 .swift 一起编译就不再被当成脚本
+// (报 expressions are not allowed at the top level),所以要先改名成 main.swift：
+//   d=$(mktemp -d) && cp tests/live_activity_short_name_test.swift "$d/main.swift" && \
+//     swiftc -O -o "$d/t" "$d/main.swift" PeakLogShared/PlanLiveActivityShortName.swift && "$d/t"
 
 let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 
