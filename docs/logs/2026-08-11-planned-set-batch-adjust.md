@@ -50,7 +50,6 @@ func batchUpdatePlannedSets(planExerciseId:adjustment:) async throws -> Training
 ## 未做（明确的边界）
 
 - **没有覆盖训练记录（`WorkoutServiceProtocol`）侧的批量改**：截图是计划卡片。记录侧若要同样能力，照本次形状加一份即可。
-- **不改写进行中训练的组快照**：`activeLiveWorkout` 里的 `PlanLiveWorkoutSet` 是开练时的快照，单组编辑今天也不会改写它——本次保持一致，没有顺手改既有行为。
 - 无 Supabase 迁移 / Edge Function 改动：计划组目标随现有全量快照推送，Schema 与 RLS 都不受影响。
 
 ## 测试
@@ -67,3 +66,12 @@ func batchUpdatePlannedSets(planExerciseId:adjustment:) async throws -> Training
 UI 接线另加 `tests/plan_set_batch_ui_contract_test.swift`（源码契约，仓库既有形式，不在 CI 覆盖内）：锁死「批量回调排在 onCancel 之后」这条尾随闭包陷阱、开关的两个出现条件、两个面板各自只提交一维、两个宿主都接到了 ViewModel、以及 en/zh-Hans 文案齐全。这些断言已用等价的脚本逐条比对过当前源码，全部命中。
 
 **验证状态**：本次在 Linux 容器内完成，没有 Swift 工具链，`xcodebuild` 与 `tests/` 下的 swiftc 脚本都未能本地运行；编译与测试结论以 PR 上的 iOS workflow 为准。
+
+## 与 #168（训练进行中快速修改重量与次数）合并后的补充
+
+本分支开发期间 `main` 合入了 #168，它改变了两条前提，合并时一并跟上：
+
+1. **计划侧的编辑必须打进进行中 session 的快照**。#168 发现 `confirmPlanLiveWorkout` 落库读的是 session 快照，因此把 `updatePlannedSet` 接上了 `applyTargetToLiveSession`，并用 `tests/quick_set_edit_contract_test.swift` 锁死。`batchUpdatePlannedSets` 是同一类入口（训练最小化时用户照样能在普通计划卡上批量改），漏掉这一步等于把 #168 刚修好的 bug 从新口子放回来——因此批量路径逐组调用 `applyTargetToLiveSession`，并把 `batchUpdatePlannedSets(` 加进那份契约测试的入口清单。原先文档里「不改写 activeLiveWorkout，与单组编辑保持一致」的说法随之作废：单组编辑现在改写它了。
+2. **取值规则只能有一份实现**。#168 建立了 `QuickSetAdjustment` 作为 ± 步长与钳制的唯一来源，`PlannedSetBatchAdjustment.applied(to:)` 里手写的 `max(0,…)` / `max(1,…)` 因此改为调用 `QuickSetAdjustment.clampedWeight` / `clampedReps`，边界值不再有第二套定义。由此新增的依赖边（`TrainingPlanModels` → `QuickSetAdjustment`）已同步补进 `tests/cloud_mapper_roundtrip_test.swift` 与 `tests/training_reminder_schedule_test.swift` 的 swiftc 文件清单。
+
+`delta` 目前仍不吸附到 `QuickSetAdjustment` 的 0.25 刻度网格（该常量是 private，且 delta 尚无 UI 入口）。真要接 UI 时需要先把网格暴露出来复用，否则可能算出轮盘选不中的值。

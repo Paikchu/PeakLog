@@ -67,7 +67,10 @@ func callsSessionMirror(inFunctionNamed name: String) -> Bool {
     return viewModelSource[range.upperBound...].prefix(2_000).contains("applyTargetToLiveSession(")
 }
 
-for entryPoint in ["updateLiveWorkoutSet(", "updatePlannedSet("] {
+// batchUpdatePlannedSets 是第三个改计划组目标的入口（一次改完本动作所有未完成组），
+// 同样会在训练最小化时被用到，因此受同一条约束：不打进快照，那次批量调节就会在
+// 结束训练时被静默丢掉。
+for entryPoint in ["updateLiveWorkoutSet(", "updatePlannedSet(", "batchUpdatePlannedSets("] {
     precondition(
         callsSessionMirror(inFunctionNamed: entryPoint),
         "Expected \(entryPoint) to write the new target into the live session snapshot"

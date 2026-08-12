@@ -68,26 +68,29 @@ nonisolated struct PlannedSetBatchAdjustment: Equatable, Sendable {
 
     /// 把本次调节应用到一组目标上。刻意做成纯函数：写库路径和 ViewModel 的
     /// 乐观更新共用同一份规则，界面先显示的值不会和最终落库的值算成两样。
-    /// 重量下界 0、次数下界 1，避免相对调节把目标推成负数或 0 次。
+    ///
+    /// 下界（重量 ≥ 0、次数 ≥ 1）不在这里另起一套，一律走 `QuickSetAdjustment`
+    /// 的钳制——训练中的 ± 快速调整、单组编辑与这里的批量调节必须共用同一份取值
+    /// 规则，否则同一个动作会因为入口不同而落在不同的边界上。
     func applied(to set: TrainingPlanSet) -> TrainingPlanSet {
         var result = set
         if let weight {
             switch weight {
             case .uniform(let value, let unit):
-                result.targetWeight = value.map { max(0, $0) }
+                result.targetWeight = QuickSetAdjustment.clampedWeight(value)
                 result.targetWeightUnit = unit
             case .delta(let amount):
                 if let current = set.targetWeight {
-                    result.targetWeight = max(0, current + amount)
+                    result.targetWeight = QuickSetAdjustment.clampedWeight(current + amount)
                 }
             }
         }
         if let reps {
             switch reps {
             case .uniform(let value):
-                result.targetReps = max(1, value)
+                result.targetReps = QuickSetAdjustment.clampedReps(value)
             case .delta(let amount):
-                result.targetReps = max(1, set.targetReps + amount)
+                result.targetReps = QuickSetAdjustment.clampedReps(set.targetReps + amount)
             }
         }
         return result

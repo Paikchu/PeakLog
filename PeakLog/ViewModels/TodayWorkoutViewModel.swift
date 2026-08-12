@@ -613,17 +613,28 @@ final class TodayWorkoutViewModel: ObservableObject {
     /// 值就是库里最终写下的值；失败沿用单组编辑的处理：报错 + `refresh()`
     /// 拉回真实状态。已完成组不参与，与本地库的写入规则一致。
     ///
-    /// 注意：与单组编辑一样，这里不改写进行中训练（`activeLiveWorkout`）里那份
-    /// 组快照——专注模式的卡片仍显示开练时的目标，直到下一次开始训练才重新取值。
+    /// 每一组改完都打进进行中的 session 快照，理由与 `updatePlannedSet` 完全相同：
+    /// `confirmPlanLiveWorkout` 落库读的是 session 快照，漏掉这一步的话，训练最小化
+    /// 时做的这次批量调节会在结束训练时被静默丢掉，记进去的还是旧数字。
     func batchUpdatePlannedSets(
         planExerciseId: String,
         adjustment: PlannedSetBatchAdjustment
     ) async {
         guard !adjustment.isEmpty else { return }
+        var mirrored: [TrainingPlanSet] = []
         updatePlanExerciseInPlace(planExerciseId: planExerciseId) { exercise in
             for index in exercise.sets.indices where !exercise.sets[index].isCompleted {
                 exercise.sets[index] = adjustment.applied(to: exercise.sets[index])
+                mirrored.append(exercise.sets[index])
             }
+        }
+        for set in mirrored {
+            applyTargetToLiveSession(
+                setId: set.id,
+                targetWeight: set.targetWeight,
+                targetReps: set.targetReps,
+                targetWeightUnit: set.targetWeightUnit
+            )
         }
 
         do {
