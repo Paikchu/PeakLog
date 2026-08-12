@@ -31,6 +31,23 @@
 
 - 通过：`node --test backend/tests/*.test.mjs`（213 → 216 项，含新增的 validator 与迁移用例）。
 - 通过：`node backend/scripts/migration-ledger-check.mjs`（27 份迁移，命名/唯一性/递增无问题）。
-- 未运行：`tests/` 下的独立 Swift 回归测试与 `xcodebuild`——本次开发环境无 Swift 工具链与 Xcode，相关用例（`plan_exercise_draft_builder_test`、`cardio_model_test`、`cardio_plan_ui_contract_test`）已按改动更新，需在 macOS 上补跑。
-- 未运行：iPhone 17 Pro Max 模拟器手测（同上）。
-- 未部署：迁移与 Edge Function 均未推送到线上。
+- 未运行：iPhone 17 Pro Max 模拟器手测。
+
+### 2026-08-12 补跑与部署
+
+当时缺 Swift 工具链而挂起的三项，已在 macOS 上补齐：
+
+- 通过：`plan_exercise_draft_builder_test`、`cardio_model_test`、`cardio_plan_ui_contract_test`。
+- 通过：`xcodebuild test`（226 项 XCTest 全绿），首方源码零告警。
+- **已部署**：迁移已 apply 到线上（project `fqyurmsuvtdafbnynurg`），回读
+  `training_plan_exercises_cardio_payload_check` 确认已是放宽版
+  （`target_duration_minutes IS NOT NULL OR target_distance_km IS NOT NULL`，
+  原先无条件的 `target_duration_minutes > 0` 已移除）。部署前核对：全表 105 行、
+  有氧 2 行且都带时长，放宽型约束重校验不可能失败。
+  - ⚠️ 账本版本号漂移：部署工具把版本记成了 `20260812053039`，而本仓库文件名是
+    `20260811093000`。这份迁移是 `DROP CONSTRAINT IF EXISTS` + `ADD CONSTRAINT`，
+    幂等，重跑无害，但 `db push` 会认为它未应用。收口方式二选一：把线上账本
+    `UPDATE` 回 `20260811093000`，或把仓库文件改名成 `20260812053039_...`。
+- **仍未部署**：Edge Function（线上停在 2026-08-01，`validator.mjs` 是 08-11 改的）。
+  在这之前，replan 重新提交当天既有动作时，只填距离的手动项仍会被旧校验拒绝，
+  并连累整份计划回退——这是本次放宽尚未真正闭环的那一半。
