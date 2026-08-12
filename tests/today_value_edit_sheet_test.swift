@@ -56,13 +56,39 @@ precondition(
     "A number pad here means the wheel picker was reverted; see aed6930"
 )
 
+/// 取出 `marker` 之后那一对花括号里的内容。
+///
+/// 刻意做真正的配对,而不是"从 marker 起取 N 个字符"—— 后者的红/绿取决于被测
+/// 代码有多长,而不是它做了什么。同目录的 `today_workout_persist_debounce_test`
+/// 正是栽在这上面:一次无关的函数体增长就把断言推出了固定窗口。
+func braceBody(after marker: String) -> Substring? {
+    guard let start = cardSource.range(of: marker) else { return nil }
+    guard let open = cardSource[start.upperBound...].firstIndex(of: "{") else { return nil }
+
+    var depth = 0
+    var index = open
+    while index < cardSource.endIndex {
+        switch cardSource[index] {
+        case "{": depth += 1
+        case "}":
+            depth -= 1
+            if depth == 0 {
+                return cardSource[cardSource.index(after: open)..<index]
+            }
+        default: break
+        }
+        index = cardSource.index(after: index)
+    }
+    return nil
+}
+
 // 4. 两个 sheet 都必须把新值经 onCommit 交回卡片并关闭自己;取消分支只关闭,
 //    不写值 —— 否则"取消"会静默落库。
-for (label, marker) in [("weight", "WeightWheelEditSheet("), ("reps", "RepsWheelEditSheet(")] {
-    guard let start = cardSource.range(of: marker) else {
-        preconditionFailure("Expected \(label) sheet call site")
+for (label, marker) in [("weight", ".sheet(isPresented: $editingWeight)"),
+                        ("reps", ".sheet(isPresented: $editingReps)")] {
+    guard let body = braceBody(after: marker) else {
+        preconditionFailure("Expected a \(label) sheet block in ExerciseCardView")
     }
-    let body = cardSource[start.upperBound...].prefix(600)
     precondition(
         body.contains("onCommit("),
         "Expected the \(label) sheet to hand its value back through onCommit"
