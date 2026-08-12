@@ -185,7 +185,10 @@ final class LiveActivityManager: PlanLiveActivityManaging {
             sessionID: session.id,
             title: session.title,
             focus: session.focus,
-            exercises: exercises
+            exercises: exercises,
+            // 裁剪前的真实总数：裁掉的动作里可能已经有完成的组，用裁剪后的数字当分母
+            // 会把进度算成超过 100%。
+            plannedTotalSetsCount: session.totalSetsCount
         )
     }
 
@@ -199,7 +202,8 @@ final class LiveActivityManager: PlanLiveActivityManaging {
         sessionID: String,
         title: String,
         focus: String?,
-        exercises: [PlanLiveActivityExerciseSnapshot]
+        exercises: [PlanLiveActivityExerciseSnapshot],
+        plannedTotalSetsCount: Int
     ) -> PlanLiveActivityAttributes {
         var candidateExercises = exercises
         while true {
@@ -207,7 +211,8 @@ final class LiveActivityManager: PlanLiveActivityManaging {
                 sessionID: sessionID,
                 title: title,
                 focus: focus,
-                exercises: candidateExercises
+                exercises: candidateExercises,
+                plannedTotalSetsCount: plannedTotalSetsCount
             )
 
             let encodedSize = (try? JSONEncoder().encode(candidate).count) ?? 0
