@@ -61,25 +61,29 @@ precondition(
 /// 刻意做真正的配对,而不是"从 marker 起取 N 个字符"—— 后者的红/绿取决于被测
 /// 代码有多长,而不是它做了什么。同目录的 `today_workout_persist_debounce_test`
 /// 正是栽在这上面:一次无关的函数体增长就把断言推出了固定窗口。
-func braceBody(after marker: String) -> Substring? {
-    guard let start = cardSource.range(of: marker) else { return nil }
-    guard let open = cardSource[start.upperBound...].firstIndex(of: "{") else { return nil }
+func braceBody(after marker: String, in haystack: Substring) -> Substring? {
+    guard let start = haystack.range(of: marker) else { return nil }
+    guard let open = haystack[start.upperBound...].firstIndex(of: "{") else { return nil }
 
     var depth = 0
     var index = open
-    while index < cardSource.endIndex {
-        switch cardSource[index] {
+    while index < haystack.endIndex {
+        switch haystack[index] {
         case "{": depth += 1
         case "}":
             depth -= 1
             if depth == 0 {
-                return cardSource[cardSource.index(after: open)..<index]
+                return haystack[haystack.index(after: open)..<index]
             }
         default: break
         }
-        index = cardSource.index(after: index)
+        index = haystack.index(after: index)
     }
     return nil
+}
+
+func braceBody(after marker: String) -> Substring? {
+    braceBody(after: marker, in: cardSource[...])
 }
 
 // 4. 两个 sheet 都必须把新值经 onCommit 交回卡片并关闭自己;取消分支只关闭,
@@ -93,9 +97,25 @@ for (label, marker) in [("weight", ".sheet(isPresented: $editingWeight)"),
         body.contains("onCommit("),
         "Expected the \(label) sheet to hand its value back through onCommit"
     )
+
+    // 「有个 onCancel: 标签」不等于「取消不落值」——只断言标签存在的话,某天
+    // onCancel 里多出一次 onCommit(...) 或 set.weight = ... 这个测试照样是绿的,
+    // 而"取消却静默落库"正是这段注释声称要挡住的事。所以真正去看闭包体。
+    guard let cancelBody = braceBody(after: "onCancel:", in: body) else {
+        preconditionFailure("Expected the \(label) sheet to expose a cancel branch")
+    }
     precondition(
-        body.contains("onCancel:"),
-        "Expected the \(label) sheet to expose a cancel branch"
+        !cancelBody.contains("onCommit("),
+        "The \(label) sheet's cancel branch must not commit — that is a silent save on Cancel"
+    )
+    precondition(
+        !cancelBody.contains("set.weight") && !cancelBody.contains("set.reps"),
+        "The \(label) sheet's cancel branch must not mutate the set — cancelling has to leave the value untouched"
+    )
+    // 剩下的只该是"把自己关掉"。
+    precondition(
+        cancelBody.contains("editing"),
+        "Expected the \(label) sheet's cancel branch to dismiss the editor"
     )
 }
 
