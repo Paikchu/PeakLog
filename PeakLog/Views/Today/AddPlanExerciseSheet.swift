@@ -202,9 +202,21 @@ private struct CardioPlanFormCard: View {
             header
 
             VStack(spacing: 6) {
-                metricField("cardio.metric.duration", text: $input.durationText, suffix: "min")
+                metricField(
+                    "cardio.metric.duration",
+                    text: $input.durationText,
+                    suffix: "min",
+                    optional: input.activityType.supportsDistance
+                )
                 if input.activityType.supportsDistance {
-                    metricField("cardio.metric.distance", text: $input.distanceText, suffix: "km", decimal: true)
+                    metricField(
+                        "cardio.metric.distance",
+                        text: $input.distanceText,
+                        suffix: "km",
+                        decimal: true,
+                        optional: true
+                    )
+                    targetHint
                 }
             }
             .padding(.horizontal, 6)
@@ -255,17 +267,30 @@ private struct CardioPlanFormCard: View {
         )
     }
 
+    /// 时长与距离是互补的目标，填其一即可（跑 5 公里 / 跑 30 分钟都是完整目标），
+    /// 所以两个都空时把提示语点亮成强调色，说明「保存」为什么不可用。
+    private var targetHint: some View {
+        Text("cardio.plan.target_hint")
+            .appFont(size: 12)
+            .foregroundColor(input.hasTarget ? .textMuted : .accentPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
+    }
+
     private func metricField(
         _ key: LocalizedStringKey,
         text: Binding<String>,
         suffix: String,
-        decimal: Bool = false
+        decimal: Bool = false,
+        optional: Bool = false
     ) -> some View {
-        HStack {
+        let placeholder = optional ? String(localized: "cardio.metric.optional") : ""
+        return HStack {
             Text(key)
                 .foregroundColor(.textSecondary)
             Spacer()
-            TextField("", text: text)
+            TextField(placeholder, text: text)
                 .keyboardType(decimal ? .decimalPad : .numberPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 90)

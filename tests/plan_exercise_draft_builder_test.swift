@@ -7,6 +7,8 @@ struct PlanExerciseDraftBuilderTestRunner {
         preservesOptionalAddedWeightForBodyweightExercises()
         rejectsNegativeAddedWeightForBodyweightExercises()
         buildsCardioDraftWithoutRPE()
+        buildsCardioDraftFromDistanceOnlyTarget()
+        rejectsCardioTargetWithNeitherDurationNorDistance()
         appendsCardioAfterCompletedStrengthDrafts()
         rejectsCardioAppendWhenStrengthDraftIsIncomplete()
         allowsCardioAppendWithoutStrengthDrafts()
@@ -29,6 +31,68 @@ struct PlanExerciseDraftBuilderTestRunner {
         precondition(draft.targetDurationMinutes == 40)
         precondition(draft.targetDistanceKm == 15)
         precondition(draft.targetRPE == nil, "New cardio plan drafts must not collect RPE")
+    }
+
+    /// "跑 3 公里" 本身就是完整目标，不该因为没填时长而卡住保存。
+    private static func buildsCardioDraftFromDistanceOnlyTarget() {
+        let input = CardioPlanExerciseInput(
+            activityType: .running,
+            durationText: "",
+            distanceText: "3"
+        )
+
+        guard let draft = input.draft() else {
+            preconditionFailure("Expected a distance-only running target to be valid")
+        }
+        precondition(draft.targetDurationMinutes == nil)
+        precondition(draft.targetDistanceKm == 3)
+        precondition(PlanExerciseDraftBuilder.drafts(items: [.cardio(input)]) == [draft])
+
+        let durationOnly = CardioPlanExerciseInput(
+            activityType: .running,
+            durationText: "30",
+            distanceText: ""
+        )
+        guard let durationDraft = durationOnly.draft() else {
+            preconditionFailure("Expected a duration-only running target to stay valid")
+        }
+        precondition(durationDraft.targetDurationMinutes == 30)
+        precondition(durationDraft.targetDistanceKm == nil)
+    }
+
+    /// 两个目标都空、或填了无法解析/非正的数值，仍然是无效卡片。
+    private static func rejectsCardioTargetWithNeitherDurationNorDistance() {
+        let empty = CardioPlanExerciseInput(
+            activityType: .running,
+            durationText: " ",
+            distanceText: ""
+        )
+        precondition(empty.draft() == nil, "Expected nil when a cardio card has no target at all")
+        precondition(!empty.hasTarget)
+
+        // 椭圆机不支持距离，所以距离栏填了也不算目标——时长仍是唯一入口。
+        let ellipticalWithDistance = CardioPlanExerciseInput(
+            activityType: .elliptical,
+            durationText: "",
+            distanceText: "5"
+        )
+        precondition(ellipticalWithDistance.draft() == nil)
+        precondition(!ellipticalWithDistance.hasTarget)
+
+        let unparsableDistance = CardioPlanExerciseInput(
+            activityType: .running,
+            durationText: "",
+            distanceText: "3km"
+        )
+        precondition(unparsableDistance.draft() == nil)
+        precondition(unparsableDistance.hasTarget, "A filled-in field still counts as an attempted target")
+
+        let zeroDistance = CardioPlanExerciseInput(
+            activityType: .running,
+            durationText: "",
+            distanceText: "0"
+        )
+        precondition(zeroDistance.draft() == nil, "Expected nil for a non-positive distance target")
     }
 
     private static func appendsCardioAfterCompletedStrengthDrafts() {

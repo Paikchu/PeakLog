@@ -735,6 +735,22 @@
         }
       }
     },
+    "cardio.plan.target_hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set at least one of duration or distance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时长、距离至少填一项"
+          }
+        }
+      }
+    },
     "chat.exercise.bodyweight": {
       "extractionState": "manual",
       "localizations": {
@@ -6030,6 +6046,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "收起训练"
+          }
+        }
+      }
+    },
+    "training_session.quick_edit.reps_down": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decrease reps"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少次数"
+          }
+        }
+      }
+    },
+    "training_session.quick_edit.reps_up": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Increase reps"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "增加次数"
+          }
+        }
+      }
+    },
+    "training_session.quick_edit.weight_down": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decrease weight"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少重量"
+          }
+        }
+      }
+    },
+    "training_session.quick_edit.weight_up": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Increase weight"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "增加重量"
           }
         }
       }

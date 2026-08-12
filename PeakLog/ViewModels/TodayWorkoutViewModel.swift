@@ -54,6 +54,9 @@ final class TodayWorkoutViewModel: ObservableObject {
     private var liveActivityObservationTask: Task<Void, Never>?
     private var restCountdownTask: Task<Void, Never>?
     private var persistDebounceTask: Task<Void, Never>?
+    /// 训练中被快速改过、尚未写库的计划组目标值，按 planSetId 去重——连点 `+` 只留最后一档。
+    private var pendingPlanSetTargets: [String: PendingPlanSetTarget] = [:]
+    private var planSetTargetWriteTask: Task<Void, Never>?
     private let sessionDefaults: UserDefaults
 
     static let restDurationSeconds: TimeInterval = 90
@@ -61,6 +64,8 @@ final class TodayWorkoutViewModel: ObservableObject {
     // 训练集频繁勾选/取消时，避免每次都在主线程同步做 JSONEncoder + UserDefaults.set。
     // 中途的每次变更都重新计时，写盘只在变更停止这段延迟后发生一次。
     private static let persistDebounceDelay: Duration = .milliseconds(400)
+    // ± 连点比勾选更密（加 10kg 就是连点 4 下），窗口相应放宽一点。
+    private static let planSetTargetWriteDelay: Duration = .milliseconds(600)
 
     init(
         trainingPlanService: TrainingPlanServiceProtocol,
@@ -340,6 +345,77 @@ final class TodayWorkoutViewModel: ObservableObject {
         Task { await liveActivityManager.update(session: session) }
     }
 
+    /// 训练进行中快速改某一组的目标负重与次数（专注卡片上的 ± 与数值轮盘都走这里）。
+    ///
+    /// 为什么要同时写 session 和计划两处：`confirmPlanLiveWorkout` 落库时读的是
+    /// **session 快照**（`set.targetWeight` / `set.targetReps`），所以 session 决定这次
+    /// 训练最终记下什么；而浏览模式的卡片、最小化后的进度、以及后续的计划展示读的是
+    /// `todayPlan`。只改一边，两边就会各说各话——用户改成 65kg，训练记录记 65，
+    /// 退出专注模式却看到计划还写着 60。
+    ///
+    /// session 侧立即生效（UI 与落库值都不等待），计划侧的写库走去抖：`+` / `−` 是
+    /// 连点操作，每一下都发一次写请求既无意义，又会在计划编辑流水里堆出一串中间态。
+    func updateLiveWorkoutSet(setId: String, targetWeight: Double?, targetReps: Int) {
+        let weight = QuickSetAdjustment.clampedWeight(targetWeight)
+        let reps = QuickSetAdjustment.clampedReps(targetReps)
+        guard let unit = applyTargetToLiveSession(setId: setId, targetWeight: weight, targetReps: reps)
+        else { return }
+
+        // 计划侧：本地先乐观更新（浏览模式立刻一致），写库延后合并。
+        updatePlanSetInPlace(planSetId: setId) { plannedSet in
+            plannedSet.targetWeight = weight
+            plannedSet.targetReps = reps
+        }
+        schedulePlanSetTargetWrite(
+            planSetId: setId,
+            target: PendingPlanSetTarget(
+                targetWeight: weight,
+                targetWeightUnit: unit,
+                targetReps: reps
+            )
+        )
+    }
+
+    /// 把新的目标值打进进行中的 session 快照，返回这一组的单位（表示"改成功了"）；
+    /// 没有进行中的训练、找不到这一组、组已落库或值没变化时返回 nil。
+    ///
+    /// 两个入口共用它：专注卡片的快速修改，以及最小化训练时在普通计划卡上的编辑
+    /// （`updatePlannedSet`）。后者以前不碰 session——而 confirm 落库读的正是 session
+    /// 快照，于是那次编辑会在结束训练时被悄悄丢掉，记进去的还是旧数字。
+    @discardableResult
+    private func applyTargetToLiveSession(
+        setId: String,
+        targetWeight: Double?,
+        targetReps: Int,
+        targetWeightUnit: WeightUnit? = nil
+    ) -> WeightUnit? {
+        guard var session = activeLiveWorkout,
+              let exerciseIndex = session.exercises.firstIndex(where: { exercise in
+                  exercise.sets.contains { $0.id == setId }
+              }),
+              let setIndex = session.exercises[exerciseIndex].sets.firstIndex(where: { $0.id == setId })
+        else { return nil }
+
+        // 进入 session 前就已落库的组：它的真实成绩已经在训练记录里，这里再改目标值
+        // 只会让两者对不上。和"已落库的组不允许在 session 内撤销"是同一条边界。
+        let current = session.exercises[exerciseIndex].sets[setIndex]
+        guard !current.isAlreadyCompleted else { return nil }
+
+        let unit = targetWeightUnit ?? current.targetWeightUnit
+        guard targetWeight != current.targetWeight
+                || targetReps != current.targetReps
+                || unit != current.targetWeightUnit
+        else { return nil }
+
+        session.exercises[exerciseIndex].sets[setIndex].targetWeight = targetWeight
+        session.exercises[exerciseIndex].sets[setIndex].targetWeightUnit = unit
+        session.exercises[exerciseIndex].sets[setIndex].targetReps = targetReps
+        activeLiveWorkout = session
+
+        Task { await liveActivityManager.update(session: session) }
+        return unit
+    }
+
     func toggleLiveSet(setId: String) {
         guard var session = activeLiveWorkout else { return }
         var didCompleteSet = false
@@ -364,6 +440,9 @@ final class TodayWorkoutViewModel: ObservableObject {
         liveActivityObservationTask = nil
         previousPerformanceTask?.cancel()
         previousPerformanceTask = nil
+        // 取消的是"这次训练"，不是"这些改动"：用户在专注卡片上把目标从 60 改到 65
+        // 是对计划的判断，session 丢掉后这份判断仍然该留在今天的计划里。
+        Task { await flushPendingPlanSetTargets() }
         activeLiveWorkout = nil
         // 关键节点：立即落盘，不经过去抖延迟。
         persistActiveLiveWorkoutImmediately()
@@ -384,6 +463,9 @@ final class TodayWorkoutViewModel: ObservableObject {
 
     func confirmPlanLiveWorkout() async {
         syncLiveActivityCompletions()
+        // 先把训练中改过的目标值写完，再落库这次训练：两者写的是同一批组，
+        // 让它们排到 `completePlannedSet` 后面只会让计划编辑流水的顺序变得难读。
+        await flushPendingPlanSetTargets()
         guard let session = activeLiveWorkout else { return }
         let pendingSets = session.exercises
             .flatMap { exercise in
@@ -498,6 +580,13 @@ final class TodayWorkoutViewModel: ObservableObject {
             current.targetWeightUnit = targetWeightUnit
             current.targetReps = targetReps
         }
+        // 训练最小化时用户仍能在普通计划卡上改这一组，那次编辑同样要进 session 快照。
+        applyTargetToLiveSession(
+            setId: planSetId,
+            targetWeight: targetWeight,
+            targetReps: targetReps,
+            targetWeightUnit: targetWeightUnit
+        )
 
         do {
             let updated = try await trainingPlanService.updatePlannedSet(
@@ -844,6 +933,67 @@ final class TodayWorkoutViewModel: ObservableObject {
         persistActiveLiveWorkout()
     }
 
+    private struct PendingPlanSetTarget {
+        let targetWeight: Double?
+        let targetWeightUnit: WeightUnit
+        let targetReps: Int
+    }
+
+    /// 与 `schedulePersistActiveLiveWorkout` 同一套去抖思路，但这里防的是写库与请求乱序：
+    /// 每次 `+` 都起一个独立的 `Task` 去写，它们的完成顺序不受控，最后落库的可能是中间那一档。
+    /// 取消 + 重排后只有最后一次会真正执行，也就只有用户停手时的那个值会写进去。
+    private func schedulePlanSetTargetWrite(planSetId: String, target: PendingPlanSetTarget) {
+        pendingPlanSetTargets[planSetId] = target
+        planSetTargetWriteTask?.cancel()
+        planSetTargetWriteTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.planSetTargetWriteDelay)
+            guard !Task.isCancelled, let self else { return }
+            // 先摘掉自己的引用再写：否则等下那个公开 flush 若在写库期间被调用，
+            // 会 cancel 掉「正在执行这次写入」的任务，让写请求带着已取消的
+            // 任务上下文跑完剩下的 await。
+            self.planSetTargetWriteTask = nil
+            await self.writePendingPlanSetTargets()
+        }
+    }
+
+    /// 把去抖窗口里积压的目标值写库。结束/取消训练、App 退到后台时都要先走一遍，
+    /// 否则"用户看到的数"和"库里的数"会因为一次挂起就永久分叉。
+    func flushPendingPlanSetTargets() async {
+        planSetTargetWriteTask?.cancel()
+        planSetTargetWriteTask = nil
+        await writePendingPlanSetTargets()
+    }
+
+    private func writePendingPlanSetTargets() async {
+        let pending = pendingPlanSetTargets
+        pendingPlanSetTargets = [:]
+        guard !pending.isEmpty else { return }
+
+        for (planSetId, target) in pending {
+            do {
+                let updated = try await trainingPlanService.updatePlannedSet(
+                    planSetId: planSetId,
+                    targetWeight: target.targetWeight,
+                    targetWeightUnit: target.targetWeightUnit,
+                    targetReps: target.targetReps
+                )
+                // 写库期间用户可能又点了几下 `+`：本地已经是更新后的值，别拿这次
+                // 请求的回声把它盖回去——更新的那次写入还在去抖队列里排着。
+                guard pendingPlanSetTargets[planSetId] == nil else { continue }
+                updatePlanSetInPlace(planSetId: planSetId) { plannedSet in
+                    plannedSet.targetWeight = updated.targetWeight
+                    plannedSet.targetWeightUnit = updated.targetWeightUnit
+                    plannedSet.targetReps = updated.targetReps
+                }
+            } catch {
+                // 刻意不像 `updatePlannedSet` 那样 `await refresh()`：训练进行中把计划整份
+                // 拉回来，会用服务端的旧目标值盖掉用户刚在专注卡片上改的数。session 快照
+                // 才是这次训练要落库的那一份，它不受这次失败影响，报错即可。
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     /// App 即将失活/进入后台时调用：若组勾选去抖窗口内还有待落盘的写入，立即执行，
     /// 避免用户刚勾选完一个组、App 恰好在 400ms 窗口内被系统挂起/杀掉导致这次变更
     /// 丢失——这正是去抖优化本身要小心避免引入的回归。调用方是 `ContentView` 对
@@ -851,6 +1001,9 @@ final class TodayWorkoutViewModel: ObservableObject {
     /// 自身不持有/观察 `scenePhase`，遵循现有由承载视图转发场景事件的模式）。
     func flushPendingLiveWorkoutPersistence() {
         persistActiveLiveWorkoutImmediately()
+        // 同一个理由的另一半：训练中快速改过的目标值可能还压在写库去抖窗口里。
+        // 落盘的 session 已经带上了新值，但计划侧要靠这次 flush 才追得上。
+        Task { await flushPendingPlanSetTargets() }
     }
 
     /// Session 随每次变更写盘，App 被杀后同一天可恢复；confirm/cancel 置 nil 即清除。

@@ -63,6 +63,36 @@ final class TodayWorkoutFocusFlowTests: XCTestCase {
         XCTAssertNil(viewModel.activeLiveWorkout?.manualFocusExerciseId)
     }
 
+    /// 完成一组不得把游标（以及粘性的 `manualFocusExerciseId`）挪到别的动作上——
+    /// 只要当前动作还有没做完的组，就应该原地停在它上面。
+    ///
+    /// 这条对应的线上问题是在 View 层：`scrollPosition(id:)` 的回写被当成"用户滑到
+    /// 这里了"，而点「完成本组」引起的布局变化（底部休息面板顶掉胶囊按钮）本身就会
+    /// 触发回写，于是每完成一组都可能把焦点钉到屏幕中心的那个动作上。View 层的护栏
+    /// 在 `tests/plan_focus_training_mode_test.swift`，这里守住 view model 一侧：
+    /// 除 `focusLiveExercise` 外没有任何路径可以设置手动锁。
+    func testCompletingASetKeepsFocusOnTheSameExerciseAndSetsNoManualLock() async {
+        let viewModel = makeViewModel()
+        await startSession(viewModel)
+
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentExercise?.id, "ex-1")
+
+        // ex-1 还有第 2 组，游标留在 ex-1，且不产生手动锁。
+        viewModel.completeCurrentLiveSet()
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentExercise?.id, "ex-1")
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentSet?.id, "ex-1-set-2")
+        XCTAssertNil(viewModel.activeLiveWorkout?.manualFocusExerciseId)
+
+        // 休息倒计时开始（底部栏换成休息面板的那次布局变化）后同样不动焦点。
+        XCTAssertNotNil(viewModel.restEndDate)
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentExercise?.id, "ex-1")
+
+        // 做完 ex-1 才按计划顺序流转到 ex-2，依旧没有手动锁。
+        viewModel.completeCurrentLiveSet()
+        XCTAssertEqual(viewModel.activeLiveWorkout?.currentExercise?.id, "ex-2")
+        XCTAssertNil(viewModel.activeLiveWorkout?.manualFocusExerciseId)
+    }
+
     func testSkippedExerciseSinksToEndOfQueue() async {
         let viewModel = makeViewModel()
         await startSession(viewModel)

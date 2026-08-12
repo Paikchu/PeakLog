@@ -10,6 +10,7 @@ struct CardioModelTestRunner {
         try unknownPlanActivityDefaultsToRunning()
         try newCardioMetricsDefaultToNoRPE()
         try cardioMetricsValidateByActivityType()
+        try cardioPlanTargetAcceptsEitherDurationOrDistance()
         print("cardio_model_test passed")
     }
 
@@ -72,6 +73,32 @@ struct CardioModelTestRunner {
         expectInvalid { _ = try CardioMetrics(activityType: .running, durationMinutes: 20, distanceKm: -1, rpe: 5) }
         expectInvalid { _ = try CardioMetrics(activityType: .elliptical, durationMinutes: 20, distanceKm: 2, rpe: 5) }
         expectInvalid { _ = try CardioMetrics(activityType: .stairClimber, durationMinutes: 20, distanceKm: nil, rpe: 11) }
+    }
+
+    /// 计划目标和实际记录的规则不同：记录必须有时长，计划只要时长/距离有其一。
+    private static func cardioPlanTargetAcceptsEitherDurationOrDistance() throws {
+        let distanceOnly = try CardioPlanTarget(activityType: .running, durationMinutes: nil, distanceKm: 3)
+        precondition(distanceOnly.durationMinutes == nil)
+        precondition(distanceOnly.distanceKm == 3)
+
+        let durationOnly = try CardioPlanTarget(activityType: .running, durationMinutes: 30, distanceKm: nil)
+        precondition(durationOnly.durationMinutes == 30)
+        precondition(durationOnly.distanceKm == nil)
+
+        let both = try CardioPlanTarget(activityType: .cycling, durationMinutes: 45, distanceKm: 20)
+        precondition(both.durationMinutes == 45 && both.distanceKm == 20)
+
+        // 没有任何目标的有氧计划项不是计划，谁也不知道该做什么。
+        expectInvalid { _ = try CardioPlanTarget(activityType: .running, durationMinutes: nil, distanceKm: nil) }
+        // 椭圆机不支持距离，所以它没有「只填距离」这条路，时长仍是必填。
+        expectInvalid { _ = try CardioPlanTarget(activityType: .elliptical, durationMinutes: nil, distanceKm: 5) }
+        expectInvalid { _ = try CardioPlanTarget(activityType: .elliptical, durationMinutes: nil, distanceKm: nil) }
+        // 填了就得是正数。
+        expectInvalid { _ = try CardioPlanTarget(activityType: .running, durationMinutes: 0, distanceKm: nil) }
+        expectInvalid { _ = try CardioPlanTarget(activityType: .running, durationMinutes: nil, distanceKm: 0) }
+
+        // 实际记录这一侧不变：时长仍然是必需的（running_workouts.duration_minutes NOT NULL）。
+        expectInvalid { _ = try CardioMetrics(activityType: .running, durationMinutes: 0, distanceKm: 3) }
     }
 
     private static func expectInvalid(_ body: () throws -> Void) {

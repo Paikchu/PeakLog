@@ -42,13 +42,39 @@ struct CardioPlanExerciseInput: Identifiable, Equatable, Sendable {
         self.distanceText = distanceText
     }
 
+    /// Whether the person has aimed at anything yet. Only about emptiness, not
+    /// validity — the form uses it to explain why Save is disabled, and typing
+    /// garbage into a field is a different complaint from leaving both blank.
+    var hasTarget: Bool {
+        !durationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || (activityType.supportsDistance
+                && !distanceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    /// Duration and distance are alternative targets: either one alone is a
+    /// complete goal, and both together is a pace target. A field left blank is
+    /// simply absent, but one that is filled in must parse to a positive
+    /// number, otherwise the whole card is invalid and blocks the save.
     func draft() -> PlanExerciseDraft? {
         let trimmedDuration = durationText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDistance = distanceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let duration = Int(trimmedDuration) else { return nil }
-        let distance = activityType.supportsDistance && !trimmedDistance.isEmpty
-            ? Double(trimmedDistance) : nil
-        guard !activityType.supportsDistance || trimmedDistance.isEmpty || distance != nil else { return nil }
+
+        let duration: Int?
+        if trimmedDuration.isEmpty {
+            duration = nil
+        } else {
+            guard let parsed = Int(trimmedDuration) else { return nil }
+            duration = parsed
+        }
+
+        let distance: Double?
+        if !activityType.supportsDistance || trimmedDistance.isEmpty {
+            distance = nil
+        } else {
+            guard let parsed = Double(trimmedDistance) else { return nil }
+            distance = parsed
+        }
+
         return try? PlanExerciseDraft.cardio(
             activityType: activityType,
             targetDurationMinutes: duration,
@@ -97,23 +123,22 @@ nonisolated struct PlanExerciseDraft: Equatable, Sendable {
 
     static func cardio(
         activityType: CardioActivityType,
-        targetDurationMinutes: Int,
+        targetDurationMinutes: Int?,
         targetDistanceKm: Double?
     ) throws -> PlanExerciseDraft {
-        let metrics = try CardioMetrics(
+        let target = try CardioPlanTarget(
             activityType: activityType,
             durationMinutes: targetDurationMinutes,
-            distanceKm: targetDistanceKm,
-            rpe: nil
+            distanceKm: targetDistanceKm
         )
         return PlanExerciseDraft(
             exerciseName: activityType.localizedTitle,
             isBodyweight: false,
             sets: [],
             itemType: .cardio,
-            cardioActivityType: metrics.activityType,
-            targetDurationMinutes: metrics.durationMinutes,
-            targetDistanceKm: metrics.distanceKm,
+            cardioActivityType: target.activityType,
+            targetDurationMinutes: target.durationMinutes,
+            targetDistanceKm: target.distanceKm,
             targetRPE: nil
         )
     }
