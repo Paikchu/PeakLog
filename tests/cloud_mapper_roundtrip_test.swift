@@ -4,7 +4,8 @@ import Foundation
 // training-relevant fields. Compile with the model + cloud sources:
 //   swiftc -parse-as-library \
 //     PeakLog/Models/UserProfile.swift PeakLog/Models/WorkoutModels.swift \
-//     PeakLog/Models/TrainingPlanModels.swift PeakLog/Models/ExerciseLibraryModels.swift \
+//     PeakLog/Models/TrainingPlanModels.swift PeakLog/Models/QuickSetAdjustment.swift \
+//     PeakLog/Models/ExerciseLibraryModels.swift \
 //     PeakLog/Models/GoalSpec.swift PeakLog/Models/PlanEditEvent.swift PeakLog/Models/JSONValue.swift \
 //     PeakLog/Localization/AppLanguage.swift PeakLog/Support/WorkoutDateFormatter.swift \
 //     PeakLog/Services/Cloud/LocalDataSnapshot.swift PeakLog/Services/Cloud/CloudRows.swift \

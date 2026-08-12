@@ -4,6 +4,7 @@ import Foundation
 // 验收命令：
 //   swiftc -parse-as-library \
 //     PeakLog/Models/WorkoutModels.swift PeakLog/Models/TrainingPlanModels.swift \
+//     PeakLog/Models/QuickSetAdjustment.swift \
 //     PeakLog/Support/WorkoutDateFormatter.swift PeakLog/Support/TrainingReminderSchedule.swift \
 //     tests/training_reminder_schedule_test.swift -o /tmp/trs && /tmp/trs
 

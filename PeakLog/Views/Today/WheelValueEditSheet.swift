@@ -9,6 +9,9 @@ private struct WheelSheetChrome<Content: View>: View {
     let titleKey: String
     let lastTimeText: String?
     var onLastTimeTap: (() -> Void)?
+    /// 非 nil 时在轮盘与按钮之间显示「应用到所有未完成组」开关；nil 表示当前
+    /// 场景没有可批量改的第二组（或调用方不提供批量入口），整行不出现。
+    var applyToAllSets: Binding<Bool>?
     let onCancel: () -> Void
     let onDone: () -> Void
     @ViewBuilder let content: () -> Content
@@ -39,6 +42,17 @@ private struct WheelSheetChrome<Content: View>: View {
             }
 
             content()
+
+            if let applyToAllSets {
+                Toggle(isOn: applyToAllSets) {
+                    Text("today.plan.batch.apply_to_all")
+                        .appFont(size: 13, weight: .medium)
+                        .foregroundColor(.textSecondary)
+                }
+                .tint(.accentPrimary)
+                .padding(.horizontal, 28)
+                .accessibilityIdentifier("plan.set.applyToAllSets")
+            }
 
             HStack(spacing: 16) {
                 Button(String(localized: "common.cancel")) { onCancel() }
@@ -75,10 +89,16 @@ struct WeightWheelEditSheet: View {
     let lastTime: SetDefaultsSuggestion?
     var onDone: (Double?) -> Void
     var onCancel: () -> Void
+    /// 非 nil 表示这个动作还有别的未完成组可以一起改：面板出现「应用到所有
+    /// 未完成组」开关，勾选后「完成」走这个回调而不是 `onDone`。
+    /// 刻意声明在 `onCancel` 之后：既有三个调用点用尾随闭包传 onDone/onCancel，
+    /// 把新参数插到它们前面会让尾随闭包静默绑错参数。
+    var onDoneApplyingToAllSets: ((Double?) -> Void)?
 
     @State private var isBodyweight: Bool
     @State private var whole: Int
     @State private var fractionIndex: Int
+    @State private var appliesToAllSets = false
 
     /// The wheel's integer rows. Normally `0...300`, but grown to cover an
     /// out-of-range stored value so a real 320 kg lift stays selectable
@@ -97,7 +117,8 @@ struct WeightWheelEditSheet: View {
         initialWeight: Double?,
         lastTime: SetDefaultsSuggestion?,
         onDone: @escaping (Double?) -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onDoneApplyingToAllSets: ((Double?) -> Void)? = nil
     ) {
         self.allowsBodyweightToggle = allowsBodyweightToggle
         self.weightUnit = weightUnit
@@ -105,6 +126,7 @@ struct WeightWheelEditSheet: View {
         self.lastTime = lastTime
         self.onDone = onDone
         self.onCancel = onCancel
+        self.onDoneApplyingToAllSets = onDoneApplyingToAllSets
 
         _isBodyweight = State(initialValue: allowsBodyweightToggle && initialWeight == nil)
         let baseline = initialWeight ?? lastTime?.weight ?? 20
@@ -146,8 +168,16 @@ struct WeightWheelEditSheet: View {
             titleKey: "chat.exercise.edit_weight",
             lastTimeText: lastTimeText,
             onLastTimeTap: applyLastTime,
+            applyToAllSets: onDoneApplyingToAllSets == nil ? nil : $appliesToAllSets,
             onCancel: onCancel,
-            onDone: { onDone(isBodyweight ? nil : currentWeight) }
+            onDone: {
+                let value = isBodyweight ? nil : currentWeight
+                if appliesToAllSets, let onDoneApplyingToAllSets {
+                    onDoneApplyingToAllSets(value)
+                } else {
+                    onDone(value)
+                }
+            }
         ) {
             VStack(spacing: 10) {
                 if allowsBodyweightToggle {
@@ -217,8 +247,12 @@ struct RepsWheelEditSheet: View {
     let lastTime: SetDefaultsSuggestion?
     var onDone: (Int) -> Void
     var onCancel: () -> Void
+    /// 同 `WeightWheelEditSheet.onDoneApplyingToAllSets`，包括「必须排在
+    /// onCancel 之后」这条约束的理由。
+    var onDoneApplyingToAllSets: ((Int) -> Void)?
 
     @State private var reps: Int
+    @State private var appliesToAllSets = false
 
     /// Normally `1...50`, grown to cover an out-of-range stored value so a
     /// persisted 80-rep set stays selectable rather than leaving the wheel on
@@ -234,12 +268,14 @@ struct RepsWheelEditSheet: View {
         initialReps: Int,
         lastTime: SetDefaultsSuggestion?,
         onDone: @escaping (Int) -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onDoneApplyingToAllSets: ((Int) -> Void)? = nil
     ) {
         self.initialReps = initialReps
         self.lastTime = lastTime
         self.onDone = onDone
         self.onCancel = onCancel
+        self.onDoneApplyingToAllSets = onDoneApplyingToAllSets
         // Both the stored value and the "last time" shortcut must be reachable,
         // since tapping the hint writes straight into the selection.
         let upperBound = Self.repsUpperBound(covering: [initialReps, lastTime?.reps])
@@ -262,8 +298,15 @@ struct RepsWheelEditSheet: View {
                     reps = min(max(1, lastReps), repsRange.upperBound)
                 }
             },
+            applyToAllSets: onDoneApplyingToAllSets == nil ? nil : $appliesToAllSets,
             onCancel: onCancel,
-            onDone: { onDone(reps) }
+            onDone: {
+                if appliesToAllSets, let onDoneApplyingToAllSets {
+                    onDoneApplyingToAllSets(reps)
+                } else {
+                    onDone(reps)
+                }
+            }
         ) {
             HStack(spacing: 8) {
                 Picker("", selection: $reps) {

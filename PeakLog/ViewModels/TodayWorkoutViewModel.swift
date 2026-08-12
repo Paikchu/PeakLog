@@ -608,6 +608,49 @@ final class TodayWorkoutViewModel: ObservableObject {
         }
     }
 
+    /// 批量调节本动作所有未完成组的目标（只改重量 / 只改次数 / 两者都改）。
+    /// 乐观更新与落库共用 `PlannedSetBatchAdjustment.applied(to:)`，界面先变的
+    /// 值就是库里最终写下的值；失败沿用单组编辑的处理：报错 + `refresh()`
+    /// 拉回真实状态。已完成组不参与，与本地库的写入规则一致。
+    ///
+    /// 每一组改完都打进进行中的 session 快照，理由与 `updatePlannedSet` 完全相同：
+    /// `confirmPlanLiveWorkout` 落库读的是 session 快照，漏掉这一步的话，训练最小化
+    /// 时做的这次批量调节会在结束训练时被静默丢掉，记进去的还是旧数字。
+    func batchUpdatePlannedSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) async {
+        guard !adjustment.isEmpty else { return }
+        var mirrored: [TrainingPlanSet] = []
+        updatePlanExerciseInPlace(planExerciseId: planExerciseId) { exercise in
+            for index in exercise.sets.indices where !exercise.sets[index].isCompleted {
+                exercise.sets[index] = adjustment.applied(to: exercise.sets[index])
+                mirrored.append(exercise.sets[index])
+            }
+        }
+        for set in mirrored {
+            applyTargetToLiveSession(
+                setId: set.id,
+                targetWeight: set.targetWeight,
+                targetReps: set.targetReps,
+                targetWeightUnit: set.targetWeightUnit
+            )
+        }
+
+        do {
+            let updated = try await trainingPlanService.batchUpdatePlannedSets(
+                planExerciseId: planExerciseId,
+                adjustment: adjustment
+            )
+            updatePlanExerciseInPlace(planExerciseId: planExerciseId) { exercise in
+                exercise.sets = updated.sets
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            await refresh()
+        }
+    }
+
     func addPlannedSet(planExerciseId: String) async {
         guard let exercise = findPlanExercise(planExerciseId: planExerciseId) else { return }
         let template = exercise.sets.last ?? TrainingPlanSet(
@@ -1075,6 +1118,17 @@ final class TodayWorkoutViewModel: ObservableObject {
             todayPlan = plan
             return
         }
+    }
+
+    private func updatePlanExerciseInPlace(
+        planExerciseId: String,
+        update: (inout TrainingPlanExercise) -> Void
+    ) {
+        guard var plan = todayPlan,
+              let exerciseIndex = plan.exercises.firstIndex(where: { $0.id == planExerciseId })
+        else { return }
+        update(&plan.exercises[exerciseIndex])
+        todayPlan = plan
     }
 
     private func appendPlannedSet(_ set: TrainingPlanSet, to planExerciseId: String) {

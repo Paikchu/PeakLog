@@ -18,6 +18,12 @@ nonisolated protocol TrainingPlanServiceProtocol: Sendable {
         targetWeightUnit: WeightUnit,
         targetReps: Int
     ) async throws -> TrainingPlanSet
+    /// 一次调用调节一个计划动作下所有未完成组的目标（只改重量 / 只改次数 /
+    /// 两者都改，统一值或相对增减）；已完成组保持不变。返回改写后的整个动作。
+    func batchUpdatePlannedSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) async throws -> TrainingPlanExercise
     func addPlannedSet(
         planExerciseId: String,
         targetWeight: Double?,
@@ -41,6 +47,15 @@ nonisolated extension TrainingPlanServiceProtocol {
     // and empty services inherit this and need no change.
     func recordDaySignal(_ signal: ReplanSignal) async throws {}
     func completePlannedCardio(planExerciseId: String, metrics: CardioMetrics) async throws -> CardioWorkoutRecord {
+        throw LocalAppDatabaseError.planExerciseNotFound
+    }
+    // 同上：批量写入只有真实服务（Local）实现，既有 mock / 测试替身不感知这个
+    // 方法也能满足协议。默认抛错而不是静默返回一个编造的动作——调用方能区分
+    // 「没改成」和「改成了」，不至于把假成功当真。
+    func batchUpdatePlannedSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) async throws -> TrainingPlanExercise {
         throw LocalAppDatabaseError.planExerciseNotFound
     }
     // 带 planDate 的变体默认回落到"今天"版本：既有 mock/测试替身不感知
@@ -93,6 +108,16 @@ nonisolated final class LocalTrainingPlanService: TrainingPlanServiceProtocol {
             targetWeight: targetWeight,
             targetWeightUnit: targetWeightUnit,
             targetReps: targetReps
+        )
+    }
+
+    func batchUpdatePlannedSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) async throws -> TrainingPlanExercise {
+        try await database.batchUpdatePlannedSets(
+            planExerciseId: planExerciseId,
+            adjustment: adjustment
         )
     }
 

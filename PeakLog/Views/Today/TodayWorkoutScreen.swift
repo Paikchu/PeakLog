@@ -107,6 +107,14 @@ struct TodayWorkoutScreen: View {
                                         )
                                     }
                                 },
+                                onBatchUpdateSets: { exerciseId, adjustment in
+                                    Task {
+                                        await viewModel.batchUpdatePlannedSets(
+                                            planExerciseId: exerciseId,
+                                            adjustment: adjustment
+                                        )
+                                    }
+                                },
                                 onCompleteSet: { setId, rpe in
                                     Task { await viewModel.completePlannedSet(planSetId: setId, rpe: rpe) }
                                 },
@@ -653,6 +661,7 @@ private struct TodayPlanExercisesSection: View {
     /// 专注模式下点击折叠行：展开该动作并把 session 游标切过去。
     let onFocusExercise: (String) -> Void
     let onUpdateSet: (String, Double?, WeightUnit, Int) -> Void
+    let onBatchUpdateSets: (String, PlannedSetBatchAdjustment) -> Void
     let onCompleteSet: (String, Double?) -> Void
     let onAddSet: (String) -> Void
     let onDeleteLastSet: (String) -> Void
@@ -788,6 +797,9 @@ private struct TodayPlanExercisesSection: View {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 #endif
                         withAnimation(flowAnimation) { isReordering = true }
+                    },
+                    onBatchUpdateSets: { adjustment in
+                        onBatchUpdateSets(exercise.id, adjustment)
                     }
                 )
             }

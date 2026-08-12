@@ -764,6 +764,57 @@ actor LocalAppDatabase {
         return updated
     }
 
+    /// 一次调用改写一个计划动作下**所有未完成组**的目标，返回改写后的整个动作。
+    ///
+    /// 三个刻意的取舍：
+    /// - **跳过已完成组**：它们已经通过 `linkedExerciseSetId` 关联到落库的训练
+    ///   记录，事后改目标只会让计划和「实际练了什么」对不上。想改某一组已完成
+    ///   的目标仍然走 `updatePlannedSet`，那是明确的单组意图。
+    /// - **一次写盘**：全部组改完才 `persist()`，因此不存在改了一半的中间态；
+    ///   写盘失败时 `persist()` 会把 `state`（含刚追加的编辑事件）整体回滚。
+    /// - **每个真正变化的组记一条 `setTargetUpdated`**：复用单组编辑既有的
+    ///   before/after 载荷，云端与学习回路的消费方无需认识新事件类型。
+    ///
+    /// 空调节、没有未完成组、或调节后各组值都没变时是 no-op：不写盘、不记事件，
+    /// 直接返回当前动作。有氧条目没有 sets，同样落在这条 no-op 路径上。
+    func batchUpdatePlannedSets(
+        planExerciseId: String,
+        adjustment: PlannedSetBatchAdjustment
+    ) throws -> TrainingPlanExercise {
+        guard let location = findPlanExercise(planExerciseId: planExerciseId) else {
+            throw LocalAppDatabaseError.planExerciseNotFound
+        }
+        let day = state.activePlan.days[location.dayIndex]
+        let exercise = day.exercises[location.exerciseIndex]
+        guard !adjustment.isEmpty else { return exercise }
+
+        var sets = exercise.sets
+        var changes: [(before: PlannedSetSnapshot, after: PlannedSetSnapshot)] = []
+        for index in sets.indices where !sets[index].isCompleted {
+            let before = sets[index]
+            let after = adjustment.applied(to: before)
+            guard after != before else { continue }
+            sets[index] = after
+            changes.append((before: PlannedSetSnapshot(before), after: PlannedSetSnapshot(after)))
+        }
+        guard !changes.isEmpty else { return exercise }
+
+        state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex].sets = sets
+        for change in changes {
+            appendEditEvent(
+                planId: state.activePlan.id,
+                planDayId: day.id,
+                planDate: day.planDate,
+                type: .setTargetUpdated,
+                exerciseName: exercise.exerciseName,
+                exerciseId: exercise.exerciseId,
+                payload: .from(SetTargetUpdatedPayload(before: change.before, after: change.after))
+            )
+        }
+        try persist()
+        return state.activePlan.days[location.dayIndex].exercises[location.exerciseIndex]
+    }
+
     func addPlannedSet(
         planExerciseId: String,
         targetWeight: Double?,
